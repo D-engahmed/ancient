@@ -1,13 +1,22 @@
-from openai import AsyncOpenAI,RateLimitError,APIConnectionError,APIError
+from openai import AsyncOpenAI, RateLimitError, APIConnectionError, APIError
 from typing import AsyncGenerator, Optional, Any
 import asyncio
 import os
 import logging
-
 from client.response import EventType, StreamEvent, TextDelta, TokenUsage
+
 logger = logging.getLogger(__name__)
 
+
 class LLMClient:
+    """
+    Asynchronous client manager for OpenAI-compatible LLM APIs.
+    
+    This class provides a unified interface for making chat completion requests
+    with built-in retry logic, error handling, and support for both streaming
+    and non-streaming responses.
+    """
+    
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -17,40 +26,55 @@ class LLMClient:
         organization: Optional[str] = None,
     ):
         """
-        Initialize the OpenAI client manager.
+        Initialize the LLM client manager.
         
         Args:
-            api_key: OpenAI API key. If None, reads from OPENAI_API_KEY env variable.
-            base_url: API base URL. Defaults to OpenAI's official endpoint.
+            api_key: API key for authentication. If None, reads from LLM_API_KEY env variable.
+            base_url: API base URL. Defaults to OpenRouter endpoint.
             timeout: Request timeout in seconds.
-            max_retries: Maximum number of retry attempts.
-            organization: Optional organization ID.
+            max_retries: Maximum number of retry attempts for failed requests.
+            organization: Optional organization ID for API requests.
             
         Raises:
             ValueError: If API key is not provided and not found in environment.
         """
+        # Singleton pattern - client is created lazily on first use
         self._client: Optional[AsyncOpenAI] = None
-        self._api_key = os.getenv("LLM_API_KEY") or "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"
+        
+        # Get API key from parameter, environment variable, or use hardcoded fallback
+        # TODO: Remove hardcoded API key - SECURITY RISK!
+        # TODO: Implement secure key management (e.g., secrets manager, encrypted config)
+        self._api_key = api_key or os.getenv("LLM_API_KEY") or "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"
+        
+        # Configure API endpoint (defaults to OpenRouter)
+        # TODO: Support multiple providers (OpenAI, Anthropic, local models)
+        # TODO: Implement automatic provider selection based on model name
         self._base_url = base_url or "https://openrouter.ai/api/v1"
+        
+        # Request timeout and retry configuration
         self._timeout = timeout
         self._max_retries = max_retries
         self._organization = organization
         
+        # Validate that we have an API key
         if not self._api_key:
             raise ValueError(
                 "LLM API key must be provided either as parameter or "
                 "LLM_API_KEY environment variable"
             )
-        
-        # todo : load api key from config or env variable
-        # to future proof, we can make auto routing based on model or other params
-        
+
     def get_client(self) -> AsyncOpenAI:
         """
         Get or create the AsyncOpenAI client instance (singleton pattern).
         
+        This lazy initialization ensures the client is only created when needed
+        and reused for subsequent requests.
+        
         Returns:
             AsyncOpenAI: Configured OpenAI async client.
+            
+        Raises:
+            Exception: If client initialization fails.
         """
         if self._client is None:
             try:
@@ -65,148 +89,277 @@ class LLMClient:
             except Exception as e:
                 logger.error(f"Failed to initialize AsyncOpenAI client: {e}")
                 raise
-                
         return self._client
-    
+
     async def close(self):
-        """Close the client connection gracefully."""
+        """
+        Close the client connection gracefully.
+        
+        This should be called when the client is no longer needed to free resources.
+        Good practice: use in context manager or cleanup handlers.
+        """
         if self._client is not None:
             await self._client.close()
             self._client = None
             logger.info("AsyncOpenAI client closed")
-            
+
     async def chat_completion(
         self,
-        messages:list[dict[str,Any]],
-        stream:bool=True
-        ) -> AsyncGenerator[StreamEvent, None]:
-        
+        messages: list[dict[str, Any]],
+        stream: bool = True,
+        model: str = "mistralai/devstral-2512:free",
+        **kwargs: Any
+    ) -> AsyncGenerator[StreamEvent, None]:
         """
-        Wrapper for chat completion API call.
+        Create a chat completion with automatic retry logic.
+        
+        This method handles both streaming and non-streaming responses with
+        exponential backoff retry logic for transient failures.
         
         Args:
-            messages: List of message dictionaries for the chat completion API.
+            messages: List of message dictionaries (role, content pairs).
+            stream: Whether to stream the response incrementally.
+            model: Model identifier to use for completion.
+            **kwargs: Additional parameters to pass to the API.
+            
+        Yields:
+            StreamEvent: Events containing response chunks, errors, or completion signals.
+            
+        Implementation details:
+            - Retries with exponential backoff: 1s, 2s, 4s for rate limits
+            - Immediate retry on connection errors (up to max_retries)
+            - Yields error events for unrecoverable failures
         """
         client = self.get_client()
-        kwargs = {
-            "model": "mistralai/devstral-2512:free",
+        
+        # Prepare API request parameters
+        # TODO: Add support for additional parameters (temperature, max_tokens, etc.)
+        # TODO: Implement parameter validation
+        api_kwargs = {
+            "model": model,
             "messages": messages,
             "stream": stream,
+            **kwargs  # Allow caller to override defaults
         }
+        
+        # Retry loop with exponential backoff
         for attempt in range(self._max_retries + 1):
             try:
-                
+                # Route to appropriate handler based on streaming mode
                 if stream:
-                    async for event in self._stream_response(client, kwargs):
+                    async for event in self._stream_response(client, api_kwargs):
                         yield event
                 else:
-                    event =await self._non_stream_response(client, kwargs)
+                    event = await self._non_stream_response(client, api_kwargs)
                     yield event
-                    
-                return
+                return  # Success - exit retry loop
+                
             except RateLimitError as e:
-                if attempt <self._max_retries:
-                    # attempt -> failed
-                    # wait for 1s -> retry 
-                    # if fail wait for 2s -> retry 
-                    # if fail wait for 4s -> retry
-                    # the role of exponenital back of is wait for n_new = n_old*2 for n=1,...,infinity 
-                    wait_time = 2**attempt
+                # Rate limit hit - use exponential backoff before retry
+                if attempt < self._max_retries:
+                    # Exponential backoff: 1s → 2s → 4s
+                    wait_time = 2 ** attempt
+                    logger.warning(
+                        f"Rate limit hit (attempt {attempt + 1}/{self._max_retries + 1}). "
+                        f"Retrying in {wait_time}s..."
+                    )
                     await asyncio.sleep(wait_time)
                 else:
+                    # Max retries exceeded - yield error event
+                    logger.error(f"Rate limit exceeded after {self._max_retries + 1} attempts")
                     yield StreamEvent(
-                        type= EventType.ERROR,
-                        error=f"Rate limit exceeded :{e}",
+                        type=EventType.ERROR,
+                        error=f"Rate limit exceeded after retries: {e}",
                     )
                     return
+                    
             except APIConnectionError as e:
-                if attempt <self._max_retries: 
-                    wait_time = 2**attempt
-                    await asyncio.sleep(wait_time)
+                # Connection error - retry immediately (network might recover)
+                if attempt < self._max_retries:
+                    logger.warning(
+                        f"Connection error (attempt {attempt + 1}/{self._max_retries + 1}). "
+                        f"Retrying immediately..."
+                    )
+                    # No sleep for connection errors - fail fast if network is down
                 else:
+                    logger.error(f"Connection failed after {self._max_retries + 1} attempts")
                     yield StreamEvent(
-                        type= EventType.ERROR,
-                        error=f"Connection error :{e}",
+                        type=EventType.ERROR,
+                        error=f"Connection failed after retries: {e}",
                     )
                     return
+                    
             except APIError as e:
-            
+                # General API error - log and yield error event
+                logger.error(f"API error occurred: {e}")
                 yield StreamEvent(
-                    type= EventType.ERROR,
-                    error=f"Api error :{e}",
+                    type=EventType.ERROR,
+                    error=f"API error: {e}",
                 )
                 return
-                     
-            
+                
+            except Exception as e:
+                # Unexpected error - log and yield error event
+                logger.error(f"Unexpected error in chat_completion: {e}", exc_info=True)
+                yield StreamEvent(
+                    type=EventType.ERROR,
+                    error=f"Unexpected error: {e}",
+                )
+                return
+
     async def _stream_response(
         self,
-        client:AsyncOpenAI,
-        kwargs:dict[str,Any]
-        )->AsyncGenerator[StreamEvent, None]:
+        client: AsyncOpenAI,
+        kwargs: dict[str, Any]
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """
+        Handle streaming response from the API.
+        
+        This method processes the API's streaming response chunk by chunk,
+        yielding events for each text delta and a final completion event.
+        
+        Args:
+            client: The AsyncOpenAI client instance.
+            kwargs: Parameters to pass to the chat.completions.create call.
+            
+        Yields:
+            StreamEvent: TEXT_DELTA events for each chunk, MESSAGE_COMPLETE at end.
+            
+        TODO: Add support for function/tool calls in streaming mode
+        TODO: Handle multiple choices if max_choices > 1
+        TODO: Add streaming timeout handling
+        """
+        # Create streaming completion
         response = await client.chat.completions.create(**kwargs)
-        usage:TokenUsage |None=None
-        finish_reason :str|None = None
         
+        # Track usage and finish reason (sent with final event)
+        usage: Optional[TokenUsage] = None
+        finish_reason: Optional[str] = None
         
+        # Process each chunk in the stream
         async for chunk in response:
-            if hasattr(chunk,"usage") and chunk.usage:
+            # Extract token usage information if present
+            # Note: Usage is typically only in the last chunk
+            if hasattr(chunk, "usage") and chunk.usage:
                 usage = TokenUsage(
                     prompt_tokens=chunk.usage.prompt_tokens,
                     total_tokens=chunk.usage.total_tokens,
-                    cached_tokens=chunk.usage.prompt_tokens_details.cached_tokens,
+                    cached_tokens=chunk.usage.prompt_tokens_details.cached_tokens
+                    if chunk.usage.prompt_tokens_details
+                    else 0,
                 )
-                if not chunk.choices:
-                    continue
-                    
-                choice = chunk.choices[0]
-                delta = choice.delta
-                
-                if choice.finish_reason:
-                    finish_reason=choice.finish_reason
-                
-                
-                # handling the text content
-                
-                if delta.content:
-                    yield StreamEvent(
-                        type=EventType.TEXT_DELTA,
-                        text_delta=TextDelta(delta.content),
-                        
-                    )
-                
+            
+            # Skip chunks with no choices
+            if not chunk.choices:
+                continue
+            
+            # Get the first choice (most APIs only return one)
+            choice = chunk.choices[0]
+            delta = choice.delta
+            
+            # Capture finish reason if present
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+            
+            # Yield text content as it arrives
+            if delta.content:
+                yield StreamEvent(
+                    type=EventType.TEXT_DELTA,
+                    text_delta=TextDelta(
+                        content=delta.content,
+                        role=delta.role if delta.role else "assistant"
+                    ),
+                )
+        
+        # Signal completion with final usage statistics
         yield StreamEvent(
-            # it say hi i complete the massage
-            type= EventType.MESSAGE_COMPLETE,
-            # and the finish reason is 
-            finish_reason= finish_reason,
-            usage=usage
+            type=EventType.MESSAGE_COMPLETE,
+            finish_reason=finish_reason,
+            usage=usage,
         )
-        
-        
+
     async def _non_stream_response(
         self,
-        client:AsyncOpenAI,
-        kwargs:dict[str,Any]
-        )->StreamEvent:
-            response = await client.chat.completions.create(**kwargs)
-            Choice = response.choices[0]
-            massage = Choice.message
-            text_delta= None
-            if massage.content:
-                text_delta = TextDelta(
-                    content=massage.content,
-                    role=massage.role
-                )
-            if response.usage:
-                usage = TokenUsage(
-                    prompt_tokens=response.usage.prompt_tokens,
-                    total_tokens=response.usage.total_tokens,
-                    cached_tokens=response.usage.prompt_tokens_details.cached_tokens,
-                )
-                
-                return StreamEvent(
-                    type=EventType.MESSAGE_COMPLETE,
-                    text_delta=text_delta,
-                    finish_reason=Choice.finish_reason,
-                    usage=usage,
-                )
+        client: AsyncOpenAI,
+        kwargs: dict[str, Any]
+    ) -> StreamEvent:
+        """
+        Handle non-streaming response from the API.
+        
+        This method waits for the complete response and returns it as a single event.
+        Useful for cases where streaming overhead is unnecessary.
+        
+        Args:
+            client: The AsyncOpenAI client instance.
+            kwargs: Parameters to pass to the chat.completions.create call.
+            
+        Returns:
+            StreamEvent: MESSAGE_COMPLETE event with full response.
+            
+        TODO: Add support for function/tool calls
+        TODO: Handle multiple choices if max_choices > 1
+        """
+        # Get complete response in one call
+        response = await client.chat.completions.create(**kwargs)
+        
+        # Extract the first choice
+        choice = response.choices[0]
+        message = choice.message
+        
+        # Build text delta if content exists
+        text_delta = None
+        if message.content:
+            text_delta = TextDelta(
+                content=message.content,
+                role=message.role,
+            )
+        
+        # Extract usage information if available
+        usage = None
+        if response.usage:
+            usage = TokenUsage(
+                prompt_tokens=response.usage.prompt_tokens,
+                total_tokens=response.usage.total_tokens,
+                cached_tokens=response.usage.prompt_tokens_details.cached_tokens
+                if response.usage.prompt_tokens_details
+                else 0,
+            )
+        
+        # Return complete response as single event
+        return StreamEvent(
+            type=EventType.MESSAGE_COMPLETE,
+            text_delta=text_delta,
+            finish_reason=choice.finish_reason,
+            usage=usage,
+        )
+
+
+# TODO: CRITICAL - MUST IMPLEMENT
+# 1. Security: Remove hardcoded API key and implement secure credential management
+#    - Use environment variables or secrets manager (AWS Secrets Manager, HashiCorp Vault)
+#    - Add API key rotation support
+#    - Implement per-user API key management for multi-tenant systems
+
+# TODO: HIGH PRIORITY - SHOULD IMPLEMENT
+# 2. Context Manager: Add async context manager support for automatic cleanup
+#    Example: async with LLMClient() as client: ...
+# 3. Model Router: Implement automatic model selection based on requirements
+#    - Cost optimization (use cheaper models for simple tasks)
+#    - Capability-based routing (use GPT-4 for complex reasoning)
+# 4. Parameter Validation: Add input validation for messages, temperature, etc.
+# 5. Caching Layer: Implement response caching to reduce API costs
+#    - Cache identical requests with TTL
+#    - Support cache invalidation strategies
+
+# TODO: MEDIUM PRIORITY - NICE TO HAVE
+# 6. Function/Tool Calling: Add support for function calls and tool use
+# 7. Logging Improvements: Add structured logging with request IDs for debugging
+# 8. Metrics Collection: Track latency, token usage, error rates
+# 9. Multiple Providers: Support fallback to different providers (OpenAI → Anthropic → Local)
+# 10. Batch Processing: Add batch API support for processing multiple requests efficiently
+
+# TODO: LOW PRIORITY - FUTURE ENHANCEMENTS
+# 11. Token Counting: Pre-flight token estimation to prevent oversized requests
+# 12. Streaming Callbacks: Add callback hooks for monitoring streaming progress
+# 13. Request Queueing: Implement rate limit-aware request queue
+# 14. Cost Tracking: Add detailed cost calculation per request
