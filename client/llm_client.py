@@ -3,7 +3,7 @@ from typing import AsyncGenerator, Optional, Any
 import asyncio
 import os
 import logging
-from client.response import EventType, StreamEvent, TextDelta, TokenUsage
+from client.response import StreamEventType, StreamEvent, TextDelta, TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class LLMClient:
         # Get API key from parameter, environment variable, or use hardcoded fallback
         # TODO: Remove hardcoded API key - SECURITY RISK!
         # TODO: Implement secure key management (e.g., secrets manager, encrypted config)
-        self._api_key = api_key or os.getenv("LLM_API_KEY") or "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"
+        self._api_key = api_key or os.getenv("LLM_API_KEY") or "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"
         
         # Configure API endpoint (defaults to OpenRouter)
         # TODO: Support multiple providers (OpenAI, Anthropic, local models)
@@ -168,7 +168,7 @@ class LLMClient:
                     # Max retries exceeded - yield error event
                     logger.error(f"Rate limit exceeded after {self._max_retries + 1} attempts")
                     yield StreamEvent(
-                        type=EventType.ERROR,
+                        type=StreamEventType.ERROR,
                         error=f"Rate limit exceeded after retries: {e}",
                     )
                     return
@@ -184,7 +184,7 @@ class LLMClient:
                 else:
                     logger.error(f"Connection failed after {self._max_retries + 1} attempts")
                     yield StreamEvent(
-                        type=EventType.ERROR,
+                        type=StreamEventType.ERROR,
                         error=f"Connection failed after retries: {e}",
                     )
                     return
@@ -193,7 +193,7 @@ class LLMClient:
                 # General API error - log and yield error event
                 logger.error(f"API error occurred: {e}")
                 yield StreamEvent(
-                    type=EventType.ERROR,
+                    type=StreamEventType.ERROR,
                     error=f"API error: {e}",
                 )
                 return
@@ -202,7 +202,7 @@ class LLMClient:
                 # Unexpected error - log and yield error event
                 logger.error(f"Unexpected error in chat_completion: {e}", exc_info=True)
                 yield StreamEvent(
-                    type=EventType.ERROR,
+                    type=StreamEventType.ERROR,
                     error=f"Unexpected error: {e}",
                 )
                 return
@@ -264,7 +264,7 @@ class LLMClient:
             # Yield text content as it arrives
             if delta.content:
                 yield StreamEvent(
-                    type=EventType.TEXT_DELTA,
+                    type=StreamEventType.TEXT_DELTA,
                     text_delta=TextDelta(
                         content=delta.content,
                         role=delta.role if delta.role else "assistant"
@@ -273,7 +273,7 @@ class LLMClient:
         
         # Signal completion with final usage statistics
         yield StreamEvent(
-            type=EventType.MESSAGE_COMPLETE,
+            type=StreamEventType.MESSAGE_COMPLETE,
             finish_reason=finish_reason,
             usage=usage,
         )
@@ -327,7 +327,7 @@ class LLMClient:
         
         # Return complete response as single event
         return StreamEvent(
-            type=EventType.MESSAGE_COMPLETE,
+            type=StreamEventType.MESSAGE_COMPLETE,
             text_delta=text_delta,
             finish_reason=choice.finish_reason,
             usage=usage,

@@ -24,7 +24,7 @@ class TextDelta:
         return self.content
 
 
-class EventType(str, Enum):
+class StreamEventType(str, Enum):
     """Enum representing different kinds of events in a streaming response."""
     TEXT_DELTA = "text_delta"
     MESSAGE_COMPLETE = "message_complete"
@@ -52,7 +52,7 @@ class TokenUsage:
 @dataclass
 class StreamEvent:
     """A single event emitted by the LLM client during streaming."""
-    type: EventType
+    type: StreamEventType
     text_delta: Optional[TextDelta] = None
     error: Optional[str] = None
     finish_reason: Optional[str] = None

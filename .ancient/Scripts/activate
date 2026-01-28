@@ -43,7 +43,7 @@ if [ "${OSTYPE:-}" = "cygwin" ] || [ "${OSTYPE:-}" = "msys" ] ; then
     export VIRTUAL_ENV=$(cygpath 'd:\courses\my_company\Ancient_alt\ancient\.ancient')
 else
     # use the path as-is
-    export VIRTUAL_ENV='D:\courses\my_company\Ancient_alt\ancient\.ancient'
+    export VIRTUAL_ENV='d:\courses\my_company\Ancient_alt\ancient\.ancient'
 fi
 
 _OLD_VIRTUAL_PATH="$PATH"
