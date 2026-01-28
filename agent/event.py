@@ -5,7 +5,7 @@ from typing import Any
 
 from client.response import TokenUsage
 
-class AgentEventType(Enum,str):
+class AgentEventType(str,Enum):
     # agent life cycle related staff
     AGENT_START = "agent_start"
     AGENT_END = "agent_end"
@@ -17,7 +17,7 @@ class AgentEventType(Enum,str):
 @dataclass
 class AgentEvent:
     type:AgentEventType
-    data = dict[str,Any] =field(
+    data : dict[str,Any] =field(
         default_factory=dict
     )
     
@@ -54,5 +54,22 @@ class AgentEvent:
             data={
                 "error":error,
                 "details":details or {}
+            }
+        )
+        
+    @classmethod
+    def text_delta(cls,content:str)-> AgentEvent:
+        return cls(
+            type=AgentEventType.TEXT_DELTA,
+            data={
+                "content":content
+            }
+        )
+    @classmethod
+    def text_complete(cls,content:str)-> AgentEvent:
+        return cls(
+            type=AgentEventType.TEXT_COMPLETE,
+            data={
+                "content":content
             }
         )
