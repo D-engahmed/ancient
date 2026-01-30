@@ -3,6 +3,7 @@ from typing import AsyncGenerator
 from agent.event import AgentEvent, AgentEventType
 from client.llm_client import LLMClient
 from client.response import StreamEventType
+from context.manager import ContextManager
 
 class Agent:
     """
@@ -18,6 +19,7 @@ class Agent:
     def __init__(self):
         # Initialize the LLM client for API communication
         self.client = LLMClient()
+        self.context_manager = ContextManager()
         
     async def run(self, message: str) -> AsyncGenerator[AgentEvent, None]:
         """
@@ -36,6 +38,7 @@ class Agent:
         """
         # Signal that agent processing has started
         yield AgentEvent.agent_start(message)
+        self.context_manager.add_user_message(message)
         
         # Variable to store the complete response
         final_response = ""
@@ -68,10 +71,8 @@ class Agent:
             AgentEvent: Events for text deltas, completion, or errors
         """
         # Build the conversation messages
-        # TODO: In future, this will include conversation history
-        messages = [
-            {"role": "user", "content": user_message}
-        ]
+        # TODO: In future, this (self.context_manager.get_messages()) will include conversation history
+       
         
         # Accumulate the response text
         response_text = ""
@@ -79,7 +80,7 @@ class Agent:
         try:
             # Stream completion from the LLM client
             async for event in self.client.chat_completion(
-                messages=messages,
+                self.context_manager.get_messages(),
                 stream=True  # Enable streaming for real-time output
             ):
                 # Handle text delta events (streaming chunks)
@@ -92,6 +93,7 @@ class Agent:
                 
                 # Handle completion event
                 elif event.type == StreamEventType.MESSAGE_COMPLETE:
+                    self.context_manager.add_assistant_message(response_text or None,)
                     # Stream is complete - emit final event
                     if response_text:
                         yield AgentEvent.text_complete(response_text)
