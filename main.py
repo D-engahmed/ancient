@@ -40,6 +40,7 @@ class CLI:
         assistant_streaming = False
         # Stream events from the agent
         async for event in self.agent.run(message):
+            print(event)
             # Handle text delta events (streaming chunks)
             if event.type == AgentEventType.TEXT_DELTA:
                 content = event.data.get("content", "")
@@ -62,6 +63,9 @@ class CLI:
                 error = event.data.get("error", "Unknown error")
                 console.print(f"\n[error]Error: {error}[/]")
                 return None
+            
+            elif event.type == AgentEventType.TOOL_CALL_START:
+                tool_name = event.data.get("name", "Unknown Tool")
         
         return full_response
 
@@ -94,7 +98,7 @@ def main(prompt: str | None = None):
             sys.exit(0)
         except Exception as e:
             # Catch any unexpected errors
-            console.print(f"[error]Unexpected error: {e}[/]")
+            console.print(f"[error]Unexpected error : {e}[/]")
             sys.exit(1)
     else:
         # No prompt provided - show usage

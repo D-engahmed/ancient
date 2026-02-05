@@ -1,9 +1,11 @@
 from __future__ import annotations
+from pathlib import Path
 from typing import AsyncGenerator
 from agent.event import AgentEvent, AgentEventType
 from client.llm_client import LLMClient
-from client.response import StreamEventType
+from client.response import StreamEventType, ToolCall, ToolResultMessage
 from context.manager import ContextManager
+from tools.registry import create_default_registry
 
 class Agent:
     """
@@ -20,6 +22,7 @@ class Agent:
         # Initialize the LLM client for API communication
         self.client = LLMClient()
         self.context_manager = ContextManager()
+        self.tool_registry = create_default_registry()
         
     async def run(self, message: str) -> AsyncGenerator[AgentEvent, None]:
         """
@@ -77,10 +80,14 @@ class Agent:
         # Accumulate the response text
         response_text = ""
         
+        tool_schemas = self.tool_registry.get_schemas()
+        tool_calls:list[ToolCall]=[]
+        
         try:
             # Stream completion from the LLM client
             async for event in self.client.chat_completion(
                 self.context_manager.get_messages(),
+                tools=tool_schemas if tool_schemas else None,
                 stream=True  # Enable streaming for real-time output
             ):
                 # Handle text delta events (streaming chunks)
@@ -91,19 +98,58 @@ class Agent:
                         # Emit agent event for UI to display
                         yield AgentEvent.text_delta(content)
                 
-                # Handle completion event
-                elif event.type == StreamEventType.MESSAGE_COMPLETE:
-                    self.context_manager.add_assistant_message(response_text or None,)
-                    # Stream is complete - emit final event
-                    if response_text:
-                        yield AgentEvent.text_complete(response_text)
+                elif event.type == StreamEventType.TOOL_CALL_COMPLETE:
+                    if event.tool_call:
+                        tool_calls.append(event.tool_call)
+                    
                 
                 # Handle error events from LLM client
                 elif event.type == StreamEventType.ERROR:
                     error_msg = event.error or "Unknown error occurred."
                     yield AgentEvent.agent_error(error_msg)
                     return  # Stop processing on error
-        
+                
+                # Handle completion event
+                elif event.type == StreamEventType.MESSAGE_COMPLETE:
+                    self.context_manager.add_assistant_message(response_text or None,)
+                    # Stream is complete - emit final event
+                    if response_text:
+                        yield AgentEvent.text_complete(response_text)
+                        
+                tool_call_results:list[ToolResultMessage] = []
+                for tool_call in tool_calls:
+                    yield AgentEvent.tool_call_start(
+                        tool_call.call_id,
+                        tool_call.name,
+                        tool_call.arguments,
+                    )
+                    
+                    
+                    result = await self.tool_registry.invoke(
+                        tool_call.name ,
+                        tool_call.arguments,
+                        Path.cwd(),
+                    )
+                    yield AgentEvent.tool_call_complete(
+                        tool_call.call_id,
+                        tool_call.name,
+                        result,
+                    )
+                    tool_call_results.append(
+                        ToolResultMessage(
+                            tool_call_id=tool_call.call_id,
+                            content= result.to_model_output(),
+                            is_error = not result.success,
+                        )
+                    )
+                    
+                for tool_result in tool_call_results:
+                    self.context_manager.add_tool_result(
+                        tool_result.tool_call_id,
+                        tool_result.content
+                        )
+                
+                
         except Exception as e:
             # Catch any unexpected errors in the loop
             yield AgentEvent.agent_error(

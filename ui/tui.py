@@ -1,3 +1,4 @@
+from typing import Any
 from rich.console import Console
 from rich.theme import Theme
 from rich.rule import Rule
@@ -83,7 +84,7 @@ def get_console() -> Console:
 class TUI:
     """
     Terminal User Interface for the AI agent.
-    
+
     Handles all visual output to the terminal with consistent theming.
     """
     
@@ -96,16 +97,17 @@ class TUI:
         """
         self.console = console or get_console()
         self._assistant_stream_open= False
+        self._tool_args_by_call_id:dict[str,dict[str,Any]]={}
         
-        def begin_assistant(self)->None:
+    def begin_assistant(self)->None:
+        self.console.print()
+        self.console.print(Rule(Text("Assistant",style="assistant")))
+        self._assistant_stream_open= True
+        
+    def end_assistant(self)->None:
+        if self._assistant_stream_open:
             self.console.print()
-            self.console.print(Rule(Text("Assistant",style="assistant")))
-            self._assistant_stream_open= True
-            
-        def end_assistant(self)->None:
-            if self._assistant_stream_open:
-                self.console.print()
-            self._assistant_stream_open=False
+        self._assistant_stream_open=False
             
     def stream_assistant_delta(self, content: str) -> None:
         """
@@ -141,5 +143,16 @@ class TUI:
         """
         self.console.print(banner)
         self.console.print()
+        
+    def tool_call_start(self, call_id: str,name:str,argument:dict[str,Any]) -> None:
+        """
+        Display the start of a tool call.
+        
+        Args:
+            call_id: Unique identifier for the tool call
+            name: Name of the tool being called
+            argument: Arguments passed to the tool
+        """
+        self._tool_args_by_call_id[call_id]=argument
         
         
