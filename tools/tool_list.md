@@ -1,0 +1,17 @@
+- read          — read file contents
+- write         — create/overwrite files
+- edit          — modify existing files
+- patch         — apply diffs to files
+- multiedit     — multiple edits per file
+- glob          — find files by pattern
+- grep          — search content in files
+- list          — list directory contents
+- bash          — execute shell commands
+- webfetch      — fetch web pages
+- websearch     — search online info/code
+- codesearch    — search code examples online
+- task          — run subagents
+- skill         — load helper instructions
+- todowrite     — update todo list
+- todoread      — read todo list
+- lsp* (exp)    — language server interactions

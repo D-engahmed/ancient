@@ -3,7 +3,15 @@ from typing import AsyncGenerator, Optional, Any
 import asyncio
 import os
 import logging
-from client.response import StreamEventType, StreamEvent, TextDelta, TokenUsage
+from client.response import (
+    StreamEventType,
+    StreamEvent, 
+    TextDelta, 
+    TokenUsage,
+    ToolCall,
+    ToolCallDelta,
+    parse_tool_call_arguments,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +52,7 @@ class LLMClient:
         # Get API key from parameter, environment variable, or use hardcoded fallback
         # TODO: Remove hardcoded API key - SECURITY RISK!
         # TODO: Implement secure key management (e.g., secrets manager, encrypted config)
-        self._api_key = api_key or os.getenv("LLM_API_KEY") or "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"
+        self._api_key = api_key or os.getenv("LLM_API_KEY") or "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"
         
         # Configure API endpoint (defaults to OpenRouter)
         # TODO: Support multiple providers (OpenAI, Anthropic, local models)
@@ -102,12 +110,34 @@ class LLMClient:
             await self._client.close()
             self._client = None
             logger.info("AsyncOpenAI client closed")
+            
+    def _build_tools(self, tools:list[dict[str,Any]])->list[dict[str,Any]]:
+        return [
+            {
+                "type":"function",
+                "function":{
+                    "name":tool["name"],
+                    "description":tool.get("description", ""),
+                    "parameters":tool.get(
+                        "parameters", 
+                        {
+                        
+                        "type":"object",
+                        "properties":{},
+                        
+                        },
+                    ),
+                },
+            }
+            for tool in tools
+        ]
 
     async def chat_completion(
         self,
         messages: list[dict[str, Any]],
         stream: bool = True,
-        model: str = "mistralai/devstral-2512:free",
+        tools:list[dict[str,Any]]|None=None,
+        model = "qwen/qwen3-coder:free",
         **kwargs: Any
     ) -> AsyncGenerator[StreamEvent, None]:
         """
@@ -141,6 +171,10 @@ class LLMClient:
             "stream": stream,
             **kwargs  # Allow caller to override defaults
         }
+        
+        if tools:
+            api_kwargs["tools"]=self._build_tools(tools)
+            kwargs["tool_choice"]= "auto"
         
         # Retry loop with exponential backoff
         for attempt in range(self._max_retries + 1):
@@ -203,7 +237,7 @@ class LLMClient:
                 logger.error(f"Unexpected error in chat_completion: {e}", exc_info=True)
                 yield StreamEvent(
                     type=StreamEventType.ERROR,
-                    error=f"Unexpected error: {e}",
+                    error=f"Unexpected error  in llm client: {e}",
                 )
                 return
 
@@ -225,7 +259,7 @@ class LLMClient:
         Yields:
             StreamEvent: TEXT_DELTA events for each chunk, MESSAGE_COMPLETE at end.
             
-        TODO: Add support for function/tool calls in streaming mode
+        ✔ TODO: Add support for function/tool calls in streaming mode DOnE
         TODO: Handle multiple choices if max_choices > 1
         TODO: Add streaming timeout handling
         """
@@ -235,6 +269,7 @@ class LLMClient:
         # Track usage and finish reason (sent with final event)
         usage: Optional[TokenUsage] = None
         finish_reason: Optional[str] = None
+        tool_calls:dict[int,dict[str,Any]]={}
         
         # Process each chunk in the stream
         async for chunk in response:
@@ -270,6 +305,53 @@ class LLMClient:
                         role=delta.role if delta.role else "assistant"
                     ),
                 )
+            
+            if delta.tool_calls:
+                for tool_call_delta in delta.tool_calls:
+                    idx = tool_call_delta.index
+
+                    if idx not in tool_calls:
+                        tool_calls[idx]={
+                            'id': tool_call_delta.id or "",
+                            "name": "",
+                            "arguments": "",
+                        }
+                        if tool_call_delta.function:
+                            if tool_call_delta.function.name:
+                                tool_calls[idx]["name"] = tool_call_delta.function.name
+                                yield StreamEvent(
+                                    type=StreamEventType.TOOL_CALL_START,
+                                    tool_call_delta=ToolCallDelta(
+                                        call_id= tool_calls[idx]['id'],
+                                        name= tool_call_delta.function.name,
+                                        
+                                        ),
+                                    
+                                ) 
+                            
+                            if tool_call_delta.function.arguments:
+                                tool_calls[idx]["arguments"] += tool_call_delta.function.arguments
+                                yield StreamEvent(
+                                    type=StreamEventType.TOOL_CALL_DELTA,
+                                    tool_call_delta=ToolCallDelta(
+                                        call_id= tool_calls[idx]['id'],
+                                        name= tool_call_delta.function.name,
+                                        arguments_delta=tool_call_delta.function.arguments,
+                                        ),
+                                    
+                                ) 
+            
+            
+        for idx ,tc in tool_calls.items():
+            yield StreamEvent(
+                type=StreamEventType.TOOL_CALL_COMPLETE,
+                tool_call= ToolCall(
+                    call_id=tc['id'],
+                    name=tc['name'],
+                    arguments=parse_tool_call_arguments(tc['arguments']),
+                    
+                )
+            )  
         
         # Signal completion with final usage statistics
         yield StreamEvent(
@@ -313,6 +395,17 @@ class LLMClient:
                 content=message.content,
                 role=message.role,
             )
+        
+        tool_calls:list[ToolCall]=[]
+        if message.tool_calls:
+            for tc in message.tool_calls:
+                tool_calls.append(
+                    ToolCall(
+                        call_id=tc.id ,
+                        name=tc.function.name,
+                        arguments=parse_tool_call_arguments(tc.function.arguments)
+                    )
+                )
         
         # Extract usage information if available
         usage = None
