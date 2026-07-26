@@ -1,0 +1,19 @@
+{
+    "name": "@ANCIENT/server",
+    "type": "module",
+    "private": true,
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "scripts": {
+        "dev": "bun run --hot src/index.ts"
+    },
+    "dependencies": {
+        "@ANCIENT/shared": "workspace:*",
+        "@ANCIENT/database": "workspace:*",
+        "@hono/zod-validator": "^0.9.0",
+        "dotenv": "^17.4.2",
+        "hono": "^4.12.32",
+        "zod": "^4.4.3"
+    }
+}

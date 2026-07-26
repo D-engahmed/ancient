@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import type { ThemeColors, Theme } from "../../theme";
 import { DEFAULT_THEME, THEMES } from "../../theme";
 
-const CONFIG_DIR = join(homedir(), ".nightcode");
+const CONFIG_DIR = join(homedir(), ".ANCIENT");
 const THEME_PREFERENCES_PATH = join(CONFIG_DIR, "preferences.json");
 
 type ThemePreferences = {
