@@ -1,4 +1,7 @@
 # ANCIENT
+=======
+# ancient
+ main
 
 **An AI coding agent, built to replace a subscription instead of paying for one.**
 
@@ -11,6 +14,9 @@ Every seat of a hosted AI coding assistant is a recurring cost. Most of them are
 This started as **HaMan**, built while I was on the team at MedixAI, to cut the cost of paying per-seat for AI coding tools. It grew into a real agent runtime — not a wrapper: an agentic loop, eleven built-in tools, MCP support, subagents, hooks, safety approval policies, session persistence. It ran on a free open-weights model (`mistralai/devstral-2512:free` via OpenRouter) instead of a paid API, so the running cost was close to zero.
 
 `ANCIENT` is that same project, rebuilt as my own — the terminal UI rewritten in Bun/TypeScript/React, with the agent core that made HaMan actually work being merged in around it.
+=======
+`ancient` is that same project, rebuilt as my own — the terminal UI rewritten in Bun/TypeScript/React, with the agent core that made HaMan actually work being merged in around it.
+ main
 
 ## Status
 
@@ -41,6 +47,9 @@ packages/agent/         # agent loop, LLM client, context management (in progres
 ## Why it matters
 
 The pitch isn't "another AI coding agent" — it's a working answer to "why am I paying per seat for something a small, well-scoped codebase can do on a free model." That's what made HaMan worth building the first time, and it's what `ANCIENT` is built to carry forward as its own thing.
+=======
+The pitch isn't "another AI coding agent" — it's a working answer to "why am I paying per seat for something a small, well-scoped codebase can do on a free model." That's what made HaMan worth building the first time, and it's what `ancient` is built to carry forward as its own thing.
+ main
 
 ## About the creator
 
@@ -52,3 +61,6 @@ Built by **Ahmed** — final-year Electronics & Communications Engineering stude
 ---
 
 *Actively being merged from HaMan into a standalone project — the status table above will move to "Live" line by line rather than all at once.*
+=======
+*Actively being merged from HaMan into a standalone project — the status table above will move to "Live" line by line rather than all at once.*
+main
