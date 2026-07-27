@@ -4,7 +4,7 @@
   "workspaces": ["packages/*"],
   "scripts": {
     "dev:cli": "bun run --watch packages/cli/src/index.tsx",
-    "dev:server": "bun run --hot packages/server/src/index.ts"
+    "dev:server": "bun --hot run packages/server/src/index.ts"
   }
   
 }
