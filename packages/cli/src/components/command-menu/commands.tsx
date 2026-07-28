@@ -7,6 +7,9 @@ import {
 } from "../dialogs";
 import type { Command } from "./types";
 
+import { performLogin } from "../../lib/oauth";
+import { clearAuth } from "../../lib/auth";
+
 export const COMMANDS: Command[] = [
     {
         name: "new",
@@ -69,8 +72,19 @@ export const COMMANDS: Command[] = [
         name: "login",
         description: "Sign in with your browser",
         value: "/login",
-        action: (ctx) => {
+        action: async (ctx) => {
             ctx.toast.show({ message: "Opening browser to sign in..." });
+
+            try {
+                await performLogin();
+                ctx.toast.show({ variant: "success", message: "Signed in" });
+            } catch (error) {
+                const message = error instanceof Error
+                    ? error.message
+                    : "Sign in failed or timed out";
+
+                ctx.toast.show({ variant: "error", message });
+            }
         },
     },
     {
@@ -78,6 +92,7 @@ export const COMMANDS: Command[] = [
         description: "Sign out of your account",
         value: "/logout",
         action: (ctx) => {
+            clearAuth();
             ctx.toast.show({ variant: "success", message: "Signed out" });
         },
     },
