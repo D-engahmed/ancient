@@ -5,6 +5,8 @@
   "scripts": {
     "dev:cli": "bun run --watch packages/cli/src/index.tsx",
     "dev:server": "bun --hot run packages/server/src/index.ts"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2"
   }
-  
 }
