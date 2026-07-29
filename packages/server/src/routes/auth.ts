@@ -1,31 +1,37 @@
-import { createClerkClient } from "@clerk/backend";
+import { Hono } from "hono";
 
-if (!process.env.CLERK_SECRET_KEY) {
-    throw new Error("CLERK_SECRET_KEY environment variable is required");
-}
+const app = new Hono().get("/callback", (c) => {
+    const code = c.req.query("code");
+    const state = c.req.query("state");
+    const error = c.req.query("error");
 
-if (!process.env.CLERK_PUBLISHABLE_KEY) {
-    throw new Error("CLERK_PUBLISHABLE_KEY environment variable is required");
-}
+    const errorDescription = c.req.query("error_description");
 
-const clerkClient = createClerkClient({
-    secretKey: process.env.CLERK_SECRET_KEY,
-    publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+    if (error) {
+        return c.text(errorDescription ?? error, 400);
+    }
+
+    if (!code || !state) {
+        return c.text("Missing authorization code or state", 400);
+    }
+
+    try {
+        const [encoded] = state.split(".");
+        if (!encoded) throw new Error("Invalid state");
+
+        const payload = JSON.parse(Buffer.from(encoded, "base64url").toString());
+        const port = payload.port;
+
+        if (!port || typeof port !== "number") {
+            throw new Error("Invalid port in state");
+        }
+
+        const redirectUrl = `http://localhost:${port}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
+
+        return c.redirect(redirectUrl);
+    } catch {
+        return c.text("Invalid authentication state", 400);
+    }
 });
 
-export async function authenticateOAuthRequest(request: Request) {
-    const requestState = await clerkClient.authenticateRequest(request, {
-        acceptsToken: "oauth_token",
-    });
-
-    if (!requestState.isAuthenticated) {
-        return null;
-    }
-
-    const auth = requestState.toAuth();
-    if (auth.tokenType !== "oauth_token" || !auth.userId) {
-        return null;
-    }
-
-    return { userId: auth.userId };
-};
+export default app;
