@@ -21,6 +21,7 @@
         "@ai-sdk/openai": "^4.0.20",
         "@clerk/backend": "^3.13.2",
         "@hono/zod-validator": "^0.9.0",
+        "@polar-sh/sdk": "^0.49.0",
         "@sentry/bun": "^10.68.0",
         "@sentry/hono": "^10.68.0",
         "ai": "^7.0.37",
