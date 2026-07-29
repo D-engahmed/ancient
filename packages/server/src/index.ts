@@ -11,7 +11,7 @@ const app = new Hono();
 
 app.onError((error, c) => {
   if (error instanceof HTTPException) {
-    return c.json({
+    return c.json({ 
       error: error.message || "Request failed",
     }, error.status);
   };

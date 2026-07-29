@@ -1,62 +1,87 @@
 import { z } from "zod";
+import { tool } from "ai";
 
-// Keep the explicit key schema here because the one-argument z.record(...) form
-// does not type-check cleanly with the Zod typings used in this workspace.
-export const toolCallArgsSchema = z.record(z.string(), z.json());
+export const Mode = {
+  BUILD: "BUILD",
+  PLAN: "PLAN",
+} as const;
 
-export const messagePartSchema = z.discriminatedUnion("type", [
-    z.object({
-        type: z.literal("reasoning"),
-        text: z.string(),
-    }),
-    z.object({
-        type: z.literal("tool-call"),
-        id: z.string(),
-        name: z.string(),
-        args: toolCallArgsSchema,
-        result: z.string().optional(),
-    }),
-    z.object({
-        type: z.literal("text"),
-        text: z.string(),
-    }),
-]);
+export const modeSchema = z.enum([Mode.BUILD, Mode.PLAN]);
 
-export const messagePartsSchema = z.array(messagePartSchema);
+export type ModeType = (typeof Mode)[keyof typeof Mode];
 
-export type MessagePart = z.infer<typeof messagePartSchema>;
+export const toolInputSchemas = {
+  readFile: z.object({
+    path: z.string().describe("Relative path to the file to read"),
+  }),
+  listDirectory: z.object({
+    path: z.string().default(".").describe("Relative directory path to list"),
+  }),
+  glob: z.object({
+    pattern: z.string().describe("Glob pattern to match files"),
+    path: z.string().default(".").describe("Directory to search from"),
+  }),
+  grep: z.object({
+    pattern: z.string().describe("Regex pattern to search for"),
+    path: z.string().default(".").describe("Directory to search from"),
+    include: z.string().optional().describe("Optional glob for files to include"),
+  }),
+  writeFile: z.object({
+    path: z.string().describe("Relative path to write"),
+    content: z.string().describe("File contents"),
+  }),
+  editFile: z.object({
+    path: z.string().describe("Relative path to edit"),
+    oldString: z.string().describe("Exact text to replace; must be unique"),
+    newString: z.string().describe("Replacement text"),
+  }),
+  bash: z.object({
+    command: z.string().describe("Shell command to run"),
+    description: z.string().optional().describe("Short description of the command"),
+    timeout: z.number().optional().describe("Timeout in milliseconds"),
+  }),
+} as const;
 
-// Tool-call args stay as nested JSON on the wire so the client does not need
-// a second JSON.parse step after decoding the SSE event payload itself.
-export const chatStreamEventSchema = z.discriminatedUnion("type", [
-    z.object({
-        type: z.literal("text-delta"),
-        text: z.string(),
-    }),
-    z.object({
-        type: z.literal("reasoning-delta"),
-        text: z.string(),
-    }),
-    z.object({
-        type: z.literal("tool-call"),
-        toolCallId: z.string(),
-        toolName: z.string(),
-        args: toolCallArgsSchema,
-    }),
-    z.object({
-        type: z.literal("tool-result"),
-        toolCallId: z.string(),
-        result: z.string(),
-    }),
-    z.object({
-        type: z.literal("done"),
-        messageId: z.string(),
-        durationMs: z.number(),
-    }),
-    z.object({
-        type: z.literal("error"),
-        message: z.string(),
-    }),
-]);
+export const readOnlyToolContracts = {
+  readFile: tool({
+    description: "Read a file from the current project directory.",
+    inputSchema: toolInputSchemas.readFile,
+  }),
+  listDirectory: tool({
+    description: "List entries in a directory under the current project directory.",
+    inputSchema: toolInputSchemas.listDirectory,
+  }),
+  glob: tool({
+    description: "Find files matching a glob pattern under the current project directory.",
+    inputSchema: toolInputSchemas.glob,
+  }),
+  grep: tool({
+    description:
+      "Search file contents with a regular expression under the current project directory.",
+    inputSchema: toolInputSchemas.grep,
+  }),
+} as const;
 
-export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
+export const buildToolContracts = {
+  ...readOnlyToolContracts,
+  writeFile: tool({
+    description: "Create or overwrite a file under the current project directory.",
+    inputSchema: toolInputSchemas.writeFile,
+  }),
+  editFile: tool({
+    description: "Replace exact text in a file under the current project directory.",
+    inputSchema: toolInputSchemas.editFile,
+  }),
+  bash: tool({
+    description: "Run a shell command in the current project directory.",
+    inputSchema: toolInputSchemas.bash,
+  }),
+} as const;
+
+export type ToolContracts = typeof buildToolContracts;
+
+export function getToolContracts(mode: ModeType) {
+  return mode === Mode.PLAN 
+    ? readOnlyToolContracts 
+    : buildToolContracts;
+};

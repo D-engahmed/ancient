@@ -7,19 +7,19 @@ import { ThemedRoot } from "./themed-root";
 import { PromptConfigProvider } from "../providers/prompt-config";
 
 export function RootLayout() {
-    return (
-        <ThemeProvider>
-            <ToastProvider>
-                <KeyboardLayerProvider>
-                    <DialogProvider>
-                        <PromptConfigProvider>
-                            <ThemedRoot>
-                                <Outlet />
-                            </ThemedRoot>
-                        </PromptConfigProvider>
-                    </DialogProvider>
-                </KeyboardLayerProvider>
-            </ToastProvider>
-        </ThemeProvider>
-    );
+  return (
+    <ThemeProvider>
+      <ToastProvider>
+        <KeyboardLayerProvider>
+          <DialogProvider>
+            <PromptConfigProvider>
+              <ThemedRoot>
+                <Outlet />
+              </ThemedRoot>
+            </PromptConfigProvider>
+          </DialogProvider>
+        </KeyboardLayerProvider>
+      </ToastProvider>
+    </ThemeProvider>
+  );
 };
