@@ -8,17 +8,18 @@
     "./enums": "./src/enums.ts"
   },
   "scripts": {
-  "db:generate": "bunx prisma generate",
-  "seed": "bun run db:generate && bun run seed.ts"
-},
+    "db:generate": "bunx prisma generate",
+    "seed": "bun run db:generate && bun run seed.ts"
+  },
   "devDependencies": {
     "@types/node": "^25.5.2",
     "prisma": "^7.7.0"
   },
   "dependencies": {
+    "@ANCIENT/shared": "workspace:*",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
     "dotenv": "^17.4.1",
-    "@ANCIENT/shared": "workspace:*"
+    "pg": "^8.22.0"
   }
 }

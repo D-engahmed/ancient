@@ -11,12 +11,13 @@
     "postinstall": "bun run --cwd ../database db:generate"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.68",
-    "@ai-sdk/openai": "^3.0.52",
-    "@clerk/backend": "^3.2.8",
-    "@hono/zod-validator": "^0.7.6",
     "@ANCIENT/database": "workspace:*",
     "@ANCIENT/shared": "workspace:*",
+    "@ai-sdk/anthropic": "^4.0.27",
+    "@ai-sdk/google": "^4.0.31",
+    "@ai-sdk/openai": "^4.0.27",
+    "@clerk/backend": "^3.2.8",
+    "@hono/zod-validator": "^0.7.6",
     "ai": "^6.0.154",
     "dotenv": "^17.4.1",
     "hono": "^4.12.12",

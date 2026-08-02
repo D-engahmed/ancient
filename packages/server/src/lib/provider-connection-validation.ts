@@ -1,3 +1,6 @@
+// Copyright (c) 2026 NXG AI Solutions. All rights reserved.
+// Proprietary and confidential. Unauthorized copying or distribution prohibited.
+
 type ConnectionProtocol = "openai" | "anthropic" | "gemini";
 
 type ConnectionInput = {
@@ -6,7 +9,7 @@ type ConnectionInput = {
     apiKey: string;
 };
 
-export class ProviderConnectionValidationError extends Error {}
+export class ProviderConnectionValidationError extends Error { }
 
 function modelsUrl(protocol: ConnectionProtocol, baseUrl: string): URL {
     const path = protocol === "anthropic" ? "v1/models" : "models";
@@ -15,17 +18,21 @@ function modelsUrl(protocol: ConnectionProtocol, baseUrl: string): URL {
 
 export async function validateProviderConnection(input: ConnectionInput): Promise<void> {
     const headers = new Headers({ Accept: "application/json" });
-    const url = modelsUrl(input.protocol, input.baseUrl);
+    let url: URL;
 
+    // FIXED: Gemini uses key as query param, not header
     if (input.protocol === "gemini") {
-        headers.set("x-goog-api-key", input.apiKey);
-    } else if (input.apiKey) {
-        headers.set("Authorization", `Bearer ${input.apiKey}`);
+        url = new URL(`${input.baseUrl.replace(/\/+$/, "")}/models?key=${encodeURIComponent(input.apiKey)}`);
+    } else {
+        url = modelsUrl(input.protocol, input.baseUrl);
+        if (input.apiKey) {
+            headers.set("Authorization", `Bearer ${input.apiKey}`);
+        }
     }
 
     let response: Response;
     try {
-        response = await fetch(url, {
+        response = await fetch(url.toString(), {
             headers,
             signal: AbortSignal.timeout(10_000),
         });

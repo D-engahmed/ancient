@@ -1,3 +1,6 @@
+// Copyright (c) 2026 NXG AI Solutions. All rights reserved.
+// Proprietary and confidential. Unauthorized copying or distribution prohibited.
+
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
@@ -18,13 +21,11 @@ app.onError((error, c) => {
   return c.json({ error: "Internal server error" }, 500);
 });
 
-// Middleware
 app.use("/sessions/*", requireAuth);
 app.use("/chat/*", requireAuth);
 app.use("/chat/*", byokRateLimit);
 app.use("/provider-connections/*", requireAuth);
 
-// Routes
 const routes = app
   .route("/auth", auth)
   .route("/sessions", sessions)
@@ -32,4 +33,4 @@ const routes = app
   .route("/provider-connections", providerConnections);
 
 export type AppType = typeof routes;
-export default { port: 3000, fetch: app.fetch, idleTimeout: 255 };  
+export default { port: 3000, fetch: app.fetch, idleTimeout: 255 };

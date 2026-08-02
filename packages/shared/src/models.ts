@@ -1,6 +1,5 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-// file: packages/shared/src/models.ts
+// Copyright (c) 2026 NXG AI Solutions. All rights reserved.
+// Proprietary and confidential. Unauthorized copying or distribution prohibited.
 
 export type ModelPricing = {
   inputUsdPerMillionTokens: number;
@@ -16,126 +15,29 @@ type SupportedChatModelDefinition = {
 };
 
 export const SUPPORTED_CHAT_MODELS = [
-  // OpenAI (latest)
-  {
-    id: "gpt-5.6-sol",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 4, outputUsdPerMillionTokens: 20 },
-  },
-  {
-    id: "gpt-5.5",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 3, outputUsdPerMillionTokens: 15 },
-  },
-  {
-    id: "gpt-5.4",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 2.5, outputUsdPerMillionTokens: 15 },
-  },
-  {
-    id: "gpt-5.4-mini",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 0.75, outputUsdPerMillionTokens: 4.5 },
-  },
-  {
-    id: "gpt-5.4-nano",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 0.2, outputUsdPerMillionTokens: 1.25 },
-  },
-  {
-    id: "gpt-5.2",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 2, outputUsdPerMillionTokens: 12 },
-  },
-  {
-    id: "gpt-5.1",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 1.5, outputUsdPerMillionTokens: 8 },
-  },
-  {
-    id: "gpt-4.1",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 1, outputUsdPerMillionTokens: 5 },
-  },
-  {
-    id: "gpt-4.1-mini",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 0.3, outputUsdPerMillionTokens: 1.5 },
-  },
-  // Note: gpt-4o and variants are included for backward compatibility
-  {
-    id: "gpt-4o",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 5, outputUsdPerMillionTokens: 15 },
-  },
-  {
-    id: "gpt-4o-mini",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 0.15, outputUsdPerMillionTokens: 0.6 },
-  },
-  // Reasoning models
-  {
-    id: "o4-mini",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 0.3, outputUsdPerMillionTokens: 1.2 },
-  },
-  {
-    id: "o3-mini",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 0.15, outputUsdPerMillionTokens: 0.6 },
-  },
-  {
-    id: "o1",
-    provider: "openai",
-    pricing: { inputUsdPerMillionTokens: 0.5, outputUsdPerMillionTokens: 2 },
-  },
-
-  // Anthropic
-  {
-    id: "claude-sonnet-5",
-    provider: "anthropic",
-    pricing: { inputUsdPerMillionTokens: 2, outputUsdPerMillionTokens: 10 },
-  },
-  {
-    id: "claude-opus-4-8",
-    provider: "anthropic",
-    pricing: { inputUsdPerMillionTokens: 5, outputUsdPerMillionTokens: 25 },
-  },
-  {
-    id: "claude-opus-4-6",
-    provider: "anthropic",
-    pricing: { inputUsdPerMillionTokens: 5, outputUsdPerMillionTokens: 25 },
-  },
-  {
-    id: "claude-sonnet-4-6",
-    provider: "anthropic",
-    pricing: { inputUsdPerMillionTokens: 3, outputUsdPerMillionTokens: 15 },
-  },
-  {
-    id: "claude-haiku-4-5",
-    provider: "anthropic",
-    pricing: { inputUsdPerMillionTokens: 1, outputUsdPerMillionTokens: 5 },
-  },
-  {
-    id: "claude-opus-4-5",
-    provider: "anthropic",
-    pricing: { inputUsdPerMillionTokens: 4, outputUsdPerMillionTokens: 20 },
-  },
-  {
-    id: "claude-sonnet-4-5",
-    provider: "anthropic",
-    pricing: { inputUsdPerMillionTokens: 2.5, outputUsdPerMillionTokens: 12 },
-  },
-  {
-    id: "claude-3-7-sonnet-20250219",
-    provider: "anthropic",
-    pricing: { inputUsdPerMillionTokens: 3, outputUsdPerMillionTokens: 15 },
-  },
-  {
-    id: "claude-3-5-sonnet-20241022",
-    provider: "anthropic",
-    pricing: { inputUsdPerMillionTokens: 3, outputUsdPerMillionTokens: 15 },
-  },
+  { id: "gpt-5.6-sol", provider: "openai", pricing: { inputUsdPerMillionTokens: 4, outputUsdPerMillionTokens: 20 } },
+  { id: "gpt-5.5", provider: "openai", pricing: { inputUsdPerMillionTokens: 3, outputUsdPerMillionTokens: 15 } },
+  { id: "gpt-5.4", provider: "openai", pricing: { inputUsdPerMillionTokens: 2.5, outputUsdPerMillionTokens: 15 } },
+  { id: "gpt-5.4-mini", provider: "openai", pricing: { inputUsdPerMillionTokens: 0.75, outputUsdPerMillionTokens: 4.5 } },
+  { id: "gpt-5.4-nano", provider: "openai", pricing: { inputUsdPerMillionTokens: 0.2, outputUsdPerMillionTokens: 1.25 } },
+  { id: "gpt-5.2", provider: "openai", pricing: { inputUsdPerMillionTokens: 2, outputUsdPerMillionTokens: 12 } },
+  { id: "gpt-5.1", provider: "openai", pricing: { inputUsdPerMillionTokens: 1.5, outputUsdPerMillionTokens: 8 } },
+  { id: "gpt-4.1", provider: "openai", pricing: { inputUsdPerMillionTokens: 1, outputUsdPerMillionTokens: 5 } },
+  { id: "gpt-4.1-mini", provider: "openai", pricing: { inputUsdPerMillionTokens: 0.3, outputUsdPerMillionTokens: 1.5 } },
+  { id: "gpt-4o", provider: "openai", pricing: { inputUsdPerMillionTokens: 5, outputUsdPerMillionTokens: 15 } },
+  { id: "gpt-4o-mini", provider: "openai", pricing: { inputUsdPerMillionTokens: 0.15, outputUsdPerMillionTokens: 0.6 } },
+  { id: "o4-mini", provider: "openai", pricing: { inputUsdPerMillionTokens: 0.3, outputUsdPerMillionTokens: 1.2 } },
+  { id: "o3-mini", provider: "openai", pricing: { inputUsdPerMillionTokens: 0.15, outputUsdPerMillionTokens: 0.6 } },
+  { id: "o1", provider: "openai", pricing: { inputUsdPerMillionTokens: 0.5, outputUsdPerMillionTokens: 2 } },
+  { id: "claude-sonnet-5", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 2, outputUsdPerMillionTokens: 10 } },
+  { id: "claude-opus-4-8", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 5, outputUsdPerMillionTokens: 25 } },
+  { id: "claude-opus-4-6", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 5, outputUsdPerMillionTokens: 25 } },
+  { id: "claude-sonnet-4-6", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 3, outputUsdPerMillionTokens: 15 } },
+  { id: "claude-haiku-4-5", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 1, outputUsdPerMillionTokens: 5 } },
+  { id: "claude-opus-4-5", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 4, outputUsdPerMillionTokens: 20 } },
+  { id: "claude-sonnet-4-5", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 2.5, outputUsdPerMillionTokens: 12 } },
+  { id: "claude-3-7-sonnet-20250219", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 3, outputUsdPerMillionTokens: 15 } },
+  { id: "claude-3-5-sonnet-20241022", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 3, outputUsdPerMillionTokens: 15 } },
 ] as const satisfies readonly SupportedChatModelDefinition[];
 
 export type SupportedChatModel = (typeof SUPPORTED_CHAT_MODELS)[number];
