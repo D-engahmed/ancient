@@ -1,7 +1,11 @@
-import { resolve, relative } from "path";
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+// file: packages/server/src/tools/read-file.ts
+
 import { readFile } from "fs/promises";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveWithinCwd } from "../lib/fs-safety";
 
 const MAX_FILE_SIZE = 10_000;
 
@@ -13,18 +17,9 @@ export function createReadFileTool(cwd: string) {
             path: z.string().describe("Relative path to the file to read"),
         }),
         execute: async ({ path }) => {
-            const resolved = resolve(cwd, path);
-            const rel = relative(cwd, resolved);
+            const resolved = resolveWithinCwd(cwd, path);
 
-            if (
-                rel.startsWith("..") ||
-                (resolve(resolved) !== resolved && rel.startsWith(".."))
-            ) {
-                return { error: "Path is outside the project directory" };
-            }
-
-            // Ensure resolved path is still within cwd
-            if (!resolved.startsWith(cwd)) {
+            if (!resolved) {
                 return { error: "Path is outside the project directory" };
             }
 

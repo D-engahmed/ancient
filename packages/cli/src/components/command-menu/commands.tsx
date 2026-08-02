@@ -1,16 +1,17 @@
-import { SUPPORTED_CHAT_MODELS } from "@ANCIENT/shared";
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/command-menu/commands.tsx
+
 import {
   AgentsDialogContent,
   ModelsDialogContent,
   SessionsDialogContent,
   ThemeDialogContent,
-} from "../dialogs";
+} from "../dialogs/index";
 import type { Command } from "./types";
 
 import { performLogin } from "../../lib/oauth";
 import { clearAuth } from "../../lib/auth";
-
-import { openBillingPortal, openUpgradeCheckout } from "../../lib/upgrade";
 
 export const COMMANDS: Command[] = [
   {
@@ -34,17 +35,12 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "models",
-    description: "Select AI model for generation",
+    description: "Select a model or add a connection",
     value: "/models",
     action: (ctx) => {
       ctx.dialog.open({
         title: "Select Model",
-        children: (
-          <ModelsDialogContent
-            models={SUPPORTED_CHAT_MODELS.map((model) => model.id)}
-            onSelectModel={ctx.setModel}
-          />
-        ),
+        children: <ModelsDialogContent />,
       })
     },
   },
@@ -99,49 +95,12 @@ export const COMMANDS: Command[] = [
     },
   },
   {
-    name: "upgrade",
-    description: "Buy more credits",
-    value: "/upgrade",
-    action: async (ctx) => {
-      ctx.toast.show({ message: "Opening credits checkout..." });
-
-      try {
-        await openUpgradeCheckout();
-        ctx.toast.show({
-          variant: "success",
-          message: "Checkout opened in browser",
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to open checkout";
-        ctx.toast.show({ variant: "error", message });
-      }
-    },
-  },
-  {
-    name: "usage",
-    description: "Open billing portal in your browser",
-    value: "/usage",
-    action: async (ctx) => {
-      ctx.toast.show({ message: "Opening billing portal..." });
-
-      try {
-        await openBillingPortal();
-        ctx.toast.show({
-          variant: "success",
-          message: "Billing portal opened in browser",
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to open billing portal";
-        ctx.toast.show({ variant: "error", message });
-      }
-    },
-  },
-  {
     name: "exit",
     description: "Quit the application",
     value: "/exit",
     action: (ctx) => {
       ctx.exit();
     },
+
   },
 ];

@@ -1,6 +1,11 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/screens/new-session.tsx
+
 import { useEffect, useMemo, useRef } from "react";
 import { z } from "zod";
-import { Mode, modeSchema } from "@ANCIENT/shared";
+import { Mode, modeSchema, chatModelSelectionSchema } from "@ANCIENT/shared";
 import { useNavigate, useLocation } from "react-router";
 import { SessionShell } from "../components/session-shell";
 import { UserMessage } from "../components/messages";
@@ -11,7 +16,7 @@ import { getErrorMessage } from "../lib/http-errors";
 const newSessionStateSchema = z.object({
   message: z.string(),
   mode: modeSchema,
-  model: z.string(),
+  model: chatModelSelectionSchema,
 });
 
 export function NewSession() {
@@ -23,16 +28,14 @@ export function NewSession() {
   const state = useMemo(() => {
     const parsed = newSessionStateSchema.safeParse(location.state);
     return parsed.success ? parsed.data : null;
-  }, [location.state])
+  }, [location.state]);
 
-  // Guard: if navigated here directly without state, go home
   useEffect(() => {
     if (!state) {
       navigate("/", { replace: true });
     }
   }, [state, navigate]);
 
-  // Create the session on mount — this screen exists to do this
   useEffect(() => {
     if (!state || hasStartedRef.current) return;
 
@@ -79,4 +82,4 @@ export function NewSession() {
       <UserMessage message={state.message} mode={state.mode} />
     </SessionShell>
   );
-};
+}

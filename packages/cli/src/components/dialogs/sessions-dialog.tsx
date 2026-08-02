@@ -1,3 +1,9 @@
+
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/dialogs/sessions-dialog.tsx
+
 import { useCallback, useEffect, useState } from "react";
 import { TextAttributes } from "@opentui/core";
 import { format } from "date-fns";
@@ -7,9 +13,12 @@ import { useToast } from "../../providers/toast";
 import { apiClient } from "../../lib/api-client";
 import { getErrorMessage } from "../../lib/http-errors";
 import { DialogSearchList } from "../dialog-search-list";
-import type { InferResponseType } from "hono/client";
 
-type Session = InferResponseType<(typeof apiClient.sessions)["$get"], 200>[number];
+type Session = {
+  id: string;
+  title: string;
+  createdAt: string;
+};
 
 export const SessionsDialogContent = () => {
   const [sessions, setSessions] = useState<Session[]>([]);

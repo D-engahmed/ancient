@@ -1,3 +1,6 @@
+// copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/header.tsx
 export function Header() {
   return (
     <box justifyContent="center" alignItems="center">

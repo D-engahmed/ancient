@@ -1,3 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/theme.ts
+
 export type ThemeColors = {
   primary: string;
   planMode: string;

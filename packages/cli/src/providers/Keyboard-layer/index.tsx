@@ -1,8 +1,11 @@
-import React, { 
-  createContext, 
-  useContext, 
-  useState, 
-  useCallback, 
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/providers/Keyboard-layer/index.tsx
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
   useRef
 } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
@@ -81,7 +84,7 @@ export function KeyboardLayerProvider({ children }: { children: React.ReactNode 
   });
 
   return (
-    <KeyboardLayerContext.Provider 
+    <KeyboardLayerContext.Provider
       value={{ push, pop, isTopLayer, setResponder }}
     >
       {children}

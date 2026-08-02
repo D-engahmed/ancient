@@ -1,3 +1,8 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/dialogs/agents-dialog.tsx
+
 import { useCallback } from "react";
 import { useDialog } from "../../providers/dialog";
 import { DialogSearchList } from "../dialog-search-list";

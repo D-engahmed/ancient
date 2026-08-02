@@ -1,3 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+// file: packages/server/src/middleware/require-auth.ts
+
 import { createMiddleware } from "hono/factory";
 import { authenticateOAuthRequest } from "../lib/auth";
 

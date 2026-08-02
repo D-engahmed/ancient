@@ -1,3 +1,8 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/messages/user-message.tsx
+
 import { Mode, type ModeType } from "@ANCIENT/shared";
 import { EmptyBorder } from "../border";
 import { useTheme } from "../../providers/theme";

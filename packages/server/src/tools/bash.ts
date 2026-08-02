@@ -1,5 +1,11 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+// file: packages/server/src/tools/bash.ts
+
 import { tool } from "ai";
 import { z } from "zod";
+import { findDangerousCommandMatch } from "../lib/dangerous-commands";
 
 const MAX_OUTPUT = 20_000;
 const DEFAULT_TIMEOUT = 30_000;
@@ -16,6 +22,13 @@ export function createBashTool(cwd: string) {
                 .default(DEFAULT_TIMEOUT),
         }),
         execute: async ({ command, timeout }) => {
+            const blockedReason = findDangerousCommandMatch(command);
+            if (blockedReason) {
+                return {
+                    error: `Blocked before execution: this command matches a known-destructive pattern (${blockedReason}). If this is genuinely intended, the user needs to run it manually.`,
+                };
+            }
+
             try {
                 const proc = Bun.spawn(["bash", "-c", command], {
                     cwd,

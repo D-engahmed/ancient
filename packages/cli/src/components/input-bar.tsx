@@ -1,3 +1,8 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/input-bar.tsx
+
 import { readdir } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 
@@ -15,11 +20,12 @@ import { CommandMenu } from "./command-menu";
 import type { Command } from "./command-menu/types";
 import { useCommandMenu } from "./command-menu/use-command-menu";
 import { useToast } from "../providers/toast";
-import { useKeyboardLayer } from "../providers/keyboard-layer";
+import { useKeyboardLayer } from "../providers/Keyboard-layer";
 import { useDialog } from "../providers/dialog";
 import { useTheme } from "../providers/theme";
 import { usePromptConfig } from "../providers/prompt-config";
 import { Mode } from "@ANCIENT/shared";
+import { RenderGuard } from "./dev/render-guard";
 
 const MAX_VISIBLE_MENTIONS = 8;
 const CURRENT_DIRECTORY = process.cwd();
@@ -413,7 +419,6 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
     [resolveCommand, handleCommand],
   );
 
-  // Keep the file picker in sync with the current @mention token.
   useEffect(() => {
     if (!activeMention) {
       setMentionCandidates([]);
@@ -441,7 +446,6 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
     };
   }, [activeMention]);
 
-  // Wire up textarea submit handler once so it always reads the latest state.
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -480,7 +484,6 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
     }
   });
 
-  // Register the base layer responder for ctrl+c dismissal
   useEffect(() => {
     setResponder("base", () => {
       if (disabled) return false;
@@ -566,13 +569,15 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
               backgroundColor={colors.surface}
               zIndex={10}
             >
-              <CommandMenu
-                query={commandQuery}
-                selectedIndex={selectedIndex}
-                scrollRef={scrollRef}
-                onSelect={setSelectedIndex}
-                onExecute={handleCommandExecute}
-              />
+              <RenderGuard label="CommandMenu">
+                <CommandMenu
+                  query={commandQuery}
+                  selectedIndex={selectedIndex}
+                  scrollRef={scrollRef}
+                  onSelect={setSelectedIndex}
+                  onExecute={handleCommandExecute}
+                />
+              </RenderGuard>
             </box>
           )}
           {!showCommandMenu && showMentionMenu && (
@@ -584,13 +589,15 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
               backgroundColor={colors.surface}
               zIndex={10}
             >
-              <FileMentionMenu
-                candidates={mentionCandidates}
-                selectedIndex={mentionSelectedIndex}
-                scrollRef={mentionScrollRef}
-                onSelect={setMentionSelectedIndex}
-                onExecute={handleMentionExecute}
-              />
+              <RenderGuard label="FileMentionMenu">
+                <FileMentionMenu
+                  candidates={mentionCandidates}
+                  selectedIndex={mentionSelectedIndex}
+                  scrollRef={mentionScrollRef}
+                  onSelect={setMentionSelectedIndex}
+                  onExecute={handleMentionExecute}
+                />
+              </RenderGuard>
             </box>
           )}
           <textarea

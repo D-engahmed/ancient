@@ -1,10 +1,14 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/providers/dialog/index.tsx 
 import { createContext, useContext, useState, useCallback } from "react";
 import type { ReactNode } from "react";
 import { TextAttributes, RGBA } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import type { DialogConfig } from "./types";
-import { useKeyboardLayer } from "../keyboard-layer";
+import { useKeyboardLayer } from "../Keyboard-layer";
 import { useTheme } from "../theme";
+import { RenderGuard } from "../../components/dev/render-guard";
 
 export type DialogContextValue = {
   open: (config: DialogConfig) => void;
@@ -116,7 +120,9 @@ function Dialog({ currentDialog, close }: DialogProps) {
             esc
           </text>
         </box>
-        <box flexGrow={1}>{children}</box>
+        <box flexGrow={1}>
+          <RenderGuard label="DialogChildren">{children}</RenderGuard>
+        </box>
       </box>
     </box>
   );

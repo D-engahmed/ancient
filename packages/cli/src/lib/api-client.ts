@@ -1,9 +1,12 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/lib/api-client.ts
 import { hc } from "hono/client";
 import type { AppType } from "@ANCIENT/server";
 import { clearAuth, getAuth } from "./auth";
 
 export const apiClient = hc<AppType>(
-  process.env.API_URL ?? "http://localhost:3000",
+  process.env.API_URL ?? `http://localhost:${process.env.PORT ?? 3000}`,
   {
     fetch: async (
       input: Parameters<typeof fetch>[0],
@@ -24,4 +27,4 @@ export const apiClient = hc<AppType>(
       return response;
     }
   }
-);
+) as any;

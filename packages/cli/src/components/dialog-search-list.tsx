@@ -1,7 +1,10 @@
+// copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/dialog-search-list.tsx
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { useKeyboardLayer } from "../providers/keyboard-layer";
+import { useKeyboardLayer } from "../providers/Keyboard-layer";
 import { useTheme } from "../providers/theme";
 
 const MAX_VISIBLE_ITEMS = 6;
@@ -44,8 +47,8 @@ export function DialogSearchList<T>({
       scrollbox.scrollTo(0);
     }
   }, []);
-    
-  const filtered = searchValue 
+
+  const filtered = searchValue
     ? items.filter((item) => filterFn(item, searchValue)) : items;
 
   const visibleHeight = Math.min(filtered.length, MAX_VISIBLE_ITEMS);

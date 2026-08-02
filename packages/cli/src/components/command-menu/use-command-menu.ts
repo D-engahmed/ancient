@@ -1,9 +1,14 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/command-menu/use-command-menu.ts
+
 import { useRef, useState, useMemo, type RefObject } from "react";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { getFilteredCommands } from "./filter-commands";
 import type { Command } from "./types";
-import { useKeyboardLayer } from "../../providers/keyboard-layer";
+import { useKeyboardLayer } from "../../providers/Keyboard-layer";
 
 type UseCommandMenuReturn = {
   showCommandMenu: boolean;

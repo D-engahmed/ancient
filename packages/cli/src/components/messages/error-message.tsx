@@ -1,3 +1,8 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/messages/error-message.tsx
+
 import { TextAttributes } from "@opentui/core";
 import { EmptyBorder } from "../border";
 import { useTheme } from "../../providers/theme";

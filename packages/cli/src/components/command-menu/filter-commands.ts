@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/command-menu/filter-commands.ts
 import type { Command } from "./types";
 import { COMMANDS } from "./commands";
 

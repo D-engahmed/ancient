@@ -1,3 +1,8 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+// file: packages/server/src/routes/sessions.ts
+
 import { Hono } from "hono";
 // import { HTTPException } from "hono/http-exception";
 import { zValidator } from "@hono/zod-validator";
@@ -5,7 +10,6 @@ import { z } from "zod";
 import { db } from "@ANCIENT/database/client";
 
 import type { AuthenticatedEnv } from "../middleware/require-auth";
-import { requireCreditsBalance } from "../middleware/require-credits-balance";
 
 
 const createSessionSchema = z.object({
@@ -50,6 +54,7 @@ const app = new Hono<AuthenticatedEnv>()
 
     const session = await db.session.findUnique({
       where: { id, userId },
+      include: { messages: { orderBy: { createdAt: "asc" } } },
     });
 
     if (!session) {
@@ -58,7 +63,7 @@ const app = new Hono<AuthenticatedEnv>()
 
     return c.json(session);
   })
-  .post("/", requireCreditsBalance, createSessionValidator, async (c) => {
+  .post("/", createSessionValidator, async (c) => {
     // MOCK: Uncomment to simulate slow session loading
     // await new Promise((r) => setTimeout(r, 5000))
 

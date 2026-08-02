@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/lib/http-errors.ts
 type ErrorResponse = {
   json: () => Promise<unknown>;
   status: number;

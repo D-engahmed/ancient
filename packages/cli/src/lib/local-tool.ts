@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/lib/local-tool.ts
 import { mkdir, readFile, readdir, stat, writeFile } from "fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { toolInputSchemas, Mode, type ModeType } from "@ANCIENT/shared";

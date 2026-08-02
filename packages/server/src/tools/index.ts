@@ -1,3 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+// file: packages/server/src/tools/index.ts
+
 import type { Mode } from "@ANCIENT/database/enums";
 import { createReadFileTool } from "./read-file";
 import { createListDirectoryTool } from "./list-directory";

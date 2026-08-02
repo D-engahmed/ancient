@@ -1,3 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved. 
+// Licensed under the MIT License.
+// file: packages/cli/src/providers/theme/index.tsx
+
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

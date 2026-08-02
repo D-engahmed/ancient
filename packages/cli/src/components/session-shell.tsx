@@ -1,3 +1,8 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/session-shell.tsx
+
 import { TextAttributes } from "@opentui/core";
 import type { ReactNode } from "react";
 import { InputBar } from "./input-bar";

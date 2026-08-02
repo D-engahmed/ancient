@@ -1,3 +1,8 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/hooks/use-chat.ts
+// This file is part of the Ancient project, licensed under the MIT License.
+// *aspath: packages/cli/src/hooks/use-chat.ts
 import { useMemo } from "react";
 import { useChat as useAiChat } from "@ai-sdk/react";
 import {
@@ -7,14 +12,18 @@ import {
   type LanguageModelUsage,
   type UIMessage,
 } from "ai";
-import { type ModeType, type SupportedChatModelId, type ToolContracts } from "@ANCIENT/shared";
+import {
+  type ModeType,
+  type ChatModelSelection,
+  type ToolContracts,
+} from "@ANCIENT/shared";
 import { apiClient } from "../lib/api-client";
 import { getAuth } from "../lib/auth";
 import { executeLocalTool } from "../lib/local-tools";
 
 export type ChatMessageMetadata = {
   mode?: ModeType;
-  model?: SupportedChatModelId | string;
+  model?: ChatModelSelection; // now an object
   durationMs?: number;
   usage?: LanguageModelUsage;
 };
@@ -31,7 +40,7 @@ export type Message = UIMessage<ChatMessageMetadata, never, ChatTools>;
 export function useChat(sessionId: string, initialMessages: Message[]) {
   const transport = useMemo(() => {
     return new DefaultChatTransport<Message>({
-      api: apiClient.chat.$url().toString(),
+      api: apiClient["chat"].$url().toString(),
       headers() {
         const auth = getAuth();
         return auth ? { Authorization: `Bearer ${auth.token}` } : new Headers();
@@ -54,10 +63,10 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
             id: sessionId,
             messages: requestMessages,
             mode: message.metadata?.mode ?? metadata?.mode,
-            model: message.metadata?.model ?? metadata?.model,
+            model: message.metadata?.model ?? metadata?.model, // now an object
           },
-        }
-      }
+        };
+      },
     });
   }, [sessionId]);
 
@@ -92,16 +101,20 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
     messages: chat.messages,
     status: chat.status,
     error: chat.error,
-    submit: (params: { userText: string; mode: ModeType; model: SupportedChatModelId }) => {
+    submit: (params: {
+      userText: string;
+      mode: ModeType;
+      modelSelection: ChatModelSelection;
+    }) => {
       return chat.sendMessage({
         text: params.userText,
         metadata: {
           mode: params.mode,
-          model: params.model,
+          model: params.modelSelection,
         },
-      })
+      });
     },
     abort: chat.stop,
     interrupt: chat.stop,
   };
-};
+}

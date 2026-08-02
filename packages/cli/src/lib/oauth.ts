@@ -1,3 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/lib/oauth.ts
+
 import open from "open";
 import { saveAuth } from "./auth";
 

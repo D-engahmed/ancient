@@ -1,7 +1,12 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+// file: packages/server/src/system-prompt.ts
+
 import type { ModeType } from "@ANCIENT/shared";
 
 type SystemPromptParams = {
   mode: ModeType;
+  cwd?: string | null;
 };
 
 export function buildSystemPrompt({

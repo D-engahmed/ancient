@@ -1,3 +1,8 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved. 
+// Licensed under the MIT License.
+// file: packages/cli/src/screens/home.tsx
+
 import { useCallback } from "react";
 import { useNavigate } from "react-router";
 import { Header } from "../components/header";
@@ -7,13 +12,13 @@ import { TextAttributes } from "@opentui/core";
 
 export function Home() {
   const navigate = useNavigate();
-  const { mode, model } = usePromptConfig();
+  const { mode, modelSelection } = usePromptConfig();
 
   const handleSubmit = useCallback(
     (text: string) => {
-      navigate("/sessions/new", { state: { message: text, mode, model } });
+      navigate("/sessions/new", { state: { message: text, mode, model: modelSelection } });
     },
-    [navigate, mode, model],
+    [navigate, mode, modelSelection],
   );
 
   return (
@@ -36,4 +41,4 @@ export function Home() {
       </box>
     </box>
   );
-};
+}

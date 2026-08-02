@@ -1,3 +1,8 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/index.tsx
+
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { createMemoryRouter, RouterProvider } from "react-router";

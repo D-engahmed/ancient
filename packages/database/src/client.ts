@@ -1,3 +1,9 @@
+
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+// file: packages/database/src/client.ts
+
 import dotenv from "dotenv";
 import path from "path";
 import { PrismaPg } from "@prisma/adapter-pg";

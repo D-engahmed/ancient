@@ -1,3 +1,8 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/command-menu/index.tsx
+
 import type { RefObject } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { getFilteredCommands } from "./filter-commands";

@@ -1,3 +1,8 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/dialogs/theme-dialog.tsx
+
 import { useCallback, useEffect, useRef } from "react";
 import { useDialog } from "../../providers/dialog";
 import { useTheme } from "../../providers/theme";

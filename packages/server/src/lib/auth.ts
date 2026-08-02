@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+// file: packages/server/src/lib/auth.ts
 import { createClerkClient } from "@clerk/backend";
 
 if (!process.env.CLERK_SECRET_KEY) {

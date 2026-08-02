@@ -1,8 +1,13 @@
-import { 
-  createContext, 
-  useContext, 
-  useRef, 
-  useState, 
+
+// Copyright (c) Microsoft Corporation. All rights reserved. 
+// Licensed under the MIT License.
+// file: packages/cli/src/providers/toast/index.ts
+
+import {
+  createContext,
+  useContext,
+  useRef,
+  useState,
   useCallback,
   useMemo
 } from "react";

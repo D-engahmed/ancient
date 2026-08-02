@@ -1,182 +1,410 @@
+// Copyright (c) Microsoft Corporation. All rights reserved. 
+// Licensed under the MIT License.
+// file: packages/server/src/routes/chat.ts
+
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import {
-  convertToModelMessages,
-  streamText,
-  validateUIMessages,
-  type InferUITools,
-  type LanguageModelUsage,
-  type UIMessage,
-} from "ai";
+import { streamText as aiStreamText, stepCountIs } from "ai";
 import { db } from "@ANCIENT/database/client";
+import { Mode, MessageStatus } from "@ANCIENT/database/enums";
 import type { Prisma } from "@ANCIENT/database";
 import {
-  getToolContracts,
-  modeSchema,
-  type ModeType,
-  type ToolContracts
+  type ChatStreamEvent,
+  type MessagePart,
+  toolCallArgsSchema,
+  messagePartsSchema,
+  submitSchema,
+  type ChatModelSelection,
 } from "@ANCIENT/shared";
+import { createTools } from "../tools";
 import { buildSystemPrompt } from "../system-prompt";
+import { resolveChatModel } from "../lib/models";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
-import { requireCreditsBalance } from "../middleware/require-credits-balance";
-import { calculateCreditsForUsage } from "../lib/credits";
-import { ingestAiUsage } from "../lib/polar";
-import { isSupportedChatModel, resolveChatModel } from "../lib/models";
 
-type ChatMessageMetadata = {
-  mode?: ModeType;
-  model?: string;
-  durationMs?: number;
-  usage?: LanguageModelUsage;
+// ---------- helpers ----------
+function buildConversationHistory(
+  messages: { role: "USER" | "ASSISTANT" | "ERROR"; content: string; status: MessageStatus }[],
+) {
+  return messages.flatMap((m) => {
+    if (m.role === "ERROR") return [];
+    if (m.role === "ASSISTANT" && m.content.length === 0) return [];
+    return [
+      {
+        role: m.role === "USER" ? ("user" as const) : ("assistant" as const),
+        content: m.content,
+      },
+    ];
+  });
+}
+
+function getResumableUserMessage(messages: any[]) {
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "USER") return null;
+  return last;
+}
+
+// ---------- streaming function ----------
+type StreamParams = {
+  sessionId: string;
+  userId: string;
+  selection: ChatModelSelection;
+  cwd: string | null;
+  history: { role: "user" | "assistant"; content: string }[];
+  mode: Mode;
+  abortController: AbortController;
 };
 
-type ANCIENTUIMessage = UIMessage<ChatMessageMetadata, never, InferUITools<ToolContracts>>;
+async function streamAIResponse(
+  stream: Parameters<Parameters<typeof streamSSE>[1]>[0],
+  params: StreamParams,
+) {
+  const { sessionId, userId, selection, cwd, history, mode, abortController } = params;
+  const startTime = Date.now();
+  const parts: MessagePart[] = [];
+  const tools = cwd ? createTools(cwd, mode) : undefined;
 
-const submitSchema = z.object({
-  id: z.string(),
-  messages: z
-    .array(
-      z.custom<ANCIENTUIMessage>((value) => {
-        return value != null && typeof value === "object" && "id" in value && "parts" in value;
-      }),
-    )
-    .min(1),
-  mode: modeSchema,
-  model: z.string().refine(isSupportedChatModel, "Unsupported model"),
-});
+  // Resolve the model – this may throw for invalid custom connections
+  const resolved = await resolveChatModel(selection, userId);
+  const model = resolved.model;
+  const apiKey = resolved.apiKey; // only present for custom connections
 
-const submitValidator = zValidator("json", submitSchema, (result, c) => {
-  if (!result.success) {
-    return c.json({ error: "Invalid request body" }, 400);
-  }
-});
+  const persistInterruptedMessage = async () => {
+    const fullText = parts
+      .filter((p) => p.type === "text")
+      .map((p) => p.text)
+      .join("");
 
-function hasPendingToolCalls(message: ANCIENTUIMessage) {
-  return message.parts.some((part) => {
-    if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
-      const state = (part as { state?: string }).state;
-      return state !== "output-available" && state !== "output-error";
+    if (fullText.length === 0 && parts.length === 0) return;
+
+    const elapsedMs = Date.now() - startTime;
+    const validatedParts: Prisma.InputJsonValue | undefined =
+      parts.length > 0 ? messagePartsSchema.parse(parts) : undefined;
+
+    const modelKind = selection.modelKind;
+    const modelRef = selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
+
+    await db.message.create({
+      data: {
+        sessionId,
+        role: "ASSISTANT",
+        status: MessageStatus.INTERRUPTED,
+        modelKind,
+        modelRef,
+        content: fullText,
+        parts: validatedParts,
+        mode,
+        duration: Math.round(elapsedMs / 1000),
+      },
+    });
+  };
+
+  // Helper to sanitize error messages (redact API key)
+  const sanitizeError = (err: unknown): string => {
+    let msg = err instanceof Error ? err.message : String(err);
+    if (apiKey && typeof msg === "string") {
+      msg = msg.replace(new RegExp(apiKey, "g"), "[REDACTED]");
+    }
+    return msg;
+  };
+
+  try {
+    const result = aiStreamText({
+      model,
+      system: buildSystemPrompt({ cwd, mode }),
+      messages: history,
+      tools,
+      stopWhen: tools ? stepCountIs(50) : undefined,
+      abortSignal: abortController.signal,
+    });
+
+    for await (const part of result.fullStream) {
+      if (stream.aborted) break;
+
+      if (part.type === "reasoning-delta") {
+        const last = parts[parts.length - 1];
+        if (last && last.type === "reasoning") {
+          last.text += part.text;
+        } else {
+          parts.push({ type: "reasoning", text: part.text });
+        }
+        const event: ChatStreamEvent = { type: "reasoning-delta", text: part.text };
+        await stream.writeSSE({ event: "reasoning-delta", data: JSON.stringify(event) });
+      }
+
+      if (part.type === "text-delta") {
+        const last = parts[parts.length - 1];
+        if (last && last.type === "text") {
+          last.text += part.text;
+        } else {
+          parts.push({ type: "text", text: part.text });
+        }
+        const event: ChatStreamEvent = { type: "text-delta", text: part.text };
+        await stream.writeSSE({ event: "text-delta", data: JSON.stringify(event) });
+      }
+
+      if (part.type === "tool-call") {
+        const args = toolCallArgsSchema.parse(part.input);
+        parts.push({
+          type: "tool-call",
+          id: part.toolCallId,
+          name: part.toolName,
+          args,
+        });
+        const event: ChatStreamEvent = {
+          type: "tool-call",
+          toolCallId: part.toolCallId,
+          toolName: part.toolName,
+          args,
+        };
+        await stream.writeSSE({ event: "tool-call", data: JSON.stringify(event) });
+      }
+
+      if (part.type === "tool-result") {
+        const resultStr =
+          typeof part.output === "string" ? part.output : JSON.stringify(part.output);
+        const tcPart = parts.find(
+          (p): p is Extract<MessagePart, { type: "tool-call" }> =>
+            p.type === "tool-call" && p.id === part.toolCallId,
+        );
+        if (tcPart) {
+          tcPart.result = resultStr;
+        }
+        const event: ChatStreamEvent = {
+          type: "tool-result",
+          toolCallId: part.toolCallId,
+          result: resultStr,
+        };
+        await stream.writeSSE({ event: "tool-result", data: JSON.stringify(event) });
+      }
+
+      if (part.type === "error") {
+        throw part.error;
+      }
     }
 
-    return false;
-  });
-};
+    if (stream.aborted || abortController.signal.aborted) {
+      await persistInterruptedMessage();
+      return;
+    }
 
-const app = new Hono<AuthenticatedEnv>()
-  .post(
-    "/",
-    requireCreditsBalance,
-    submitValidator,
-    async (c) => {
-      const userId = c.get("userId");
-      const { id, messages, mode, model } = c.req.valid("json");
-
-      const session = await db.session.findUnique({
-        where: { id, userId },
-      });
-
-      if (!session) {
-        return c.json({ error: "Session not found" }, 404);
-      }
-
-      const startTime = Date.now();
-      const tools = getToolContracts(mode);
-      const resolvedModel = resolveChatModel(model);
-      const previousMessages = Array.isArray(session.messages)
-        ? (session.messages as unknown as ANCIENTUIMessage[])
-        : [];
-      const mergedMessages = [...previousMessages];
-
-      for (const message of messages) {
-        const incomingMessage = {
-          ...message,
-          metadata: { ...message.metadata, mode, model },
-        } satisfies ANCIENTUIMessage;
-
-        const existingMessageIndex = mergedMessages.findIndex((m) => m.id === incomingMessage.id);
-
-        if (existingMessageIndex === -1) {
-          mergedMessages.push(incomingMessage);
-        } else {
-          mergedMessages[existingMessageIndex] = incomingMessage;
+    // ------ Response size cap and tool‑call warning ------
+    const MAX_RESPONSE_CHARS = 200_000;
+    let totalTextLength = parts
+      .filter((p) => p.type === "text")
+      .reduce((sum, p) => sum + p.text.length, 0);
+    let truncated = false;
+    if (totalTextLength > MAX_RESPONSE_CHARS) {
+      // Truncate text parts – keep first MAX_RESPONSE_CHARS characters total
+      let accumulated = 0;
+      for (const p of parts) {
+        if (p.type === "text") {
+          if (accumulated + p.text.length > MAX_RESPONSE_CHARS) {
+            const allowed = MAX_RESPONSE_CHARS - accumulated;
+            p.text = p.text.slice(0, allowed) + "\n... (truncated)";
+            truncated = true;
+            break;
+          }
+          accumulated += p.text.length;
         }
       }
+    }
 
-      const nextMessages = await validateUIMessages<ANCIENTUIMessage>({
-        messages: mergedMessages,
-        tools,
+    // Tool‑calling reliability: warn if BUILD mode and no tool calls
+    if (mode === "BUILD" && parts.every((p) => p.type !== "tool-call")) {
+      parts.push({
+        type: "text",
+        text: "\n⚠️ This model did not emit any tool calls in BUILD mode. It may not support tool calling reliably.",
       });
-      const modelMessages = await convertToModelMessages(nextMessages, { tools });
-      let completedUsage: LanguageModelUsage | null = null;
+    }
 
-      const result = streamText({
-        model: resolvedModel.model,
-        system: buildSystemPrompt({ mode }),
-        messages: modelMessages,
-        tools,
-        providerOptions: resolvedModel.providerOptions,
-        onFinish(event) {
-          completedUsage = event.totalUsage;
-        },
-      });
+    const elapsedMs = Date.now() - startTime;
+    const fullText = parts
+      .filter((p) => p.type === "text")
+      .map((p) => p.text)
+      .join("");
 
-      return result.toUIMessageStreamResponse<ANCIENTUIMessage>({
-        originalMessages: nextMessages,
-        messageMetadata({ part }) {
-          if (part.type === "start") {
-            return { mode, model };
-          }
+    const validatedParts: Prisma.InputJsonValue | undefined =
+      parts.length > 0 ? messagePartsSchema.parse(parts) : undefined;
 
-          if (part.type !== "finish") return undefined;
+    const modelKind = selection.modelKind;
+    const modelRef = selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
 
-          return {
-            mode,
-            model,
-            durationMs: Date.now() - startTime,
-            ...(completedUsage ? { usage: completedUsage } : {}),
-          };
-        },
-        async onFinish(event) {
-          if (event.isAborted) return;
+    const assistantMessage = await db.message.create({
+      data: {
+        sessionId,
+        role: "ASSISTANT",
+        status: MessageStatus.COMPLETE,
+        modelKind,
+        modelRef,
+        content: fullText,
+        parts: validatedParts,
+        mode,
+        duration: Math.round(elapsedMs / 1000),
+      },
+    });
 
-          if (hasPendingToolCalls(event.responseMessage)) return;
+    const doneEvent: ChatStreamEvent = {
+      type: "done",
+      messageId: assistantMessage.id,
+      durationMs: elapsedMs,
+    };
+    await stream.writeSSE({ event: "done", data: JSON.stringify(doneEvent) });
+  } catch (err) {
+    if (abortController.signal.aborted) {
+      await persistInterruptedMessage();
+      return;
+    }
 
-          await db.session.update({
-            where: { id, userId },
-            data: {
-              messages: event.messages as unknown as Prisma.InputJsonValue,
-            },
-          });
+    const message = sanitizeError(err);
 
-          if (!completedUsage) return;
+    const modelKind = selection.modelKind;
+    const modelRef = selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
 
-          try {
-            const billableUsage = calculateCreditsForUsage({
-              provider: resolvedModel.provider,
-              model: resolvedModel.modelId,
-              usage: completedUsage,
-            });
+    await db.message.create({
+      data: {
+        sessionId,
+        role: "ERROR",
+        status: MessageStatus.COMPLETE,
+        modelKind,
+        modelRef,
+        content: message,
+        mode,
+      },
+    });
 
-            await ingestAiUsage({
-              externalCustomerId: userId,
-              eventId: `chat-message:${event.responseMessage.id}`,
-              credits: billableUsage.credits,
-            });
-          } catch (error) {
-            console.error("Failed to ingest Polar AI usage for chat message", {
-              error,
-              sessionId: id,
-              messageId: event.responseMessage.id,
-              userId,
-            });
-          }
-        },
-        onError(error) {
-          return error instanceof Error ? error.message : String(error);
-        },
+    const errorEvent: ChatStreamEvent = { type: "error", message };
+    await stream.writeSSE({ event: "error", data: JSON.stringify(errorEvent) });
+  }
+}
+
+// ---------- route definitions ----------
+const app = new Hono<AuthenticatedEnv>();
+
+// /resume endpoint
+app.post("/:sessionId/resume", async (c) => {
+  const sessionId = c.req.param("sessionId");
+  const userId = c.get("userId");
+
+  const session = await db.session.findUnique({
+    where: { id: sessionId, userId },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
+  });
+
+  if (!session) return c.json({ error: "Session not found" }, 404);
+
+  const lastUser = getResumableUserMessage(session.messages);
+  if (!lastUser) return c.json({ error: "No pending user message" }, 409);
+
+  // Reconstruct selection from stored fields
+  const selection: ChatModelSelection =
+    lastUser.modelKind === "builtin"
+      ? { modelKind: "builtin", modelId: lastUser.modelRef }
+      : { modelKind: "custom", connectionId: lastUser.modelRef };
+
+  // Verify the model is still supported (built‑in or connection exists)
+  try {
+    await resolveChatModel(selection, userId);
+  } catch {
+    return c.json({ error: "The model used in this session is no longer available" }, 409);
+  }
+
+  const history = buildConversationHistory(session.messages);
+  const abortController = new AbortController();
+
+  return streamSSE(
+    c,
+    async (stream) => {
+      stream.onAbort(() => abortController.abort());
+      await streamAIResponse(stream, {
+        sessionId,
+        userId,
+        selection,
+        cwd: session.cwd,
+        history,
+        mode: lastUser.mode,
+        abortController,
       });
     },
+    async (err, stream) => {
+      const message = err instanceof Error ? err.message : String(err);
+      const errorEvent: ChatStreamEvent = { type: "error", message };
+      await stream.writeSSE({ event: "error", data: JSON.stringify(errorEvent) });
+    },
   );
+});
+
+// Main POST /:sessionId
+app.post("/:sessionId", zValidator("json", submitSchema), async (c) => {
+  const sessionId = c.req.param("sessionId");
+  const userId = c.get("userId");
+
+  const session = await db.session.findUnique({
+    where: { id: sessionId, userId },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
+  });
+
+  if (!session) return c.json({ error: "Session not found" }, 404);
+
+  const data = c.req.valid("json");
+
+  // Store user message with model selection
+  const modelKind = data.model.modelKind;
+  const modelRef = data.model.modelKind === "builtin" ? data.model.modelId : data.model.connectionId;
+
+  await db.message.create({
+    data: {
+      sessionId,
+      role: "USER",
+      status: MessageStatus.COMPLETE,
+      modelKind,
+      modelRef,
+      content: data.content,
+      mode: data.mode,
+    },
+  });
+
+  const history = buildConversationHistory([
+    ...session.messages,
+    {
+      role: "USER" as const,
+      content: data.content,
+      status: MessageStatus.COMPLETE,
+    },
+  ]);
+
+  const abortController = new AbortController();
+
+  // Set a timeout for custom connections – 60 seconds
+  const timeoutMs = 60_000;
+  const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
+
+  return streamSSE(
+    c,
+    async (stream) => {
+      stream.onAbort(() => {
+        clearTimeout(timeoutId);
+        abortController.abort();
+      });
+
+      await streamAIResponse(stream, {
+        sessionId,
+        userId,
+        selection: data.model,
+        cwd: session.cwd,
+        history,
+        mode: data.mode,
+        abortController,
+      });
+    },
+    async (err, stream) => {
+      clearTimeout(timeoutId);
+      const message = err instanceof Error ? err.message : String(err);
+      const errorEvent: ChatStreamEvent = { type: "error", message };
+      await stream.writeSSE({ event: "error", data: JSON.stringify(errorEvent) });
+    },
+  );
+});
 
 export default app;

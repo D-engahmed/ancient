@@ -1,3 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+// file: packages/server/src/routes/auth.ts
+
 import { Hono } from "hono";
 
 const app = new Hono().get("/callback", (c) => {
