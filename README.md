@@ -64,3 +64,21 @@ Built by **Ahmed** — final-year Electronics & Communications Engineering stude
 =======
 *Actively being merged from HaMan into a standalone project — the status table above will move to "Live" line by line rather than all at once.*
 main
+
+## Local Database and BYOK
+
+ANCIENT keeps Prisma and runs PostgreSQL locally through Docker when you do not want to use a hosted database.
+
+```bash
+cp .env.example .env
+docker compose up -d postgres
+bunx prisma migrate deploy --config packages/database/prisma.config.ts
+```
+
+Set `ANCIENT_CONNECTION_KEY_SECRET` to a base64-encoded 32-byte value before saving provider keys. Generate one with:
+
+```bash
+bun -e "console.log(Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64'))"
+```
+
+Provider keys are validated before storage, encrypted with AES-256-GCM, masked in the UI, and selected automatically after a successful save. `ANCIENT_BYOK_REQUESTS_PER_MINUTE` configures the per-user chat request limit.

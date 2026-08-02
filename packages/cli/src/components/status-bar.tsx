@@ -1,7 +1,4 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License. 
-// file: packages/cli/src/components/status-bar.tsx
-
+// status-bar.tsx
 import { TextAttributes } from "@opentui/core";
 import { useTheme } from "../providers/theme";
 import { usePromptConfig } from "../providers/prompt-config";
@@ -13,26 +10,31 @@ export function StatusBar() {
   const { mode, modelSelection } = usePromptConfig();
   const { colors } = useTheme();
   const [customLabel, setCustomLabel] = useState<string | null>(null);
+  const [customModelId, setCustomModelId] = useState<string | null>(null);
 
   useEffect(() => {
     if (modelSelection.modelKind === "builtin") {
       setCustomLabel(null);
+      setCustomModelId(null);
       return;
     }
+
     let ignore = false;
-    const fetchLabel = async () => {
+    const fetchDetails = async () => {
       try {
-        const res = await apiClient.providerConnections[":id"].$get({
-          param: { id: modelSelection.connectionId },
-        });
-        if (!res.ok) throw new Error();
-        const conn = await res.json();
-        if (!ignore) setCustomLabel(conn.label);
+        const conn = await apiClient.providerConnections.get(modelSelection.connectionId);
+        if (!ignore) {
+          setCustomLabel(conn.label);
+          setCustomModelId(conn.modelId);
+        }
       } catch {
-        if (!ignore) setCustomLabel(modelSelection.connectionId);
+        if (!ignore) {
+          setCustomLabel(null);
+          setCustomModelId(null);
+        }
       }
     };
-    fetchLabel();
+    fetchDetails();
     return () => { ignore = true; };
   }, [modelSelection]);
 
@@ -41,7 +43,9 @@ export function StatusBar() {
     const found = SUPPORTED_CHAT_MODELS.find((m) => m.id === modelSelection.modelId);
     displayModel = found ? found.id : modelSelection.modelId;
   } else {
-    displayModel = customLabel ?? modelSelection.connectionId;
+    if (customLabel) displayModel = customLabel;
+    else if (customModelId) displayModel = `Custom (${customModelId})`;
+    else displayModel = modelSelection.connectionId.slice(0, 8);
   }
 
   return (

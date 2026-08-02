@@ -18,6 +18,31 @@ const createConnectionSchema = z.object({
     apiKey: z.string(),
 });
 
+const updateConnectionSchema = z.object({
+    label: z.string().trim().min(1).max(100).optional(),
+    protocol: z.enum(["openai", "anthropic", "gemini"]).optional(),
+    baseUrl: z.string().trim().url().optional(),
+    modelId: z.string().trim().min(1).max(200).optional(),
+    apiKey: z.string().optional(),
+}).refine((input) => Object.keys(input).length > 0, {
+    message: "Provide at least one connection field to update",
+});
+
+const connectionSelect = {
+    id: true,
+    userId: true,
+    label: true,
+    protocol: true,
+    baseUrl: true,
+    modelId: true,
+    keyLastFour: true,
+    isValid: true,
+    lastValidatedAt: true,
+    lastValidationError: true,
+    lastUsedAt: true,
+    createdAt: true,
+} as const;
+
 const app = new Hono<AuthenticatedEnv>()
     // POST /provider-connections – create a new custom connection
     .post("/", zValidator("json", createConnectionSchema), async (c) => {
@@ -97,6 +122,81 @@ const app = new Hono<AuthenticatedEnv>()
         });
 
         return c.json(connections);
+    })
+
+    .post("/:id/validate", async (c) => {
+        const userId = c.get("userId");
+        const id = c.req.param("id");
+        const connection = await db.providerConnection.findUnique({ where: { id, userId } });
+
+        if (!connection) return c.json({ error: "Connection not found" }, 404);
+
+        try {
+            await assertSafeBaseUrl(connection.baseUrl);
+            const apiKey = await decryptApiKey(connection.encryptedKey);
+            await validateProviderConnection({
+                protocol: connection.protocol as "openai" | "anthropic" | "gemini",
+                baseUrl: connection.baseUrl,
+                apiKey,
+            });
+            const updated = await db.providerConnection.update({
+                where: { id },
+                data: { isValid: true, lastValidatedAt: new Date(), lastValidationError: null },
+                select: connectionSelect,
+            });
+            return c.json(updated);
+        } catch (error) {
+            const message = error instanceof ProviderConnectionValidationError
+                ? error.message
+                : "Unable to validate the provider connection";
+            const updated = await db.providerConnection.update({
+                where: { id },
+                data: { isValid: false, lastValidatedAt: new Date(), lastValidationError: message },
+                select: connectionSelect,
+            });
+            return c.json(updated, 422);
+        }
+    })
+
+    .patch("/:id", zValidator("json", updateConnectionSchema), async (c) => {
+        const userId = c.get("userId");
+        const id = c.req.param("id");
+        const current = await db.providerConnection.findUnique({ where: { id, userId } });
+        if (!current) return c.json({ error: "Connection not found" }, 404);
+
+        const input = c.req.valid("json");
+        const protocol = input.protocol ?? (current.protocol as "openai" | "anthropic" | "gemini");
+        const baseUrl = input.baseUrl ?? current.baseUrl;
+        const apiKey = input.apiKey ?? await decryptApiKey(current.encryptedKey);
+
+        try {
+            await assertSafeBaseUrl(baseUrl);
+            await validateProviderConnection({ protocol, baseUrl, apiKey });
+        } catch (error) {
+            const message = error instanceof ProviderConnectionValidationError
+                ? error.message
+                : "Unable to validate the provider connection";
+            return c.json({ error: message }, 422);
+        }
+
+        const updated = await db.providerConnection.update({
+            where: { id },
+            data: {
+                label: input.label ?? current.label,
+                protocol,
+                baseUrl,
+                modelId: input.modelId ?? current.modelId,
+                ...(input.apiKey === undefined ? {} : {
+                    encryptedKey: await encryptApiKey(apiKey),
+                    keyLastFour: apiKey.length > 0 ? apiKey.slice(-4) : "local",
+                }),
+                isValid: true,
+                lastValidatedAt: new Date(),
+                lastValidationError: null,
+            },
+            select: connectionSelect,
+        });
+        return c.json(updated);
     })
 
     // GET /provider-connections/:id – fetch a single connection (for status bar label)

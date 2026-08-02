@@ -19,10 +19,10 @@ export type ResolvedModel = {
     apiKey?: string; // only present for custom connections, used for redaction
 };
 
-// ---------- Built‑in resolvers (only anthropic & openai) ----------
+// ---------- Built‑in resolvers ----------
 
 function resolveAnthropicModel(modelId: string): ResolvedModel {
-    const anthropic = require("@ai-sdk/anthropic").anthropic; // dynamic import to avoid type issues
+    const { anthropic } = require("@ai-sdk/anthropic");
     return {
         model: anthropic(modelId),
         provider: "anthropic",
@@ -31,7 +31,7 @@ function resolveAnthropicModel(modelId: string): ResolvedModel {
 }
 
 function resolveOpenAIModel(modelId: string): ResolvedModel {
-    const openai = require("@ai-sdk/openai").openai;
+    const { openai } = require("@ai-sdk/openai");
     return {
         model: openai(modelId),
         provider: "openai",
@@ -50,17 +50,54 @@ function resolveSupportedChatModel(model: SupportedChatModel): ResolvedModel {
     throw new Error(`Unsupported provider: ${String(provider)}`);
 }
 
-// ---------- "aun" server‑operator fallback (unchanged) ----------
-// It is defined below – we keep it as is.
+// ---------- Model catalog validation (DB-backed) ----------
+
+// In‑memory cache: providerId -> Set of model IDs (lowercase)
+let catalogCache: Map<string, Set<string>> | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 60_000; // 1 minute
+
+async function refreshCatalogCache() {
+    const providers = await db.modelProvider.findMany({
+        include: { models: { where: { isActive: true } } },
+    });
+    const newCache = new Map<string, Set<string>>();
+    for (const p of providers) {
+        const modelIds = new Set(p.models.map(m => m.modelId.toLowerCase()));
+        newCache.set(p.id.toLowerCase(), modelIds);
+    }
+    catalogCache = newCache;
+    cacheTimestamp = Date.now();
+}
+
+async function getCatalogCache(): Promise<Map<string, Set<string>>> {
+    if (!catalogCache || Date.now() - cacheTimestamp > CACHE_TTL_MS) {
+        await refreshCatalogCache();
+    }
+    return catalogCache!;
+}
+
+export async function validateModelId(
+    protocol: string,
+    modelId: string,
+    userId?: string // optionally for future user‑specific overrides
+): Promise<boolean> {
+    const cache = await getCatalogCache();
+    const providerKey = protocol.toLowerCase();
+    const models = cache.get(providerKey);
+    if (!models) return false;
+    return models.has(modelId.toLowerCase());
+}
 
 // ---------- Main resolver for both built‑in and custom ----------
+
 export async function resolveChatModel(
     selection: ChatModelSelection,
     userId: string
 ): Promise<ResolvedModel> {
     if (selection.modelKind === "builtin") {
         const model = findSupportedChatModel(selection.modelId);
-        if (!model) throw new Error(`Unsupported model: ${selection.modelId}`);
+        if (!model) throw new Error(`Unsupported built‑in model: ${selection.modelId}`);
         return resolveSupportedChatModel(model);
     }
 
@@ -69,9 +106,27 @@ export async function resolveChatModel(
     });
     if (!conn) throw new Error("Connection not found");
 
+    if (!conn.isValid) {
+        throw new Error("This provider connection is invalid. Revalidate or rotate its API key before using it.");
+    }
+
+    // Optional: validate that the model ID is in the catalog (if the provider is known)
+    // We'll log a warning if not, but not block – some providers may have custom models.
+    const known = await validateModelId(conn.protocol, conn.modelId);
+    if (!known) {
+        console.warn(`[models] Unknown model ID for protocol ${conn.protocol}: ${conn.modelId}`);
+        // You could decide to throw here if you want strict validation:
+        // throw new Error(`Model "${conn.modelId}" is not recognized for provider "${conn.protocol}".`);
+    }
+
     await assertSafeBaseUrl(conn.baseUrl);
     const apiKey = await decryptApiKey(conn.encryptedKey);
     const resolvedApiKey = apiKey || "not-needed";
+
+    await db.providerConnection.update({
+        where: { id: conn.id },
+        data: { lastUsedAt: new Date() },
+    });
 
     let provider;
     switch (conn.protocol) {
@@ -105,8 +160,7 @@ export async function resolveChatModel(
     };
 }
 
-// ---------- Keep the existing "aun" provider (env‑based) ----------
-// This is the server‑operator fallback, untouched.
+// ---------- Legacy "aun" provider (env‑based) ----------
 function getCustomProvider() {
     const baseURL = getRequiredEnv("ANCIENT_CUSTOM_BASE_URL");
     const apiKey = process.env.ANCIENT_CUSTOM_API_KEY ?? "not-needed";
@@ -119,4 +173,4 @@ function getRequiredEnv(name: string) {
     return value;
 }
 
-// ... rest of the file (resolveAunModel, etc.) unchanged.
+// Keep existing resolveAunModel if you have it – not shown here for brevity.

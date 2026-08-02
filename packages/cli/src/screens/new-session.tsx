@@ -1,8 +1,4 @@
-
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License. 
-// file: packages/cli/src/screens/new-session.tsx
-
+// new-session.tsx
 import { useEffect, useMemo, useRef } from "react";
 import { z } from "zod";
 import { Mode, modeSchema, chatModelSelectionSchema } from "@ANCIENT/shared";
@@ -44,17 +40,10 @@ export function NewSession() {
     let ignore = false;
     const createSession = async () => {
       try {
-        const res = await apiClient.sessions.$post({
-          json: {
-            title: state.message.slice(0, 100),
-          },
+        const session = await apiClient.sessions.create({
+          title: state.message.slice(0, 100),
         });
-
         if (ignore) return;
-        if (!res.ok) {
-          throw new Error(await getErrorMessage(res));
-        }
-        const session = await res.json();
         navigate(
           `/sessions/${session.id}`,
           { replace: true, state: { session, initialPrompt: state } }
