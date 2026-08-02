@@ -1,6 +1,11 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/screens/new-session.tsx
+
 import { useEffect, useMemo, useRef } from "react";
 import { z } from "zod";
-import { Mode } from "@ANCIENT/database/enums";
+import { Mode, modeSchema, chatModelSelectionSchema } from "@ANCIENT/shared";
 import { useNavigate, useLocation } from "react-router";
 import { SessionShell } from "../components/session-shell";
 import { UserMessage } from "../components/messages";
@@ -9,81 +14,72 @@ import { apiClient } from "../lib/api-client";
 import { getErrorMessage } from "../lib/http-errors";
 
 const newSessionStateSchema = z.object({
-    message: z.string(),
-    mode: z.enum(Mode),
-    model: z.string(),
+  message: z.string(),
+  mode: modeSchema,
+  model: chatModelSelectionSchema,
 });
 
 export function NewSession() {
-    const navigate = useNavigate();
-    const location = useLocation();
-    const toast = useToast();
-    const hasStartedRef = useRef(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const toast = useToast();
+  const hasStartedRef = useRef(false);
 
-    const state = useMemo(() => {
-        const parsed = newSessionStateSchema.safeParse(location.state);
-        return parsed.success ? parsed.data : null;
-    }, [location.state])
+  const state = useMemo(() => {
+    const parsed = newSessionStateSchema.safeParse(location.state);
+    return parsed.success ? parsed.data : null;
+  }, [location.state]);
 
-    // Guard: if navigated here directly without state, go home
-    useEffect(() => {
-        if (!state) {
-            navigate("/", { replace: true });
+  useEffect(() => {
+    if (!state) {
+      navigate("/", { replace: true });
+    }
+  }, [state, navigate]);
+
+  useEffect(() => {
+    if (!state || hasStartedRef.current) return;
+
+    hasStartedRef.current = true;
+
+    let ignore = false;
+    const createSession = async () => {
+      try {
+        const res = await apiClient.sessions.$post({
+          json: {
+            title: state.message.slice(0, 100),
+          },
+        });
+
+        if (ignore) return;
+        if (!res.ok) {
+          throw new Error(await getErrorMessage(res));
         }
-    }, [state, navigate]);
+        const session = await res.json();
+        navigate(
+          `/sessions/${session.id}`,
+          { replace: true, state: { session, initialPrompt: state } }
+        );
+      } catch (error) {
+        if (ignore) return;
+        toast.show({
+          variant: "error",
+          message: error instanceof Error ? error.message : "Failed to create session",
+        });
+        navigate("/", { replace: true });
+      }
+    };
 
-    // Create the session on mount — this screen exists to do this
-    useEffect(() => {
-        if (!state || hasStartedRef.current) return;
+    createSession();
+    return () => {
+      ignore = true;
+    };
+  }, [state, navigate, toast]);
 
-        hasStartedRef.current = true;
+  if (!state) return null;
 
-        let ignore = false;
-        const createSession = async () => {
-            try {
-                const res = await apiClient.sessions.$post({
-                    json: {
-                        title: state.message.slice(0, 100),
-                        cwd: process.cwd(),
-                        initialMessage: {
-                            role: "USER",
-                            content: state.message,
-                            mode: state.mode,
-                            model: state.model,
-                        },
-                    },
-                });
-
-                if (ignore) return;
-                if (!res.ok) {
-                    throw new Error(await getErrorMessage(res));
-                }
-                const session = await res.json();
-                navigate(
-                    `/sessions/${session.id}`,
-                    { replace: true, state: { session } }
-                );
-            } catch (error) {
-                if (ignore) return;
-                toast.show({
-                    variant: "error",
-                    message: error instanceof Error ? error.message : "Failed to create session",
-                });
-                navigate("/", { replace: true });
-            }
-        };
-
-        createSession();
-        return () => {
-            ignore = true;
-        };
-    }, [state, navigate, toast]);
-
-    if (!state) return null;
-
-    return (
-        <SessionShell onSubmit={() => { }} inputDisabled loading>
-            <UserMessage message={state.message} mode={state.mode} />
-        </SessionShell>
-    );
-};
+  return (
+    <SessionShell onSubmit={() => { }} inputDisabled loading>
+      <UserMessage message={state.message} mode={state.mode} />
+    </SessionShell>
+  );
+}

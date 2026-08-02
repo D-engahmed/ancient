@@ -1,47 +1,52 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/dialogs/agents-dialog.tsx
+
 import { useCallback } from "react";
 import { useDialog } from "../../providers/dialog";
 import { DialogSearchList } from "../dialog-search-list";
-import { Mode } from "@ANCIENT/database/enums";
+import { Mode, type ModeType } from "@ANCIENT/shared";
 
-const AVAILABLE_MODES: Mode[] = [Mode.BUILD, Mode.PLAN];
+const AVAILABLE_MODES: ModeType[] = [Mode.BUILD, Mode.PLAN];
 
 type AgentsDialogContentProps = {
-    currentMode: Mode;
-    onSelectMode: (mode: Mode) => void;
+  currentMode: ModeType;
+  onSelectMode: (mode: ModeType) => void;
 };
 
-function getModeLabel(mode: Mode) {
-    return mode === Mode.PLAN ? "Plan" : "Build";
+function getModeLabel(mode: ModeType) {
+  return mode === Mode.PLAN ? "Plan" : "Build";
 }
 
 export const AgentsDialogContent = ({
-    currentMode,
-    onSelectMode
+  currentMode,
+  onSelectMode
 }: AgentsDialogContentProps) => {
-    const dialog = useDialog();
+  const dialog = useDialog();
 
-    const handleSelect = useCallback(
-        (nextMode: Mode) => {
-            onSelectMode(nextMode);
-            dialog.close();
-        },
-        [onSelectMode, dialog],
-    );
+  const handleSelect = useCallback(
+    (nextMode: ModeType) => {
+      onSelectMode(nextMode);
+      dialog.close();
+    },
+    [onSelectMode, dialog],
+  );
 
-    return (
-        <DialogSearchList
-            items={AVAILABLE_MODES}
-            onSelect={handleSelect}
-            filterFn={(item, query) => getModeLabel(item).toLowerCase().includes(query.toLowerCase())}
-            renderItem={(item, isSelected) => (
-                <text selectable={false} fg={isSelected ? "black" : "white"}>
-                    {item === currentMode ? " • " : "   "}
-                    {getModeLabel(item)}
-                </text>
-            )}
-            getKey={(item) => item}
-            placeholder="Search agents"
-            emptyText="No matching agents"
-        />
-    );
+  return (
+    <DialogSearchList
+      items={AVAILABLE_MODES}
+      onSelect={handleSelect}
+      filterFn={(item, query) => getModeLabel(item).toLowerCase().includes(query.toLowerCase())}
+      renderItem={(item, isSelected) => (
+        <text selectable={false} fg={isSelected ? "black" : "white"}>
+          {item === currentMode ? " • " : "   "}
+          {getModeLabel(item)}
+        </text>
+      )}
+      getKey={(item) => item}
+      placeholder="Search agents"
+      emptyText="No matching agents"
+    />
+  );
 };

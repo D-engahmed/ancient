@@ -29,27 +29,71 @@ enum MessageStatus {
 }
 
 model Session {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
   title     String
   cwd       String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  messages Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  messages  Message[]
+
   @@index([userId])
 }
 
 model Message {
-  id        String   @id @default(cuid())
-  sessionId String
-  role      Role
-  status    MessageStatus
-  model     String
-  content   String
-  parts     Json?
-  mode      Mode
-  duration  Int?
-  createdAt DateTime @default(now())
-  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id         String        @id @default(cuid())
+  sessionId  String
+  role       Role
+  status     MessageStatus
+  modelKind  String        // "builtin" or "custom"
+  modelRef   String        // builtin model ID or connection UUID
+  content    String
+  parts      Json?
+  mode       Mode
+  duration   Int?
+  createdAt  DateTime      @default(now())
+  session    Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
   @@index([sessionId])
+}
+
+// NEW: User‑owned custom model connections
+model ProviderConnection {
+  id           String   @id @default(uuid())
+  userId       String
+  label        String   // user‑friendly name
+  protocol     String   // "openai" | "anthropic" | "gemini"
+  baseUrl      String
+  modelId      String   // e.g. "gpt-4", "claude-3-opus"
+  encryptedKey Bytes    // AES‑256‑GCM encrypted API key
+  keyLastFour  String   // last 4 chars for display
+  isValid      Boolean  @default(true)
+  lastValidatedAt DateTime?
+  lastValidationError String?
+  lastUsedAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+model ModelProvider {
+  id             String   @id // "openai", "mistral", "together"
+  label          String
+  protocol       String   // "openai" | "anthropic" | "gemini"
+  defaultBaseUrl String
+  isReseller     Boolean  @default(false) // true for together/groq/fireworks-style hosts
+  models         ModelCatalogEntry[]
+}
+
+model ModelCatalogEntry {
+  id            String   @id @default(cuid())
+  providerId    String
+  provider      ModelProvider @relation(fields: [providerId], references: [id])
+  modelId       String   // the string sent to the API, e.g. "gpt-4o"
+  label         String
+  contextWindow Int
+  isActive      Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+
+  @@unique([providerId, modelId])
 }

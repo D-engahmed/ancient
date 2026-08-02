@@ -8,8 +8,7 @@
     "./enums": "./src/enums.ts"
   },
   "scripts": {
-    "db:generate": "bunx prisma generate",
-    "migrate:deploy": "bunx prisma migrate deploy"
+    "db:generate": "bunx prisma generate"
   },
   "devDependencies": {
     "@types/node": "^25.5.2",

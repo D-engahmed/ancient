@@ -1,3 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved. 
+// Licensed under the MIT License.
+// file: packages/server/src/routes/chat.ts
+
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { zValidator } from "@hono/zod-validator";
@@ -11,32 +15,15 @@ import {
   type MessagePart,
   toolCallArgsSchema,
   messagePartsSchema,
+  submitSchema,
+  type ChatModelSelection,
 } from "@ANCIENT/shared";
 import { createTools } from "../tools";
 import { buildSystemPrompt } from "../system-prompt";
-import { isSupportedChatModel, resolveChatModel } from "../lib/models";
+import { resolveChatModel } from "../lib/models";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 
-import type { LanguageModelUsage } from "ai";
-import { requireCreditsBalance } from "../middleware/require-credits-balance";
-import { calculateCreditsForUsage } from "../lib/credits";
-import { ingestAiUsage } from "../lib/polar";
-
-const submitSchema = z.object({
-  content: z.string(),
-  mode: z.enum(Mode),
-  model: z.string().refine(isSupportedChatModel, "Unsupported model"),
-});
-
-const submitValidator = zValidator("json", submitSchema, (result, c) => {
-  if (!result.success) {
-    return c.json({ error: "Invalid request body" }, 400);
-  }
-});
-
-const activeResumeSessionIds = new Set<string>();
-
-// Strip error messages and empty assistant messages from the conversation
+// ---------- helpers ----------
 function buildConversationHistory(
   messages: { role: "USER" | "ASSISTANT" | "ERROR"; content: string; status: MessageStatus }[],
 ) {
@@ -46,72 +33,65 @@ function buildConversationHistory(
     return [
       {
         role: m.role === "USER" ? ("user" as const) : ("assistant" as const),
-        content: m.content
+        content: m.content,
       },
     ];
   });
-};
+}
 
-function getResumableUserMessage(
-  messages: {
-    role: "USER" | "ASSISTANT" | "ERROR";
-    model: string;
-    mode: Mode
-  }[],
-) {
-  const lastMessage = messages[messages.length - 1];
-  if (!lastMessage || lastMessage.role !== "USER") {
-    return null;
-  }
+function getResumableUserMessage(messages: any[]) {
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "USER") return null;
+  return last;
+}
 
-  return lastMessage;
-};
-
+// ---------- streaming function ----------
 type StreamParams = {
   sessionId: string;
   userId: string;
-  model: string;
+  selection: ChatModelSelection;
   cwd: string | null;
   history: { role: "user" | "assistant"; content: string }[];
   mode: Mode;
   abortController: AbortController;
 };
 
-type IngestUsageForMessageParams = {
-  messageId: string;
-  status: "complete" | "interrupted";
-};
-
 async function streamAIResponse(
   stream: Parameters<Parameters<typeof streamSSE>[1]>[0],
   params: StreamParams,
 ) {
-  const { sessionId, userId, model, cwd, history, mode, abortController } = params;
+  const { sessionId, userId, selection, cwd, history, mode, abortController } = params;
   const startTime = Date.now();
-  const tools = cwd ? createTools(cwd, mode) : undefined;
   const parts: MessagePart[] = [];
-  const resolvedModel = resolveChatModel(model);
-  let completedUsage: LanguageModelUsage | null = null;
+  const tools = cwd ? createTools(cwd, mode) : undefined;
+
+  // Resolve the model – this may throw for invalid custom connections
+  const resolved = await resolveChatModel(selection, userId);
+  const model = resolved.model;
+  const apiKey = resolved.apiKey; // only present for custom connections
+
   const persistInterruptedMessage = async () => {
     const fullText = parts
       .filter((p) => p.type === "text")
       .map((p) => p.text)
       .join("");
 
-    if (fullText.length === 0 && parts.length === 0) {
-      return;
-    }
+    if (fullText.length === 0 && parts.length === 0) return;
 
     const elapsedMs = Date.now() - startTime;
     const validatedParts: Prisma.InputJsonValue | undefined =
       parts.length > 0 ? messagePartsSchema.parse(parts) : undefined;
 
-    return db.message.create({
+    const modelKind = selection.modelKind;
+    const modelRef = selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
+
+    await db.message.create({
       data: {
         sessionId,
         role: "ASSISTANT",
         status: MessageStatus.INTERRUPTED,
-        model,
+        modelKind,
+        modelRef,
         content: fullText,
         parts: validatedParts,
         mode,
@@ -120,53 +100,23 @@ async function streamAIResponse(
     });
   };
 
-  const ingestUsageForMessage = async ({ messageId, status }: IngestUsageForMessageParams) => {
-    if (!completedUsage) return;
-
-    try {
-      const billableUsage = calculateCreditsForUsage({
-        provider: resolvedModel.provider,
-        model: resolvedModel.modelId,
-        usage: completedUsage,
-      });
-
-      await ingestAiUsage({
-        externalCustomerId: userId,
-        eventId: `chat-message:${messageId}`,
-        credits: billableUsage.credits,
-      });
-    } catch (error) {
-      console.error("Failed to ingest Polar AI usage for chat message", {
-        error,
-        sessionId,
-        messageId,
-        userId,
-      });
+  // Helper to sanitize error messages (redact API key)
+  const sanitizeError = (err: unknown): string => {
+    let msg = err instanceof Error ? err.message : String(err);
+    if (apiKey && typeof msg === "string") {
+      msg = msg.replace(new RegExp(apiKey, "g"), "[REDACTED]");
     }
-  };
-
-  const persistInterruptedMessageAndUsage = async () => {
-    const interruptedMessage = await persistInterruptedMessage();
-    if (!interruptedMessage) return;
-
-    await ingestUsageForMessage({
-      messageId: interruptedMessage.id,
-      status: "interrupted",
-    });
+    return msg;
   };
 
   try {
     const result = aiStreamText({
-      model: resolvedModel.model,
+      model,
       system: buildSystemPrompt({ cwd, mode }),
       messages: history,
       tools,
       stopWhen: tools ? stepCountIs(50) : undefined,
       abortSignal: abortController.signal,
-      providerOptions: resolvedModel.providerOptions,
-      onFinish(event) {
-        completedUsage = event.totalUsage;
-      },
     });
 
     for await (const part of result.fullStream) {
@@ -180,10 +130,7 @@ async function streamAIResponse(
           parts.push({ type: "reasoning", text: part.text });
         }
         const event: ChatStreamEvent = { type: "reasoning-delta", text: part.text };
-        await stream.writeSSE({
-          event: "reasoning-delta",
-          data: JSON.stringify(event)
-        });
+        await stream.writeSSE({ event: "reasoning-delta", data: JSON.stringify(event) });
       }
 
       if (part.type === "text-delta") {
@@ -193,21 +140,18 @@ async function streamAIResponse(
         } else {
           parts.push({ type: "text", text: part.text });
         }
-
         const event: ChatStreamEvent = { type: "text-delta", text: part.text };
         await stream.writeSSE({ event: "text-delta", data: JSON.stringify(event) });
       }
 
       if (part.type === "tool-call") {
         const args = toolCallArgsSchema.parse(part.input);
-
         parts.push({
           type: "tool-call",
           id: part.toolCallId,
           name: part.toolName,
           args,
         });
-
         const event: ChatStreamEvent = {
           type: "tool-call",
           toolCallId: part.toolCallId,
@@ -220,22 +164,18 @@ async function streamAIResponse(
       if (part.type === "tool-result") {
         const resultStr =
           typeof part.output === "string" ? part.output : JSON.stringify(part.output);
-
         const tcPart = parts.find(
           (p): p is Extract<MessagePart, { type: "tool-call" }> =>
             p.type === "tool-call" && p.id === part.toolCallId,
         );
-
         if (tcPart) {
           tcPart.result = resultStr;
         }
-
         const event: ChatStreamEvent = {
           type: "tool-result",
           toolCallId: part.toolCallId,
           result: resultStr,
         };
-
         await stream.writeSSE({ event: "tool-result", data: JSON.stringify(event) });
       }
 
@@ -245,8 +185,38 @@ async function streamAIResponse(
     }
 
     if (stream.aborted || abortController.signal.aborted) {
-      await persistInterruptedMessageAndUsage();
+      await persistInterruptedMessage();
       return;
+    }
+
+    // ------ Response size cap and tool‑call warning ------
+    const MAX_RESPONSE_CHARS = 200_000;
+    let totalTextLength = parts
+      .filter((p) => p.type === "text")
+      .reduce((sum, p) => sum + p.text.length, 0);
+    let truncated = false;
+    if (totalTextLength > MAX_RESPONSE_CHARS) {
+      // Truncate text parts – keep first MAX_RESPONSE_CHARS characters total
+      let accumulated = 0;
+      for (const p of parts) {
+        if (p.type === "text") {
+          if (accumulated + p.text.length > MAX_RESPONSE_CHARS) {
+            const allowed = MAX_RESPONSE_CHARS - accumulated;
+            p.text = p.text.slice(0, allowed) + "\n... (truncated)";
+            truncated = true;
+            break;
+          }
+          accumulated += p.text.length;
+        }
+      }
+    }
+
+    // Tool‑calling reliability: warn if BUILD mode and no tool calls
+    if (mode === "BUILD" && parts.every((p) => p.type !== "tool-call")) {
+      parts.push({
+        type: "text",
+        text: "\n⚠️ This model did not emit any tool calls in BUILD mode. It may not support tool calling reliably.",
+      });
     }
 
     const elapsedMs = Date.now() - startTime;
@@ -258,12 +228,16 @@ async function streamAIResponse(
     const validatedParts: Prisma.InputJsonValue | undefined =
       parts.length > 0 ? messagePartsSchema.parse(parts) : undefined;
 
+    const modelKind = selection.modelKind;
+    const modelRef = selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
+
     const assistantMessage = await db.message.create({
       data: {
         sessionId,
         role: "ASSISTANT",
         status: MessageStatus.COMPLETE,
-        model,
+        modelKind,
+        modelRef,
         content: fullText,
         parts: validatedParts,
         mode,
@@ -271,32 +245,30 @@ async function streamAIResponse(
       },
     });
 
-    await ingestUsageForMessage({
-      messageId: assistantMessage.id,
-      status: "complete",
-    });
-
     const doneEvent: ChatStreamEvent = {
       type: "done",
       messageId: assistantMessage.id,
       durationMs: elapsedMs,
     };
-
     await stream.writeSSE({ event: "done", data: JSON.stringify(doneEvent) });
   } catch (err) {
     if (abortController.signal.aborted) {
-      await persistInterruptedMessageAndUsage();
+      await persistInterruptedMessage();
       return;
     }
 
-    const message = err instanceof Error ? err.message : String(err);
+    const message = sanitizeError(err);
+
+    const modelKind = selection.modelKind;
+    const modelRef = selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
 
     await db.message.create({
       data: {
         sessionId,
         role: "ERROR",
         status: MessageStatus.COMPLETE,
-        model,
+        modelKind,
+        modelRef,
         content: message,
         mode,
       },
@@ -305,141 +277,134 @@ async function streamAIResponse(
     const errorEvent: ChatStreamEvent = { type: "error", message };
     await stream.writeSSE({ event: "error", data: JSON.stringify(errorEvent) });
   }
-};
+}
 
-const app = new Hono<AuthenticatedEnv>()
-  .post("/:sessionId/resume", async (c) => {
-    const sessionId = c.req.param("sessionId");
-    const userId = c.get("userId");
+// ---------- route definitions ----------
+const app = new Hono<AuthenticatedEnv>();
 
-    const session = await db.session.findUnique({
-      where: { id: sessionId, userId },
-      include: { messages: { orderBy: { createdAt: "asc" } } },
-    });
+// /resume endpoint
+app.post("/:sessionId/resume", async (c) => {
+  const sessionId = c.req.param("sessionId");
+  const userId = c.get("userId");
 
-    if (!session) {
-      return c.json({ error: "Session not found" }, 404);
-    }
-
-    const resumableMessage = getResumableUserMessage(session.messages);
-    if (!resumableMessage) {
-      return c.json({ error: "Session has no pending user message to resume" }, 409);
-    }
-
-    if (!isSupportedChatModel(resumableMessage.model)) {
-      return c.json({
-        error: `Session uses unsupported model: ${resumableMessage.model}`
-      }, 409);
-    }
-
-    if (activeResumeSessionIds.has(sessionId)) {
-      return c.json({
-        error: "Session already has an active resume"
-      }, 409);
-    }
-
-    activeResumeSessionIds.add(sessionId);
-
-    const history = buildConversationHistory(session.messages);
-    const abortController = new AbortController();
-
-    try {
-      return streamSSE(
-        c,
-        async (stream) => {
-          stream.onAbort(() => {
-            abortController.abort();
-          });
-
-          try {
-            await streamAIResponse(stream, {
-              sessionId,
-              userId,
-              model: resumableMessage.model,
-              cwd: session.cwd,
-              history,
-              mode: resumableMessage.mode,
-              abortController,
-            });
-          } finally {
-            activeResumeSessionIds.delete(sessionId);
-          }
-        },
-        async (err, stream) => {
-          activeResumeSessionIds.delete(sessionId);
-          const message = err instanceof Error ? err.message : String(err);
-          const errorEvent: ChatStreamEvent = { type: "error", message };
-          await stream.writeSSE({
-            event: "error",
-            data: JSON.stringify(errorEvent)
-          });
-        },
-      );
-    } catch (error) {
-      activeResumeSessionIds.delete(sessionId);
-      throw error;
-    }
-  })
-  .post("/:sessionId", requireCreditsBalance, submitValidator, async (c) => {
-    const sessionId = c.req.param("sessionId");
-    const userId = c.get("userId");
-
-    const session = await db.session.findUnique({
-      where: { id: sessionId, userId },
-      include: { messages: { orderBy: { createdAt: "asc" } } },
-    });
-
-    if (!session) {
-      return c.json({ error: "Session not found" }, 404);
-    }
-
-    const data = c.req.valid("json");
-
-    await db.message.create({
-      data: {
-        sessionId,
-        role: "USER",
-        status: MessageStatus.COMPLETE,
-        model: data.model,
-        content: data.content,
-        mode: data.mode,
-      },
-    });
-
-    const history = buildConversationHistory([
-      ...session.messages, // TODO: limit to last 10, 5 messages?
-      {
-        role: "USER" as const,
-        content: data.content,
-        status: MessageStatus.COMPLETE
-      },
-    ]);
-
-    const abortController = new AbortController();
-
-    return streamSSE(
-      c,
-      async (stream) => {
-        stream.onAbort(() => {
-          abortController.abort();
-        });
-
-        await streamAIResponse(stream, {
-          sessionId,
-          userId,
-          model: data.model,
-          cwd: session.cwd,
-          history,
-          mode: data.mode,
-          abortController,
-        });
-      },
-      async (err, stream) => {
-        const message = err instanceof Error ? err.message : String(err);
-        const errorEvent: ChatStreamEvent = { type: "error", message };
-        await stream.writeSSE({ event: "error", data: JSON.stringify(errorEvent) });
-      }
-    );
+  const session = await db.session.findUnique({
+    where: { id: sessionId, userId },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
   });
+
+  if (!session) return c.json({ error: "Session not found" }, 404);
+
+  const lastUser = getResumableUserMessage(session.messages);
+  if (!lastUser) return c.json({ error: "No pending user message" }, 409);
+
+  // Reconstruct selection from stored fields
+  const selection: ChatModelSelection =
+    lastUser.modelKind === "builtin"
+      ? { modelKind: "builtin", modelId: lastUser.modelRef }
+      : { modelKind: "custom", connectionId: lastUser.modelRef };
+
+  // Verify the model is still supported (built‑in or connection exists)
+  try {
+    await resolveChatModel(selection, userId);
+  } catch {
+    return c.json({ error: "The model used in this session is no longer available" }, 409);
+  }
+
+  const history = buildConversationHistory(session.messages);
+  const abortController = new AbortController();
+
+  return streamSSE(
+    c,
+    async (stream) => {
+      stream.onAbort(() => abortController.abort());
+      await streamAIResponse(stream, {
+        sessionId,
+        userId,
+        selection,
+        cwd: session.cwd,
+        history,
+        mode: lastUser.mode,
+        abortController,
+      });
+    },
+    async (err, stream) => {
+      const message = err instanceof Error ? err.message : String(err);
+      const errorEvent: ChatStreamEvent = { type: "error", message };
+      await stream.writeSSE({ event: "error", data: JSON.stringify(errorEvent) });
+    },
+  );
+});
+
+// Main POST /:sessionId
+app.post("/:sessionId", zValidator("json", submitSchema), async (c) => {
+  const sessionId = c.req.param("sessionId");
+  const userId = c.get("userId");
+
+  const session = await db.session.findUnique({
+    where: { id: sessionId, userId },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
+  });
+
+  if (!session) return c.json({ error: "Session not found" }, 404);
+
+  const data = c.req.valid("json");
+
+  // Store user message with model selection
+  const modelKind = data.model.modelKind;
+  const modelRef = data.model.modelKind === "builtin" ? data.model.modelId : data.model.connectionId;
+
+  await db.message.create({
+    data: {
+      sessionId,
+      role: "USER",
+      status: MessageStatus.COMPLETE,
+      modelKind,
+      modelRef,
+      content: data.content,
+      mode: data.mode,
+    },
+  });
+
+  const history = buildConversationHistory([
+    ...session.messages,
+    {
+      role: "USER" as const,
+      content: data.content,
+      status: MessageStatus.COMPLETE,
+    },
+  ]);
+
+  const abortController = new AbortController();
+
+  // Set a timeout for custom connections – 60 seconds
+  const timeoutMs = 60_000;
+  const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
+
+  return streamSSE(
+    c,
+    async (stream) => {
+      stream.onAbort(() => {
+        clearTimeout(timeoutId);
+        abortController.abort();
+      });
+
+      await streamAIResponse(stream, {
+        sessionId,
+        userId,
+        selection: data.model,
+        cwd: session.cwd,
+        history,
+        mode: data.mode,
+        abortController,
+      });
+    },
+    async (err, stream) => {
+      clearTimeout(timeoutId);
+      const message = err instanceof Error ? err.message : String(err);
+      const errorEvent: ChatStreamEvent = { type: "error", message };
+      await stream.writeSSE({ event: "error", data: JSON.stringify(errorEvent) });
+    },
+  );
+});
 
 export default app;

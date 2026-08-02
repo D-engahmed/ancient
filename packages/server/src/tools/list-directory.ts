@@ -1,3 +1,8 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+// file: packages/server/src/tools/list-directory.ts
+
 import { resolve, relative, join } from "path";
 import { readdir, stat } from "fs/promises";
 import { tool } from "ai";

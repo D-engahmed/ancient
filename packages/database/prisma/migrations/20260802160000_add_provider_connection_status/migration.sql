@@ -1,0 +1,5 @@
+ALTER TABLE "ProviderConnection"
+    ADD COLUMN IF NOT EXISTS "isValid" BOOLEAN NOT NULL DEFAULT true,
+    ADD COLUMN IF NOT EXISTS "lastValidatedAt" TIMESTAMP(3),
+    ADD COLUMN IF NOT EXISTS "lastValidationError" TEXT,
+    ADD COLUMN IF NOT EXISTS "lastUsedAt" TIMESTAMP(3);

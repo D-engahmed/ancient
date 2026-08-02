@@ -1,3 +1,8 @@
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+// file: packages/server/src/tools/glob.ts
+
 import { resolve, relative } from "path";
 import { tool } from "ai";
 import { z } from "zod";

@@ -1,3 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License. 
+// file: packages/cli/src/components/dialogs/index.tsx
+
 export { ThemeDialogContent } from "./theme-dialog";
 export { SessionsDialogContent } from "./sessions-dialog";
 export { AgentsDialogContent } from "./agents-dialog";

@@ -1,11 +1,12 @@
 {
-    "name": "@ANCIENT/shared",
-    "type": "module",
-    "private": true,
-    "exports": {
-        ".": "./src/index.ts"
-    },
-    "dependencies": {
-        "zod": "^4.4.3"
-    }
+  "name": "@ANCIENT/shared",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "ai": "^6.0.184",
+    "zod": "^4.3.6"
+  }
 }

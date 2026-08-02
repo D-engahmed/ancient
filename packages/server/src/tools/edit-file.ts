@@ -1,7 +1,13 @@
-import { resolve, relative } from "path";
+
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+// file: packages/server/src/tools/edit-file.ts
+
+import { relative } from "path";
 import { readFile, writeFile } from "fs/promises";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveWithinCwd } from "../lib/fs-safety";
 
 export function createEditFileTool(cwd: string) {
     return tool({
@@ -15,9 +21,9 @@ export function createEditFileTool(cwd: string) {
             newString: z.string().describe("The text to replace it with"),
         }),
         execute: async ({ path, oldString, newString }) => {
-            const resolved = resolve(cwd, path);
+            const resolved = resolveWithinCwd(cwd, path);
 
-            if (!resolved.startsWith(cwd)) {
+            if (!resolved) {
                 return { error: "Path is outside the project directory" };
             }
 
