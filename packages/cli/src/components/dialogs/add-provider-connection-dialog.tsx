@@ -1,19 +1,22 @@
+// add-provider-connection-dialog.tsx
 import { useState, useCallback, useMemo } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useDialog } from "../../providers/dialog";
 import { useToast } from "../../providers/toast";
+import { usePromptConfig } from "../../providers/prompt-config";
 import { apiClient } from "../../lib/api-client";
 import { getErrorMessage } from "../../lib/http-errors";
 import { DialogSearchList } from "../dialog-search-list";
-import type { Provider } from "./provider-selection-dialog";
+import type { ProviderDefinition } from "@ANCIENT/shared";
 
 type Props = {
-    provider: Provider;
+    provider: ProviderDefinition;
 };
 
 export const AddProviderConnectionDialog = ({ provider }: Props) => {
     const dialog = useDialog();
     const toast = useToast();
+    const { setModelSelection } = usePromptConfig();
 
     const [label, setLabel] = useState(
         provider.defaultModelId
@@ -21,7 +24,7 @@ export const AddProviderConnectionDialog = ({ provider }: Props) => {
             : provider.label,
     );
     const [baseUrl, setBaseUrl] = useState(provider.defaultBaseUrl);
-    const [modelId, setModelId] = useState(provider.defaultModelId);
+    const [modelId, setModelId] = useState(provider.defaultModelId || "");
     const [apiKey, setApiKey] = useState("");
     const [submitting, setSubmitting] = useState(false);
 
@@ -37,7 +40,7 @@ export const AddProviderConnectionDialog = ({ provider }: Props) => {
 
     // When user selects a model from the list, update modelId and optionally label
     const handleSelectModel = useCallback(
-        (selected: typeof modelOptions[number]) => {
+        (selected: { id: string; label: string }) => {
             setModelId(selected.id);
             // Auto‑update label to include the model name if it's not custom
             if (selected.id) {
@@ -68,7 +71,9 @@ export const AddProviderConnectionDialog = ({ provider }: Props) => {
                 const error = await getErrorMessage(res);
                 throw new Error(error);
             }
-            toast.show({ variant: "success", message: "Connection added successfully" });
+            const connection = await res.json() as { id: string };
+            setModelSelection({ modelKind: "custom", connectionId: connection.id });
+            toast.show({ variant: "success", message: "Connection added and selected" });
             dialog.close();
         } catch (error) {
             toast.show({
@@ -78,7 +83,13 @@ export const AddProviderConnectionDialog = ({ provider }: Props) => {
         } finally {
             setSubmitting(false);
         }
-    }, [label, baseUrl, modelId, apiKey, provider]);
+    }, [label, baseUrl, modelId, apiKey, provider, setModelSelection, toast, dialog]);
+
+    // Determine placeholder for API key
+    const apiKeyPlaceholder =
+        provider.id === "ollama" || provider.id === "lmstudio" || provider.id === "vllm"
+            ? "Not needed for most local servers"
+            : "sk-... (required for cloud providers)";
 
     return (
         <box flexDirection="column" gap={1} width="100%">
@@ -122,12 +133,7 @@ export const AddProviderConnectionDialog = ({ provider }: Props) => {
                             item.id.toLowerCase().includes(query.toLowerCase())
                         }
                         renderItem={(item, isSelected) => (
-                            <box
-                                flexDirection="row"
-                                flexGrow={1}
-                                overflow="hidden"
-                                width="100%"
-                            >
+                            <box flexDirection="row" flexGrow={1} overflow="hidden" width="100%">
                                 <text selectable={false} fg={isSelected ? "black" : "white"}>
                                     {item.label}
                                 </text>
@@ -161,15 +167,20 @@ export const AddProviderConnectionDialog = ({ provider }: Props) => {
                 />
             </box>
 
-            {/* API Key */}
+            {/* API Key – ALWAYS visible */}
             <box flexDirection="column">
-                <text attributes={TextAttributes.DIM}>API Key (optional for local servers)</text>
+                <text attributes={TextAttributes.DIM}>API Key</text>
                 <input
-                    placeholder={provider.id === "ollama" || provider.id === "lmstudio" || provider.id === "vllm" ? "Not needed for most local servers" : "sk-..."}
+                    placeholder={apiKeyPlaceholder}
                     type="password"
                     value={apiKey}
                     onInput={(value) => setApiKey(value)}
                 />
+                <text attributes={TextAttributes.DIM} fontSize={0.8}>
+                    {provider.id === "ollama" || provider.id === "lmstudio" || provider.id === "vllm"
+                        ? "Leave blank for local servers that don't require authentication."
+                        : "Required for cloud providers."}
+                </text>
             </box>
 
             {/* Actions */}

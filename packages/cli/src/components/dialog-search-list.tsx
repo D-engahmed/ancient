@@ -1,7 +1,5 @@
-// copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License. 
-// file: packages/cli/src/components/dialog-search-list.tsx
-import { useCallback, useRef, useState, type ReactNode } from "react";
+// dialog-search-list.tsx
+import { useCallback, useRef, useState, type ReactNode, type RefObject } from "react";
 import { TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { useKeyboardLayer } from "../providers/Keyboard-layer";
@@ -121,10 +119,10 @@ export function DialogSearchList<T>({
               >
                 {renderItem(item, isSelected)}
               </box>
-            )
+            );
           })}
         </scrollbox>
       )}
     </box>
   );
-};
+}

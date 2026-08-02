@@ -40,6 +40,7 @@
     "packages/database": {
       "name": "@ANCIENT/database",
       "dependencies": {
+        "@ANCIENT/shared": "workspace:*",
         "@prisma/adapter-pg": "^7.7.0",
         "@prisma/client": "^7.7.0",
         "dotenv": "^17.4.1",

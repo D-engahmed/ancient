@@ -1,8 +1,4 @@
-
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License. 
-// file: packages/cli/src/screens/session.tsx
-
+// session.tsx
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useLocation, useNavigate } from "react-router";
 import { z } from "zod";
@@ -140,12 +136,8 @@ export function Session() {
     let ignore = false;
     const fetchSession = async () => {
       try {
-        const res = await apiClient.sessions[":id"].$get({
-          param: { id },
-        });
+        const resolved = await apiClient.sessions.get(id);
         if (ignore) return;
-        if (!res.ok) throw new Error(await getErrorMessage(res));
-        const resolved = await res.json();
         setSession(resolved);
       } catch (err) {
         if (ignore) return;

@@ -6,6 +6,7 @@ import { useState, useCallback } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useDialog } from "../../providers/dialog";
 import { useToast } from "../../providers/toast";
+import { usePromptConfig } from "../../providers/prompt-config";
 import { apiClient } from "../../lib/api-client";
 import { getErrorMessage } from "../../lib/http-errors";
 
@@ -20,6 +21,7 @@ type FormState = {
 export const AddConnectionDialogContent = () => {
     const dialog = useDialog();
     const toast = useToast();
+    const { setModelSelection } = usePromptConfig();
     const [form, setForm] = useState<FormState>({
         label: "",
         protocol: "openai",
@@ -49,7 +51,9 @@ export const AddConnectionDialogContent = () => {
                 const error = await getErrorMessage(res);
                 throw new Error(error);
             }
-            toast.show({ variant: "success", message: "Connection added successfully" });
+            const connection = await res.json() as { id: string };
+            setModelSelection({ modelKind: "custom", connectionId: connection.id });
+            toast.show({ variant: "success", message: "Connection added and selected" });
             dialog.close();
         } catch (error) {
             toast.show({
@@ -59,7 +63,7 @@ export const AddConnectionDialogContent = () => {
         } finally {
             setSubmitting(false);
         }
-    }, [form]);
+    }, [form, setModelSelection]);
 
     const setProtocol = (protocol: FormState["protocol"]) => {
         setForm((f) => ({ ...f, protocol }));

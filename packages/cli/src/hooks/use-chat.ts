@@ -1,8 +1,4 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License. 
-// file: packages/cli/src/hooks/use-chat.ts
-// This file is part of the Ancient project, licensed under the MIT License.
-// *aspath: packages/cli/src/hooks/use-chat.ts
+// use-chat.ts
 import { useMemo } from "react";
 import { useChat as useAiChat } from "@ai-sdk/react";
 import {
@@ -17,13 +13,13 @@ import {
   type ChatModelSelection,
   type ToolContracts,
 } from "@ANCIENT/shared";
-import { apiClient } from "../lib/api-client";
+import { API_URL, apiClient } from "../lib/api-client";
 import { getAuth } from "../lib/auth";
 import { executeLocalTool } from "../lib/local-tools";
 
 export type ChatMessageMetadata = {
   mode?: ModeType;
-  model?: ChatModelSelection; // now an object
+  model?: ChatModelSelection;
   durationMs?: number;
   usage?: LanguageModelUsage;
 };
@@ -39,31 +35,28 @@ export type Message = UIMessage<ChatMessageMetadata, never, ChatTools>;
 
 export function useChat(sessionId: string, initialMessages: Message[]) {
   const transport = useMemo(() => {
+    const chatUrl = `${API_URL}/chat/${sessionId}`;
     return new DefaultChatTransport<Message>({
-      api: apiClient["chat"].$url().toString(),
+      api: chatUrl,
       headers() {
         const auth = getAuth();
-        return auth ? { Authorization: `Bearer ${auth.token}` } : new Headers();
+        return auth ? { Authorization: `Bearer ${auth.token}` } : {};
       },
       prepareSendMessagesRequest({ messages }) {
-        const message = messages[messages.length - 1];
-        if (!message) throw new Error("No message to send");
-
+        const userMessages = messages.filter((m) => m.role === "user");
+        if (userMessages.length === 0) {
+          throw new Error("No user message to send");
+        }
+        const lastUser = userMessages[userMessages.length - 1]!;
+        const content = lastUser.content;
         const metadata = messages.findLast(
           (m) => m.metadata?.mode && m.metadata?.model,
         )?.metadata;
-        const previousMessage = messages[messages.length - 2];
-        const requestMessages =
-          message.role === "assistant" && previousMessage?.role === "user"
-            ? [previousMessage, message]
-            : [message];
-
         return {
           body: {
-            id: sessionId,
-            messages: requestMessages,
-            mode: message.metadata?.mode ?? metadata?.mode,
-            model: message.metadata?.model ?? metadata?.model, // now an object
+            content,
+            mode: lastUser.metadata?.mode ?? metadata?.mode,
+            model: lastUser.metadata?.model ?? metadata?.model,
           },
         };
       },

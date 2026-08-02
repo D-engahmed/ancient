@@ -1,6 +1,4 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-// file: packages/shared/src/index.ts
+// packages/shared/src/index.ts
 export {
   SUPPORTED_CHAT_MODELS,
   DEFAULT_CHAT_MODEL_ID,
@@ -27,3 +25,10 @@ export {
   type ToolContracts,
   type ModeType,
 } from "./schemas";
+
+export {
+  PROVIDERS,
+  getProviderModelIds,
+  type ProviderDefinition,
+  type ProviderModel,
+} from "./providers";
