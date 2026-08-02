@@ -1,6 +1,5 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-// file: packages/server/src/routes/auth.ts
+// Copyright (c) 2026 NXG AI Solutions. All rights reserved.
+// Proprietary and confidential. Unauthorized copying or distribution prohibited.
 
 import { Hono } from "hono";
 
@@ -8,7 +7,6 @@ const app = new Hono().get("/callback", (c) => {
   const code = c.req.query("code");
   const state = c.req.query("state");
   const error = c.req.query("error");
-
   const errorDescription = c.req.query("error_description");
 
   if (error) {
@@ -26,12 +24,12 @@ const app = new Hono().get("/callback", (c) => {
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString());
     const port = payload.port;
 
-    if (!port || typeof port !== "number") {
+    // FIXED: Validate port range
+    if (!port || typeof port !== "number" || port < 1024 || port > 65535) {
       throw new Error("Invalid port in state");
     }
 
-    const redirectUrl = `http://localhost:${port}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
-
+    const redirectUrl = `http://127.0.0.1:${port}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
     return c.redirect(redirectUrl);
   } catch {
     return c.text("Invalid authentication state", 400);

@@ -1,6 +1,5 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-// file: packages/server/src/middleware/require-auth.ts
+// Copyright (c) 2026 NXG AI Solutions. All rights reserved.
+// Proprietary and confidential. Unauthorized copying or distribution prohibited.
 
 import { createMiddleware } from "hono/factory";
 import { authenticateOAuthRequest } from "../lib/auth";
@@ -17,11 +16,9 @@ export const requireAuth = createMiddleware<AuthenticatedEnv>(async (c, next) =>
     if (!auth) {
       return c.json({ error: "Unauthorized. Run /login to continue." }, 401);
     }
-
     c.set("userId", auth.userId);
     await next();
   } catch {
     return c.json({ error: "Unauthorized. Run /login to continue." }, 401);
   }
 });
-

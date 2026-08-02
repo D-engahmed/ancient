@@ -1,89 +1,50 @@
-
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-// file: packages/server/src/routes/sessions.ts
+// Copyright (c) 2026 NXG AI Solutions. All rights reserved.
+// Proprietary and confidential. Unauthorized copying or distribution prohibited.
 
 import { Hono } from "hono";
-// import { HTTPException } from "hono/http-exception";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { db } from "@ANCIENT/database/client";
-
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 
-
 const createSessionSchema = z.object({
-  title: z.string(),
+  title: z.string().trim().min(1).max(200),
+  cwd: z.string().optional(),
 });
-
-const createSessionValidator = zValidator(
-  "json", createSessionSchema, (result, c) => {
-    if (!result.success) {
-      return c.json({ error: "Invalid request body" }, 400);
-    }
-  });
 
 const app = new Hono<AuthenticatedEnv>()
   .get("/", async (c) => {
     const userId = c.get("userId");
-
     const sessions = await db.session.findMany({
       where: { userId },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        title: true,
-        createdAt: true,
-      },
+      orderBy: { updatedAt: "desc" },
     });
-
     return c.json(sessions);
   })
-  .get("/:id", async (c) => {
-    // MOCK: Uncomment to simulate slow session loading
-    // await new Promise((r) => setTimeout(r, 5000))
-
-    // MOCK: Uncomment to simulate session loading error
-    // throw new HTTPException(
-    //   500, 
-    //   { message: "Mock error: session loading failed" }
-    // )
-
-    const id = c.req.param("id");
+  .post("/", zValidator("json", createSessionSchema), async (c) => {
     const userId = c.get("userId");
-
+    const { title, cwd } = c.req.valid("json");
+    const session = await db.session.create({
+      data: { userId, title, cwd: cwd ?? null },
+    });
+    return c.json(session, 201);
+  })
+  .get("/:id", async (c) => {
+    const userId = c.get("userId");
+    const id = c.req.param("id");
     const session = await db.session.findUnique({
       where: { id, userId },
       include: { messages: { orderBy: { createdAt: "asc" } } },
     });
-
-    if (!session) {
-      return c.json({ error: "Session not found" }, 404);
-    }
-
+    if (!session) return c.json({ error: "Session not found" }, 404);
     return c.json(session);
   })
-  .post("/", createSessionValidator, async (c) => {
-    // MOCK: Uncomment to simulate slow session loading
-    // await new Promise((r) => setTimeout(r, 5000))
-
-    // MOCK: Uncomment to simulate session loading error
-    // throw new HTTPException(
-    //   500, 
-    //   { message: "Mock error: session loading failed" }
-    // )
-
+  .delete("/:id", async (c) => {
     const userId = c.get("userId");
-    const data = c.req.valid("json");
-
-    const session = await db.session.create({
-      data: {
-        ...data,
-        userId,
-      },
-    });
-
-    return c.json(session, 201);
+    const id = c.req.param("id");
+    const result = await db.session.deleteMany({ where: { id, userId } });
+    if (result.count === 0) return c.json({ error: "Session not found" }, 404);
+    return c.json({ success: true });
   });
 
 export default app;

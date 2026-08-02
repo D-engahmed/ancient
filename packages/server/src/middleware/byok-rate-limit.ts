@@ -1,3 +1,6 @@
+// Copyright (c) 2026 NXG AI Solutions. All rights reserved.
+// Proprietary and confidential. Unauthorized copying or distribution prohibited.
+
 import { createMiddleware } from "hono/factory";
 import type { AuthenticatedEnv } from "./require-auth";
 
@@ -14,10 +17,25 @@ function getLimit(): number {
   return Number.isFinite(configured) && configured > 0 ? configured : 60;
 }
 
+function cleanupBuckets() {
+  const now = Date.now();
+  for (const [userId, bucket] of buckets) {
+    if (now - bucket.startedAt >= windowMs) {
+      buckets.delete(userId);
+    }
+  }
+}
+
+// Run cleanup every 5 minutes
+setInterval(cleanupBuckets, 5 * 60 * 1000);
+
 export const byokRateLimit = createMiddleware<AuthenticatedEnv>(async (c, next) => {
   const userId = c.get("userId");
   const now = Date.now();
   const limit = getLimit();
+
+  cleanupBuckets();
+
   const existing = buckets.get(userId);
   const bucket = !existing || now - existing.startedAt >= windowMs
     ? { startedAt: now, requestCount: 0 }

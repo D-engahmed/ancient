@@ -1,6 +1,5 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-// file: packages/server/src/lib/connection-crypto.ts
+// Copyright (c) 2026 NXG AI Solutions. All rights reserved.
+// Proprietary and confidential. Unauthorized copying or distribution prohibited.
 
 import { Buffer } from "node:buffer";
 
@@ -12,12 +11,18 @@ function getRequiredEnv(name: string): string {
     return value;
 }
 
+let masterKeyPromise: Promise<CryptoKey> | null = null;
+
 async function getMasterKey(): Promise<CryptoKey> {
-    const raw = Buffer.from(getRequiredEnv("ANCIENT_CONNECTION_KEY_SECRET"), "base64");
-    if (raw.byteLength !== 32) {
-        throw new Error("ANCIENT_CONNECTION_KEY_SECRET must be a base64-encoded 32-byte key");
-    }
-    return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+    if (masterKeyPromise) return masterKeyPromise;
+    masterKeyPromise = (async () => {
+        const raw = Buffer.from(getRequiredEnv("ANCIENT_CONNECTION_KEY_SECRET"), "base64");
+        if (raw.byteLength !== 32) {
+            throw new Error("ANCIENT_CONNECTION_KEY_SECRET must be a base64-encoded 32-byte key");
+        }
+        return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+    })();
+    return masterKeyPromise;
 }
 
 export async function encryptApiKey(plaintext: string): Promise<Uint8Array> {

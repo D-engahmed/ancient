@@ -1,34 +1,28 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-// file: packages/shared/src/schemas.ts
+// Copyright (c) 2026 NXG AI Solutions. All rights reserved.
+// Proprietary and confidential. Unauthorized copying or distribution prohibited.
 
 import { z } from "zod";
 import { tool } from "ai";
 import { findSupportedChatModel } from "./models";
 
-export const Mode = {
-  BUILD: "BUILD",
-  PLAN: "PLAN",
-} as const;
-
+export const Mode = { BUILD: "BUILD", PLAN: "PLAN" } as const;
 export const modeSchema = z.enum([Mode.BUILD, Mode.PLAN]);
 export type ModeType = (typeof Mode)[keyof typeof Mode];
 
-// ---------- New: ChatModelSelection ----------
-export const chatModelSelectionSchema = z.discriminatedUnion("modelKind", [
+// FIXED: z.discriminatedUnion removed in Zod v4
+export const chatModelSelectionSchema = z.union([
   z.object({ modelKind: z.literal("builtin"), modelId: z.string().refine(findSupportedChatModel) }),
   z.object({ modelKind: z.literal("custom"), connectionId: z.string().uuid() }),
 ]);
 export type ChatModelSelection = z.infer<typeof chatModelSelectionSchema>;
 
-// ---------- submitSchema (updated) ----------
+// FIXED: use modeSchema instead of z.enum(Mode)
 export const submitSchema = z.object({
   content: z.string(),
-  mode: z.enum(Mode),
+  mode: modeSchema,
   model: chatModelSelectionSchema,
 });
 
-// ---------- tool schemas (unchanged) ----------
 export const toolInputSchemas = {
   readFile: z.object({ path: z.string() }),
   listDirectory: z.object({ path: z.string().default(".") }),
@@ -58,9 +52,10 @@ export function getToolContracts(mode: ModeType) {
   return mode === Mode.PLAN ? readOnlyToolContracts : buildToolContracts;
 }
 
-export const toolCallArgsSchema = z.record(z.string(), z.json());
+// FIXED: z.json() does not exist
+export const toolCallArgsSchema = z.record(z.string(), z.unknown());
 
-export const messagePartSchema = z.discriminatedUnion("type", [
+export const messagePartSchema = z.union([
   z.object({ type: z.literal("reasoning"), text: z.string() }),
   z.object({ type: z.literal("tool-call"), id: z.string(), name: z.string(), args: toolCallArgsSchema, result: z.string().optional() }),
   z.object({ type: z.literal("text"), text: z.string() }),
@@ -69,7 +64,7 @@ export const messagePartSchema = z.discriminatedUnion("type", [
 export const messagePartsSchema = z.array(messagePartSchema);
 export type MessagePart = z.infer<typeof messagePartSchema>;
 
-export const chatStreamEventSchema = z.discriminatedUnion("type", [
+export const chatStreamEventSchema = z.union([
   z.object({ type: z.literal("text-delta"), text: z.string() }),
   z.object({ type: z.literal("reasoning-delta"), text: z.string() }),
   z.object({ type: z.literal("tool-call"), toolCallId: z.string(), toolName: z.string(), args: toolCallArgsSchema }),

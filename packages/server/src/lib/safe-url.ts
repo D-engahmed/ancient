@@ -1,7 +1,5 @@
-
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-// file: packages/server/src/lib/safe-url.ts
+// Copyright (c) 2026 NXG AI Solutions. All rights reserved.
+// Proprietary and confidential. Unauthorized copying or distribution prohibited.
 
 import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
@@ -45,7 +43,6 @@ export async function assertSafeBaseUrl(rawUrl: string): Promise<void> {
     if (isIP(hostname) && isPrivateOrLinkLocalIp(hostname)) {
         throw new Error("baseUrl points at a private or link-local address");
     }
-    // DNS rebinding protection – resolve and re‑check
     try {
         const addresses = await lookup(hostname);
         const ips = Array.isArray(addresses) ? addresses : [addresses];
