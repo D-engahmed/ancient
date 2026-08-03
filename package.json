@@ -6,11 +6,14 @@
     "dev:cli": "bun run --watch packages/cli/src/index.tsx",
     "dev:server": "bun --hot run packages/server/src/index.ts"
   },
-   "devDependencies": {
-  "@types/bun": "latest"
+  "devDependencies": {
+    "@types/bun": "latest"
   },
   "dependencies": {
-   
+    "@ai-sdk/anthropic": "^4.0.27",
+    "@ai-sdk/google": "1",
+    "@ai-sdk/openai": "1",
+    "ai": "^7.0.48",
     "dotenv": "^17.4.2"
   }
 }

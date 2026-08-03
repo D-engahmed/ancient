@@ -6,7 +6,18 @@ export type ModelPricing = {
   outputUsdPerMillionTokens: number;
 };
 
-export type SupportedProvider = "anthropic" | "openai";
+export type SupportedProvider =
+  | "anthropic"
+  | "openai"
+  | "google"
+  | "deepseek"
+  | "mistral"
+  | "groq"
+  | "together"
+  | "ollama"
+  | "lmstudio"
+  | "vllm"
+  | "custom";
 
 type SupportedChatModelDefinition = {
   id: string;
@@ -15,6 +26,7 @@ type SupportedChatModelDefinition = {
 };
 
 export const SUPPORTED_CHAT_MODELS = [
+  // ---- OpenAI ----
   { id: "gpt-5.6-sol", provider: "openai", pricing: { inputUsdPerMillionTokens: 4, outputUsdPerMillionTokens: 20 } },
   { id: "gpt-5.5", provider: "openai", pricing: { inputUsdPerMillionTokens: 3, outputUsdPerMillionTokens: 15 } },
   { id: "gpt-5.4", provider: "openai", pricing: { inputUsdPerMillionTokens: 2.5, outputUsdPerMillionTokens: 15 } },
@@ -29,6 +41,8 @@ export const SUPPORTED_CHAT_MODELS = [
   { id: "o4-mini", provider: "openai", pricing: { inputUsdPerMillionTokens: 0.3, outputUsdPerMillionTokens: 1.2 } },
   { id: "o3-mini", provider: "openai", pricing: { inputUsdPerMillionTokens: 0.15, outputUsdPerMillionTokens: 0.6 } },
   { id: "o1", provider: "openai", pricing: { inputUsdPerMillionTokens: 0.5, outputUsdPerMillionTokens: 2 } },
+
+  // ---- Anthropic ----
   { id: "claude-sonnet-5", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 2, outputUsdPerMillionTokens: 10 } },
   { id: "claude-opus-4-8", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 5, outputUsdPerMillionTokens: 25 } },
   { id: "claude-opus-4-6", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 5, outputUsdPerMillionTokens: 25 } },
@@ -38,6 +52,38 @@ export const SUPPORTED_CHAT_MODELS = [
   { id: "claude-sonnet-4-5", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 2.5, outputUsdPerMillionTokens: 12 } },
   { id: "claude-3-7-sonnet-20250219", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 3, outputUsdPerMillionTokens: 15 } },
   { id: "claude-3-5-sonnet-20241022", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 3, outputUsdPerMillionTokens: 15 } },
+
+  // ---- Google Gemini ----
+  { id: "gemini-3.6-flash", provider: "google", pricing: { inputUsdPerMillionTokens: 0.15, outputUsdPerMillionTokens: 0.6 } },
+  { id: "gemini-3.5-flash-lite", provider: "google", pricing: { inputUsdPerMillionTokens: 0.075, outputUsdPerMillionTokens: 0.3 } },
+  { id: "gemini-3.1-pro", provider: "google", pricing: { inputUsdPerMillionTokens: 1.25, outputUsdPerMillionTokens: 5 } },
+
+  // ---- DeepSeek ----
+  { id: "deepseek-v4", provider: "deepseek", pricing: { inputUsdPerMillionTokens: 0.5, outputUsdPerMillionTokens: 2 } },
+  { id: "deepseek-v3.2", provider: "deepseek", pricing: { inputUsdPerMillionTokens: 0.3, outputUsdPerMillionTokens: 1.2 } },
+
+  // ---- Mistral AI ----
+  { id: "mistral-medium-3.5", provider: "mistral", pricing: { inputUsdPerMillionTokens: 2, outputUsdPerMillionTokens: 6 } },
+  { id: "mistral-small-4", provider: "mistral", pricing: { inputUsdPerMillionTokens: 0.2, outputUsdPerMillionTokens: 0.6 } },
+  { id: "mistral-large-3", provider: "mistral", pricing: { inputUsdPerMillionTokens: 2, outputUsdPerMillionTokens: 6 } },
+
+  // ---- Groq ----
+  { id: "llama-3.3-70b-groq", provider: "groq", pricing: { inputUsdPerMillionTokens: 0.59, outputUsdPerMillionTokens: 0.79 } },
+  { id: "llama-4-scout-groq", provider: "groq", pricing: { inputUsdPerMillionTokens: 0.2, outputUsdPerMillionTokens: 0.6 } },
+  { id: "llama-4-maverick-groq", provider: "groq", pricing: { inputUsdPerMillionTokens: 0.5, outputUsdPerMillionTokens: 1.5 } },
+  { id: "gpt-oss-groq", provider: "groq", pricing: { inputUsdPerMillionTokens: 0.5, outputUsdPerMillionTokens: 1.5 } },
+
+  // ---- Together ----
+  { id: "llama-3.3-together", provider: "together", pricing: { inputUsdPerMillionTokens: 0.9, outputUsdPerMillionTokens: 0.9 } },
+  { id: "qwen-together", provider: "together", pricing: { inputUsdPerMillionTokens: 0.9, outputUsdPerMillionTokens: 0.9 } },
+  { id: "deepseek-together", provider: "together", pricing: { inputUsdPerMillionTokens: 0.9, outputUsdPerMillionTokens: 0.9 } },
+  { id: "gpt-oss-together", provider: "together", pricing: { inputUsdPerMillionTokens: 0.9, outputUsdPerMillionTokens: 0.9 } },
+
+  // ---- Local / self-hosted (pricing = 0) ----
+  { id: "ollama-default", provider: "ollama", pricing: { inputUsdPerMillionTokens: 0, outputUsdPerMillionTokens: 0 } },
+  { id: "lmstudio-default", provider: "lmstudio", pricing: { inputUsdPerMillionTokens: 0, outputUsdPerMillionTokens: 0 } },
+  { id: "vllm-default", provider: "vllm", pricing: { inputUsdPerMillionTokens: 0, outputUsdPerMillionTokens: 0 } },
+  { id: "custom-default", provider: "custom", pricing: { inputUsdPerMillionTokens: 0, outputUsdPerMillionTokens: 0 } },
 ] as const satisfies readonly SupportedChatModelDefinition[];
 
 export type SupportedChatModel = (typeof SUPPORTED_CHAT_MODELS)[number];

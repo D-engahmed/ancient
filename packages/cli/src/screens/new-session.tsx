@@ -10,65 +10,65 @@ import { apiClient } from "../lib/api-client";
 import { getErrorMessage } from "../lib/http-errors";
 
 const newSessionStateSchema = z.object({
-  message: z.string(),
-  mode: modeSchema,
-  model: chatModelSelectionSchema,
+    message: z.string(),
+    mode: modeSchema,
+    model: chatModelSelectionSchema,
 });
 
 export function NewSession() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const toast = useToast();
-  const hasStartedRef = useRef(false);
+    const navigate = useNavigate();
+    const location = useLocation();
+    const toast = useToast();
+    const hasStartedRef = useRef(false);
 
-  const state = useMemo(() => {
-    const parsed = newSessionStateSchema.safeParse(location.state);
-    return parsed.success ? parsed.data : null;
-  }, [location.state]);
+    const state = useMemo(() => {
+        const parsed = newSessionStateSchema.safeParse(location.state);
+        return parsed.success ? parsed.data : null;
+    }, [location.state]);
 
-  useEffect(() => {
-    if (!state) {
-      navigate("/", { replace: true });
-    }
-  }, [state, navigate]);
+    useEffect(() => {
+        if (!state) {
+            navigate("/", { replace: true });
+        }
+    }, [state, navigate]);
 
-  useEffect(() => {
-    if (!state || hasStartedRef.current) return;
+    useEffect(() => {
+        if (!state || hasStartedRef.current) return;
 
-    hasStartedRef.current = true;
+        hasStartedRef.current = true;
 
-    let ignore = false;
-    const createSession = async () => {
-      try {
-        const session = await apiClient.sessions.create({
-          title: state.message.slice(0, 100),
-        });
-        if (ignore) return;
-        navigate(
-          `/sessions/${session.id}`,
-          { replace: true, state: { session, initialPrompt: state } }
-        );
-      } catch (error) {
-        if (ignore) return;
-        toast.show({
-          variant: "error",
-          message: error instanceof Error ? error.message : "Failed to create session",
-        });
-        navigate("/", { replace: true });
-      }
-    };
+        let ignore = false;
+        const createSession = async () => {
+            try {
+                const session = await apiClient.sessions.create({
+                    title: state.message.slice(0, 100),
+                });
+                if (ignore) return;
+                navigate(
+                    `/sessions/${session.id}`,
+                    { replace: true, state: { session, initialPrompt: state } }
+                );
+            } catch (error) {
+                if (ignore) return;
+                toast.show({
+                    variant: "error",
+                    message: error instanceof Error ? error.message : "Failed to create session",
+                });
+                navigate("/", { replace: true });
+            }
+        };
 
-    createSession();
-    return () => {
-      ignore = true;
-    };
-  }, [state, navigate, toast]);
+        createSession();
+        return () => {
+            ignore = true;
+        };
+    }, [state, navigate, toast]);
 
-  if (!state) return null;
+    if (!state) return null;
 
-  return (
-    <SessionShell onSubmit={() => { }} inputDisabled loading>
-      <UserMessage message={state.message} mode={state.mode} />
-    </SessionShell>
-  );
+    return (
+        <SessionShell onSubmit={() => { }} inputDisabled loading>
+            <UserMessage message={state.message} mode={state.mode} />
+        </SessionShell>
+    );
 }
