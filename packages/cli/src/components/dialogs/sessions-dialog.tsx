@@ -1,5 +1,3 @@
-
-
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. 
 // file: packages/cli/src/components/dialogs/sessions-dialog.tsx
@@ -11,7 +9,6 @@ import { useNavigate } from "react-router";
 import { useDialog } from "../../providers/dialog";
 import { useToast } from "../../providers/toast";
 import { apiClient } from "../../lib/api-client";
-import { getErrorMessage } from "../../lib/http-errors";
 import { DialogSearchList } from "../dialog-search-list";
 
 type Session = {
@@ -32,12 +29,11 @@ export const SessionsDialogContent = () => {
 
     const fetchSessions = async () => {
       try {
-        const res = await apiClient.sessions.$get();
-        if (!res.ok) {
-          throw new Error(await getErrorMessage(res));
-        }
-
-        const data = await res.json();
+        // FIXED: apiClient.sessions has no $get RPC method — same wrong
+        // Hono-RPC assumption as the provider-connections dialogs. This
+        // threw on every open of /sessions, which is why the dialog would
+        // just flash an error toast and close immediately.
+        const data = await apiClient.sessions.list();
 
         if (!ignore) {
           setSessions(data);

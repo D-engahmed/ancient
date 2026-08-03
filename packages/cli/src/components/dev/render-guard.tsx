@@ -1,4 +1,3 @@
-
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. 
 // file: packages/cli/src/components/dev/render-guard.tsx
@@ -20,13 +19,15 @@ type State = {
 };
 
 export class RenderGuard extends Component<Props, State> {
-    state: State = { error: null };
+    // FIXED: tsconfig.base.json sets noImplicitOverride, so members that
+    // override a React.Component base member need the explicit keyword.
+    override state: State = { error: null };
 
     static getDerivedStateFromError(error: Error): State {
         return { error };
     }
 
-    componentDidCatch(error: Error, info: { componentStack?: string }) {
+    override componentDidCatch(error: Error, info: { componentStack?: string }) {
         try {
             appendFileSync(
                 LOG_PATH,
@@ -41,7 +42,7 @@ export class RenderGuard extends Component<Props, State> {
         }
     }
 
-    render() {
+    override render() {
         if (this.state.error) {
             return <text fg="red">[{this.props.label}] {this.state.error.message}</text>;
         }

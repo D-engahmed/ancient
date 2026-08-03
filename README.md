@@ -1,9 +1,13 @@
 # ANCIENT
-=======
-# ancient
- main
 
 **An AI coding agent, built to replace a subscription instead of paying for one.**
+
+<!-- FIXED: the previous version had unresolved git-merge markers (literal
+     `=======` lines + orphaned "main" fragments) duplicating paragraphs
+     with "ANCIENT" vs "ancient" casing. Resolved to "ANCIENT" to match the
+     code (npm scope @ANCIENT/*, CLI bin name, root package.json name) —
+     double-check that's actually what you want, since the repo URL itself
+     is lowercase (github.com/D-engahmed/ancient). Pick one, everywhere. -->
 
 ## The problem
 
@@ -14,9 +18,6 @@ Every seat of a hosted AI coding assistant is a recurring cost. Most of them are
 This started as **HaMan**, built while I was on the team at MedixAI, to cut the cost of paying per-seat for AI coding tools. It grew into a real agent runtime — not a wrapper: an agentic loop, eleven built-in tools, MCP support, subagents, hooks, safety approval policies, session persistence. It ran on a free open-weights model (`mistralai/devstral-2512:free` via OpenRouter) instead of a paid API, so the running cost was close to zero.
 
 `ANCIENT` is that same project, rebuilt as my own — the terminal UI rewritten in Bun/TypeScript/React, with the agent core that made HaMan actually work being merged in around it.
-=======
-`ancient` is that same project, rebuilt as my own — the terminal UI rewritten in Bun/TypeScript/React, with the agent core that made HaMan actually work being merged in around it.
- main
 
 ## Status
 
@@ -47,9 +48,6 @@ packages/agent/         # agent loop, LLM client, context management (in progres
 ## Why it matters
 
 The pitch isn't "another AI coding agent" — it's a working answer to "why am I paying per seat for something a small, well-scoped codebase can do on a free model." That's what made HaMan worth building the first time, and it's what `ANCIENT` is built to carry forward as its own thing.
-=======
-The pitch isn't "another AI coding agent" — it's a working answer to "why am I paying per seat for something a small, well-scoped codebase can do on a free model." That's what made HaMan worth building the first time, and it's what `ancient` is built to carry forward as its own thing.
- main
 
 ## About the creator
 
@@ -61,19 +59,27 @@ Built by **Ahmed** — final-year Electronics & Communications Engineering stude
 ---
 
 *Actively being merged from HaMan into a standalone project — the status table above will move to "Live" line by line rather than all at once.*
-=======
-*Actively being merged from HaMan into a standalone project — the status table above will move to "Live" line by line rather than all at once.*
-main
+
+## Setup
+
+<!-- FIXED: `.env` now has to exist before `bun install`, not after.
+     packages/database/prisma.config.ts resolves DATABASE_URL at config-load
+     time, and packages/server's postinstall hook runs `prisma generate`
+     during install — so on a genuinely fresh clone, `bun install` alone
+     used to fail outright. -->
+
+```bash
+git clone https://github.com/D-engahmed/ancient.git
+cd ancient
+cp .env.example .env        # do this before bun install, not after
+bun install
+docker compose up -d postgres
+bunx prisma migrate deploy --config packages/database/prisma.config.ts
+```
 
 ## Local Database and BYOK
 
 ANCIENT keeps Prisma and runs PostgreSQL locally through Docker when you do not want to use a hosted database.
-
-```bash
-cp .env.example .env
-docker compose up -d postgres
-bunx prisma migrate deploy --config packages/database/prisma.config.ts
-```
 
 Set `ANCIENT_CONNECTION_KEY_SECRET` to a base64-encoded 32-byte value before saving provider keys. Generate one with:
 

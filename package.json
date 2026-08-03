@@ -6,7 +6,11 @@
     "dev:cli": "bun run --watch packages/cli/src/index.tsx",
     "dev:server": "bun --hot run packages/server/src/index.ts"
   },
+   "devDependencies": {
+  "@types/bun": "latest"
+  },
   "dependencies": {
+   
     "dotenv": "^17.4.2"
   }
 }

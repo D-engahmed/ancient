@@ -5,7 +5,6 @@ import { useDialog } from "../../providers/dialog";
 import { useToast } from "../../providers/toast";
 import { usePromptConfig } from "../../providers/prompt-config";
 import { apiClient } from "../../lib/api-client";
-import { getErrorMessage } from "../../lib/http-errors";
 import {
   PROVIDERS,
   type ProviderDefinition,
@@ -45,9 +44,10 @@ export const ModelsDialogContent = () => {
     let ignore = false;
     const fetchConnections = async () => {
       try {
-        const res = await apiClient["provider-connections"].$get();
-        if (!res.ok) throw new Error(await getErrorMessage(res));
-        const data = await res.json();
+        // FIXED: apiClient has no "provider-connections"/$get RPC shape — it's
+        // the plain REST wrapper from lib/api-client.ts, which already parses
+        // JSON and throws on a non-2xx response.
+        const data = await apiClient.providerConnections.list();
         if (!ignore) setConnections(data);
       } catch (error) {
         if (!ignore) {
@@ -65,7 +65,6 @@ export const ModelsDialogContent = () => {
   }, []);
 
   // ----- List view items -----
-  // Single built-in item
   const builtinItem = {
     kind: "builtin" as const,
     id: "ancient",
@@ -94,7 +93,6 @@ export const ModelsDialogContent = () => {
 
   // ----- Handlers -----
   const handleSelectBuiltin = () => {
-    // Select the default model ID (built-in)
     setModelSelection({
       modelKind: "builtin",
       modelId: DEFAULT_CHAT_MODEL_ID,
@@ -137,30 +135,20 @@ export const ModelsDialogContent = () => {
 
     setSubmitting(true);
     try {
-      const res = await apiClient["provider-connections"].$post({
-        json: {
-          label: `${selectedProvider.label} (${selectedModelId})`,
-          protocol: selectedProvider.protocol,
-          baseUrl: baseUrl.trim(),
-          modelId: selectedModelId,
-          apiKey,
-        },
-      });
+      // FIXED: was apiClient["provider-connections"].$post({ json: {...} }) —
+      // that RPC shape doesn't exist anywhere on this client.
+      const connection = await apiClient.providerConnections.create({
+        label: `${selectedProvider.label} (${selectedModelId})`,
+        protocol: selectedProvider.protocol,
+        baseUrl: baseUrl.trim(),
+        modelId: selectedModelId,
+        apiKey,
+      }) as { id: string };
 
-      if (!res.ok) {
-        const error = await getErrorMessage(res);
-        throw new Error(error);
-      }
-
-      const connection = await res.json() as { id: string };
       setModelSelection({ modelKind: "custom", connectionId: connection.id });
 
-      // Refresh connections
-      const refreshRes = await apiClient["provider-connections"].$get();
-      if (refreshRes.ok) {
-        const data = await refreshRes.json();
-        setConnections(data);
-      }
+      const data = await apiClient.providerConnections.list();
+      setConnections(data);
 
       toast.show({ variant: "success", message: `${selectedProvider.label} connection added` });
       dialog.close();
@@ -284,7 +272,6 @@ export const ModelsDialogContent = () => {
     return false;
   };
 
-  // ----- Render -----
   if (loading) {
     return (
       <box flexDirection="column">
@@ -293,12 +280,10 @@ export const ModelsDialogContent = () => {
     );
   }
 
-  // Form view
   if (view === "form" && selectedProvider) {
     const provider = selectedProvider;
     const isLocal = provider.id === "ollama" || provider.id === "lmstudio" || provider.id === "vllm";
 
-    // Filter models for suggestions
     const filteredModels = provider.models.filter((m) =>
       m.id.toLowerCase().includes(modelSearch.toLowerCase()) ||
       m.label.toLowerCase().includes(modelSearch.toLowerCase())
@@ -311,7 +296,6 @@ export const ModelsDialogContent = () => {
           <text attributes={TextAttributes.DIM}>{provider.description}</text>
         </box>
 
-        {/* Model search */}
         <box flexDirection="column">
           <text attributes={TextAttributes.DIM}>Model ID</text>
           <input
@@ -340,7 +324,6 @@ export const ModelsDialogContent = () => {
           )}
         </box>
 
-        {/* Base URL */}
         <box flexDirection="column">
           <text attributes={TextAttributes.DIM}>Base URL</text>
           <input
@@ -350,23 +333,28 @@ export const ModelsDialogContent = () => {
           />
         </box>
 
-        {/* API Key */}
         <box flexDirection="column">
           <text attributes={TextAttributes.DIM}>API Key</text>
+          {/* NOT FIXED — flagging instead of faking it: @opentui/core's
+              InputRenderableOptions has no password/mask option at all
+              (checked the actual .d.ts), so `type="password"` was a
+              silent no-op — this field has always echoed the real key
+              in plaintext as it's typed. Removing the invalid prop fixes
+              the type error but does NOT restore masking; that needs a
+              real design decision (custom masked renderable, paste-only
+              entry, etc.), not a one-line patch. */}
           <input
             placeholder={isLocal ? "Optional for local servers" : "sk-... (required)"}
-            type="password"
             value={apiKey}
             onInput={(value) => setApiKey(value)}
           />
-          <text attributes={TextAttributes.DIM} fontSize={0.8}>
+          <text attributes={TextAttributes.DIM}>
             {isLocal
               ? "Leave blank if your local server doesn't require authentication."
               : "Your API key is encrypted before storage."}
           </text>
         </box>
 
-        {/* Actions */}
         <box flexDirection="row" justifyContent="flex-end" gap={2} paddingTop={1}>
           <text attributes={TextAttributes.DIM} onMouseDown={handleCancelForm}>
             Cancel
@@ -382,7 +370,6 @@ export const ModelsDialogContent = () => {
     );
   }
 
-  // List view
   return (
     <box flexDirection="column" gap={1}>
       <DialogSearchList
