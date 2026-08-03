@@ -18,7 +18,13 @@ const createConnectionSchema = z.object({
     protocol: z.enum(["openai", "anthropic", "gemini"]),
     baseUrl: z.string().trim().url(),
     modelId: z.string().trim().min(1).max(200),
-    apiKey: z.string().min(1, "API key cannot be empty"),
+    // FIXED: empty string must be allowed here. Local/self-hosted providers
+    // (Ollama, LM Studio, vLLM) intentionally have no key — the CLI's own
+    // copy says so, and validateProviderConnection() already treats "" as
+    // "send no auth header". A cloud provider that actually needs a key
+    // will still fail validation below with a clear 401/403 message; this
+    // schema was rejecting local connections before that check ever ran.
+    apiKey: z.string(),
 });
 
 const updateConnectionSchema = z.object({
@@ -37,7 +43,6 @@ const connectionSelect = {
     lastUsedAt: true, createdAt: true,
 } as const;
 
-// FIXED: Hono<AuthenticatedEnv> so c.get("userId") is typed
 const app = new Hono<AuthenticatedEnv>()
     .post("/", zValidator("json", createConnectionSchema), async (c) => {
         const userId = c.get("userId");
@@ -139,7 +144,6 @@ const app = new Hono<AuthenticatedEnv>()
             isValid: true, lastValidatedAt: new Date(), lastValidationError: null,
         };
 
-        // FIXED: Only re-encrypt if a new key was provided
         if (input.apiKey !== undefined) {
             updateData.encryptedKey = await encryptApiKey(apiKey);
             updateData.keyLastFour = apiKey.length >= 4 ? apiKey.slice(-4) : apiKey.length > 0 ? apiKey : "empty";

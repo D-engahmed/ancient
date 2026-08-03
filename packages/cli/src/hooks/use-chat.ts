@@ -38,9 +38,14 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
     const chatUrl = `${API_URL}/chat/${sessionId}`;
     return new DefaultChatTransport<Message>({
       api: chatUrl,
-      headers() {
+      // FIXED: the ternary's two branches inferred incompatible object
+      // shapes ({ Authorization: string } vs {}), which doesn't satisfy
+      // Record<string, string>. Build the object imperatively instead.
+      headers(): Record<string, string> {
         const auth = getAuth();
-        return auth ? { Authorization: `Bearer ${auth.token}` } : {};
+        const headers: Record<string, string> = {};
+        if (auth) headers.Authorization = `Bearer ${auth.token}`;
+        return headers;
       },
       prepareSendMessagesRequest({ messages }) {
         const userMessages = messages.filter((m) => m.role === "user");
@@ -48,7 +53,13 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
           throw new Error("No user message to send");
         }
         const lastUser = userMessages[userMessages.length - 1]!;
-        const content = lastUser.content;
+        // FIXED: UIMessage in ai@6 has no `.content` string — text lives in
+        // `.parts` (same parts-array shape the server already uses in
+        // chat.ts). `.content` was silently `undefined` here before.
+        const content = lastUser.parts
+          .filter((part): part is Extract<(typeof lastUser.parts)[number], { type: "text" }> => part.type === "text")
+          .map((part) => part.text)
+          .join("");
         const metadata = messages.findLast(
           (m) => m.metadata?.mode && m.metadata?.model,
         )?.metadata;

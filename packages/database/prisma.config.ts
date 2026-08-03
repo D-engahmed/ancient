@@ -4,7 +4,7 @@
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
@@ -12,5 +12,9 @@ dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: { path: "prisma/migrations" },
-  datasource: { url: env("DATABASE_URL") },
+  // `datasource` is optional for most commands (generate included) and only
+  // required for migrate/introspection. Reading process.env directly here
+  // (instead of the throwing `env()` helper) means `prisma generate` no
+  // longer hard-fails just because `.env`/DATABASE_URL isn't set yet.
+  datasource: { url: process.env.DATABASE_URL },
 });

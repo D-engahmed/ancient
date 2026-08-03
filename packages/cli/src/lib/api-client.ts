@@ -34,7 +34,9 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
   if (!response.ok) {
     let errorMessage = response.statusText;
     try {
-      const data = await response.json();
+      // FIXED: response.json() types as `unknown` under this project's
+      // TS/lib config, so property access on it was a real compile error.
+      const data = await response.json() as { error?: string; message?: string };
       errorMessage = data.error || data.message || errorMessage;
     } catch {
       // ignore JSON parse errors
@@ -46,7 +48,9 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
     return null as T;
   }
 
-  return response.json();
+  // FIXED: cast to the caller's T — response.json() resolves to `unknown`,
+  // not `any`, so returning it directly didn't satisfy `Promise<T>`.
+  return response.json() as Promise<T>;
 }
 
 export const apiClient = {

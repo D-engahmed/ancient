@@ -3,7 +3,6 @@
 
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type { LanguageModel } from "ai";
 import { db } from "@ANCIENT/database/client";
 import { decryptApiKey } from "./connection-crypto";
@@ -18,68 +17,106 @@ export type ResolvedModel = {
     apiKey?: string;
 };
 
-// FIXED: ESM imports instead of require()
-function resolveAnthropicModel(modelId: string): ResolvedModel {
-    return {
-        model: createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })(modelId),
-        provider: "anthropic",
-        modelId,
-    };
-}
+// ---- Built-in provider resolvers ----
+// All OpenAI-compatible providers use createOpenAI with a custom baseURL.
+// This avoids the @ai-sdk/google v4 / ai v6 version mismatch.
 
 function resolveOpenAIModel(modelId: string): ResolvedModel {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
     return {
-        model: createOpenAI({ apiKey: process.env.OPENAI_API_KEY })(modelId),
+        model: createOpenAI({ apiKey })(modelId) as unknown as LanguageModel,
         provider: "openai",
         modelId,
     };
 }
 
+function resolveAnthropicModel(modelId: string): ResolvedModel {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
+    return {
+        model: createAnthropic({ apiKey })(modelId),
+        provider: "anthropic",
+        modelId,
+    };
+}
+
+function resolveGoogleModel(modelId: string): ResolvedModel {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) throw new Error("GOOGLE_API_KEY is not set");
+    return {
+        // Gemini OpenAI-compatible endpoint — avoids @ai-sdk/google v4 incompatibility
+        model: createOpenAI({
+            baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+            apiKey,
+        })(modelId) as unknown as LanguageModel,
+        provider: "google",
+        modelId,
+    };
+}
+
+function resolveDeepSeekModel(modelId: string): ResolvedModel {
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not set");
+    return {
+        model: createOpenAI({ baseURL: "https://api.deepseek.com/v1", apiKey })(modelId) as unknown as LanguageModel,
+        provider: "deepseek",
+        modelId,
+    };
+}
+
+function resolveMistralModel(modelId: string): ResolvedModel {
+    const apiKey = process.env.MISTRAL_API_KEY;
+    if (!apiKey) throw new Error("MISTRAL_API_KEY is not set");
+    return {
+        model: createOpenAI({ baseURL: "https://api.mistral.ai/v1", apiKey })(modelId) as unknown as LanguageModel,
+        provider: "mistral",
+        modelId,
+    };
+}
+
+function resolveGroqModel(modelId: string): ResolvedModel {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) throw new Error("GROQ_API_KEY is not set");
+    return {
+        model: createOpenAI({ baseURL: "https://api.groq.com/openai/v1", apiKey })(modelId) as unknown as LanguageModel,
+        provider: "groq",
+        modelId,
+    };
+}
+
+function resolveTogetherModel(modelId: string): ResolvedModel {
+    const apiKey = process.env.TOGETHER_API_KEY;
+    if (!apiKey) throw new Error("TOGETHER_API_KEY is not set");
+    return {
+        model: createOpenAI({ baseURL: "https://api.together.xyz/v1", apiKey })(modelId) as unknown as LanguageModel,
+        provider: "together",
+        modelId,
+    };
+}
+
 function resolveSupportedChatModel(model: SupportedChatModel): ResolvedModel {
-    if (model.provider === "anthropic") return resolveAnthropicModel(model.id);
-    if (model.provider === "openai") return resolveOpenAIModel(model.id);
-    throw new Error(`Unsupported provider: ${String(model.provider)}`);
-}
-
-// ---------- Catalog cache ----------
-let catalogCache: Map<string, Set<string>> | null = null;
-let cacheTimestamp = 0;
-const CACHE_TTL_MS = 60_000;
-
-async function refreshCatalogCache() {
-    const providers = await db.modelProvider.findMany({
-        include: { models: { where: { isActive: true } } },
-    });
-    const newCache = new Map<string, Set<string>>();
-    for (const p of providers) {
-        const modelIds = new Set(p.models.map(m => m.modelId.toLowerCase()));
-        newCache.set(p.id.toLowerCase(), modelIds);
+    switch (model.provider) {
+        case "openai": return resolveOpenAIModel(model.id);
+        case "anthropic": return resolveAnthropicModel(model.id);
+        case "google": return resolveGoogleModel(model.id);
+        case "deepseek": return resolveDeepSeekModel(model.id);
+        case "mistral": return resolveMistralModel(model.id);
+        case "groq": return resolveGroqModel(model.id);
+        case "together": return resolveTogetherModel(model.id);
+        // Local providers have no built-in API keys — they only work via BYOK
+        case "ollama":
+        case "lmstudio":
+        case "vllm":
+        case "custom":
+            throw new Error(`${model.provider} models require a BYOK connection. Add one via the model picker.`);
+        default:
+            throw new Error("Unsupported provider");
     }
-    catalogCache = newCache;
-    cacheTimestamp = Date.now();
 }
 
-async function getCatalogCache(): Promise<Map<string, Set<string>>> {
-    if (!catalogCache || Date.now() - cacheTimestamp > CACHE_TTL_MS) {
-        await refreshCatalogCache();
-    }
-    return catalogCache!;
-}
+// ---- BYOK connection resolver ----
 
-export async function validateModelId(protocol: string, modelId: string): Promise<boolean> {
-    const cache = await getCatalogCache();
-    const providerKey = protocol.toLowerCase();
-    const models = cache.get(providerKey);
-    if (!models) return false;
-    return models.has(modelId.toLowerCase());
-}
-
-export async function invalidateCatalogCache() {
-    catalogCache = null;
-    cacheTimestamp = 0;
-}
-
-// ---------- Main resolver ----------
 export async function resolveChatModel(
     selection: ChatModelSelection,
     userId: string
@@ -98,14 +135,8 @@ export async function resolveChatModel(
         throw new Error("This provider connection is invalid. Revalidate or rotate its API key before using it.");
     }
 
-    const known = await validateModelId(conn.protocol, conn.modelId);
-    if (!known) {
-        console.warn(`[models] Unknown model ID for protocol ${conn.protocol}: ${conn.modelId}`);
-    }
-
     await assertSafeBaseUrl(conn.baseUrl);
     const apiKey = await decryptApiKey(conn.encryptedKey);
-    // FIXED: undefined instead of "not-needed"
     const resolvedApiKey = apiKey || undefined;
 
     await db.providerConnection.update({
@@ -113,25 +144,23 @@ export async function resolveChatModel(
         data: { lastUsedAt: new Date() },
     });
 
-    let provider;
-    switch (conn.protocol) {
-        case "openai":
-            provider = createOpenAI({ baseURL: conn.baseUrl, apiKey: resolvedApiKey });
-            break;
-        case "anthropic":
-            provider = createAnthropic({ baseURL: conn.baseUrl, apiKey: resolvedApiKey });
-            break;
-        case "gemini":
-            provider = createGoogleGenerativeAI({ baseURL: conn.baseUrl, apiKey: resolvedApiKey });
-            break;
-        default:
-            throw new Error(`Unknown protocol: ${conn.protocol}`);
+    // Route BYOK connections to the right factory.
+    // openai, gemini, deepseek, mistral, groq, together, ollama, lmstudio, vllm, custom
+    // ALL of these are OpenAI-compatible except anthropic.
+    let provider: ReturnType<typeof createOpenAI> | ReturnType<typeof createAnthropic>;
+
+    if (conn.protocol === "anthropic") {
+        provider = createAnthropic({ baseURL: conn.baseUrl, apiKey: resolvedApiKey });
+    } else {
+        // Everything else (openai, gemini, deepseek, mistral, groq, together, ollama, lmstudio, vllm, custom)
+        // goes through the OpenAI-compatible factory.
+        provider = createOpenAI({ baseURL: conn.baseUrl, apiKey: resolvedApiKey });
     }
 
     return {
         model: provider(conn.modelId) as unknown as LanguageModel,
-        provider: "custom",
+        provider: conn.protocol as SupportedProvider | "custom",
         modelId: conn.modelId,
-        apiKey,
+        apiKey: apiKey || undefined,
     };
 }
