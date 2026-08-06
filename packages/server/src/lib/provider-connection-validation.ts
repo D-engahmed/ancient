@@ -7,6 +7,7 @@ type ConnectionInput = {
     protocol: ConnectionProtocol;
     baseUrl: string;
     apiKey: string;
+    Model?: ConnectionInput;
 };
 
 export class ProviderConnectionValidationError extends Error { }

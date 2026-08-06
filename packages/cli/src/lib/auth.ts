@@ -38,4 +38,3 @@ export function clearAuth() {
     // File doesn't exist
   }
 }
-

@@ -6,6 +6,7 @@ import {
   type InferUITools,
   lastAssistantMessageIsCompleteWithToolCalls,
   type LanguageModelUsage,
+  type UIDataTypes,
   type UIMessage,
 } from "ai";
 import {
@@ -31,7 +32,7 @@ type ChatTools = {
   };
 };
 
-export type Message = UIMessage<ChatMessageMetadata, never, ChatTools>;
+export type Message = UIMessage<ChatMessageMetadata, any, ChatTools>;
 
 export function useChat(sessionId: string, initialMessages: Message[]) {
   const transport = useMemo(() => {
@@ -81,17 +82,19 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
       // behavior.
       const toolIdentifier = (toolCall as any).tool ?? (toolCall as any).name ?? (toolCall as any).toolName;
 
-      void executeLocalTool(toolIdentifier, toolCall.args as Record<string, unknown>, mode)
+      void executeLocalTool(toolIdentifier, toolCall.input as Record<string, unknown>, mode)
         .then((output) =>
           chat.addToolResult({
             toolCallId: toolCall.toolCallId,
-            result: output as unknown,
+            tool: toolIdentifier,
+            output: output as unknown,
           }),
         )
         .catch((error) =>
           chat.addToolResult({
             toolCallId: toolCall.toolCallId,
-            result: `Error: ${error instanceof Error ? error.message : String(error)}` as unknown,
+            tool: toolIdentifier,
+            output: `Error: ${error instanceof Error ? error.message : String(error)}` as unknown,
           }),
         );
     },

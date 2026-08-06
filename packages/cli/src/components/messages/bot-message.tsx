@@ -48,8 +48,8 @@ function groupConsecutiveParts(parts: ClientMessagePart[]): PartGroup[] {
       lastGroup.parts.push(part);
     } else {
       const key =
-        part.type === "tool-call"
-          ? `group-tc-${part.id}`
+        part.type === "dynamic-tool"
+          ? `group-tc-${part.toolCallId}`
           : `group-${part.type}-${i}`;
       groups.push({ type: part.type, parts: [part], key });
     }
@@ -91,10 +91,10 @@ export function BotMessage({
               );
             }
 
-            if (part.type === "tool-call") {
+            if (part.type === "dynamic-tool") {
               return (
                 <box
-                  key={part.id}
+                  key={part.toolCallId}
                   border={["left"]}
                   borderColor={colors.thinkingBorder}
                   customBorderChars={{
@@ -105,9 +105,11 @@ export function BotMessage({
                   paddingX={2}
                 >
                   <text attributes={TextAttributes.DIM}>
-                    <em fg={colors.info}>{formatToolName(part.name)}:</em>{" "}
-                    {formatToolArgs(part.args)}
-                    {part.result == null ? " …" : ""}
+                    <em fg={colors.info}>{formatToolName(part.toolName)}:</em>{" "}
+                    {formatToolArgs(
+                      "args" in part ? (part.args as Record<string, unknown>) : {}
+                    )}
+                    {("result" in part && part.result != null) ? "" : " …"}
                   </text>
                 </box>
               );
