@@ -209,6 +209,7 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
     },
+    onError: (error) => sanitizeError(error),
 
     messageMetadata: ({ part }) => {
       if (part.type === "start") {
