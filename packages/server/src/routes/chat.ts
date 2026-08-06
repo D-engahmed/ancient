@@ -8,13 +8,12 @@ import { db } from "@ANCIENT/database/client";
 import { Mode, MessageStatus } from "@ANCIENT/database/enums";
 import type { Prisma } from "@ANCIENT/database";
 import {
-  type ChatStreamEvent,
   type MessagePart,
-  toolCallArgsSchema,
   messagePartsSchema,
   submitSchema,
   type ChatModelSelection,
 } from "@ANCIENT/shared";
+
 import { createTools } from "../tools";
 import { buildSystemPrompt } from "../system-prompt";
 import { resolveChatModel } from "../lib/models";
@@ -77,7 +76,7 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
     stopWhen: tools ? stepCountIs(MAX_TOOL_STEPS) : undefined,
     abortSignal: abortController.signal,
 
-    onChunk: (chunk) => {
+    onChunk: ({ chunk }) => {
       if (chunk.type === "text-delta") {
         const last = parts[parts.length - 1];
         if (last?.type === "text") {
@@ -143,7 +142,7 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
         .join("");
 
       const validatedParts: Prisma.InputJsonValue | undefined =
-        parts.length > 0 ? messagePartsSchema.parse(parts) : undefined;
+        parts.length > 0 ? (messagePartsSchema.parse(parts) as Prisma.InputJsonValue) : undefined;
 
       const modelKind = selection.modelKind;
       const modelRef = selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
@@ -206,8 +205,39 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
     },
   });
 
-  return result.toDataStreamResponse({
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
+  return result.toUIMessageStreamResponse({
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+    },
+
+    messageMetadata: ({ part }) => {
+      if (part.type === "start") {
+        return {
+          mode,
+          model:
+            selection.modelKind === "builtin"
+              ? selection.modelId
+              : selection.connectionId,
+        };
+      }
+
+      if (part.type === "finish") {
+        return {
+          mode,
+
+          model:
+            selection.modelKind === "builtin"
+              ? selection.modelId
+              : selection.connectionId,
+
+          durationMs: Date.now() - startTime,
+
+          usage: part.totalUsage,
+        };
+      }
+
+      return undefined;
+    },
   });
 }
 
