@@ -7,7 +7,7 @@ type ConnectionInput = {
     protocol: ConnectionProtocol;
     baseUrl: string;
     apiKey: string;
-    Model?: ConnectionInput;
+    Model?: string;
 };
 
 export class ProviderConnectionValidationError extends Error { }
@@ -27,17 +27,14 @@ export async function validateProviderConnection(input: ConnectionInput): Promis
     const headers = new Headers({ Accept: "application/json" });
     let url: URL;
 
-    if (input.protocol === "gemini") {
-        // Gemini uses the key as a query param, not a header.
-        url = new URL(`${input.baseUrl.replace(/\/+$/, "")}/models?key=${encodeURIComponent(input.apiKey)}`);
-    } else if (input.protocol === "anthropic") {
-        // FIXED: Anthropic requires x-api-key + anthropic-version, not Bearer.
+    if (input.protocol === "anthropic") {
         url = modelsUrl(input.protocol, input.baseUrl);
         if (input.apiKey) {
             headers.set("x-api-key", input.apiKey);
             headers.set("anthropic-version", ANTHROPIC_VERSION);
         }
     } else {
+        // openai AND gemini (Google's OpenAI-compatible surface) — both Bearer.
         url = modelsUrl(input.protocol, input.baseUrl);
         if (input.apiKey) {
             headers.set("Authorization", `Bearer ${input.apiKey}`);
