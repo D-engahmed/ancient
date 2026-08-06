@@ -144,17 +144,10 @@ export async function resolveChatModel(
 
     if (conn.protocol === "anthropic") {
         provider = createAnthropic({ baseURL: conn.baseUrl, apiKey: resolvedApiKey });
-    } else if (conn.protocol === "gemini") {
-        // Use official Google provider – expects native Gemini base URL
-        provider = createGoogleGenerativeAI({
-            baseURL: conn.baseUrl,
-            apiKey: resolvedApiKey,
-        });
     } else {
-        // OpenAI-compatible: openai, deepseek, mistral, groq, together, ollama, lmstudio, vllm, custom
+        // openai, gemini (.../v1beta/openai), deepseek, mistral, groq, together, ollama, lmstudio, vllm, custom
         provider = createOpenAI({ baseURL: conn.baseUrl, apiKey: resolvedApiKey });
     }
-
     return {
         model: provider(conn.modelId) as unknown as LanguageModel,
         provider: conn.protocol as SupportedProvider | "custom",
