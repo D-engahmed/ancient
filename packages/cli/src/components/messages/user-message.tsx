@@ -1,6 +1,5 @@
-
 // Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License. 
+// Licensed under the MIT License.
 // file: packages/cli/src/components/messages/user-message.tsx
 
 import { Mode, type ModeType } from "@ANCIENT/shared";
@@ -19,7 +18,8 @@ export function UserMessage({ message, mode }: Props) {
     <box width="100%" alignItems="center">
       <box
         border={["left"]}
-        borderColor={mode === Mode.PLAN ? colors.planMode : colors.primary} width="100%"
+        borderColor={mode === Mode.PLAN ? colors.planMode : colors.primary}
+        width="100%"
         customBorderChars={{
           ...EmptyBorder,
           vertical: "┃",
@@ -38,4 +38,4 @@ export function UserMessage({ message, mode }: Props) {
       </box>
     </box>
   );
-};
+}

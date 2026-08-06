@@ -52,7 +52,7 @@ export const PROVIDERS = [
     },
     {
         id: "gemini", label: "Google Gemini", protocol: "gemini" as const,
-        defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta", defaultModelId: "gemini-3.6-flash",
+        defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModelId: "gemini-3.6-flash",
         description: "Gemini 3.6 Flash, 3.5 Flash-Lite, 3.1 Pro",
         models: [
             { id: "gemini-3.6-flash", label: "Gemini 3.6 Flash (GA)" },

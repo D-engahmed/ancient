@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
   output   = "../generated/prisma"
 }
 
@@ -24,20 +24,19 @@ enum MessageStatus {
 }
 
 model Session {
-  id        String   @id @default(cuid())
+  id        String   @id @default(uuid())
   userId    String
   title     String
   cwd       String?
-  createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
   messages  Message[]
-
-  @@index([userId])
 }
 
 model Message {
-  id        String   @id @default(cuid())
+  id        String        @id @default(uuid())
   sessionId String
+  session   Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   role      Role
   status    MessageStatus
   modelKind String
@@ -46,14 +45,13 @@ model Message {
   parts     Json?
   mode      Mode
   duration  Int?
-  createdAt DateTime @default(now())
-  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
 
-  @@index([sessionId])
+  @@index([sessionId, createdAt])
 }
 
 model ProviderConnection {
-  id                  String   @id @default(uuid())
+  id                  String    @id @default(uuid())
   userId              String
   label               String
   protocol            String
@@ -61,35 +59,33 @@ model ProviderConnection {
   modelId             String
   encryptedKey        Bytes
   keyLastFour         String
-  isValid             Boolean  @default(true)
+  isValid             Boolean   @default(false)
   lastValidatedAt     DateTime?
   lastValidationError String?
   lastUsedAt          DateTime?
-  createdAt           DateTime @default(now())
+  createdAt           DateTime  @default(now())
 
-  @@index([userId])
+  @@index([userId, createdAt])
 }
 
 model ModelProvider {
-  id             String
+  id             String              @id
   label          String
   protocol       String
   defaultBaseUrl String
-  isReseller     Boolean            @default(false)
-  models         ModelCatalogEntry[]
-
-  @@id([id])
+  isReseller     Boolean             @default(false)
+  catalogEntries ModelCatalogEntry[]
 }
 
 model ModelCatalogEntry {
-  id            String        @id @default(cuid())
+  id            String        @id @default(uuid())
   providerId    String
-  provider      ModelProvider @relation(fields: [providerId], references: [id])
+  provider      ModelProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
   modelId       String
   label         String
-  contextWindow Int
+  contextWindow Int           @default(0)
   isActive      Boolean       @default(true)
-  updatedAt     DateTime      @updatedAt
 
   @@unique([providerId, modelId])
+  @@index([providerId])
 }
