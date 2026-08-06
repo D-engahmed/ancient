@@ -3,6 +3,7 @@
 
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type { LanguageModel } from "ai";
 import { db } from "@ANCIENT/database/client";
 import { decryptApiKey } from "./connection-crypto";
@@ -18,9 +19,6 @@ export type ResolvedModel = {
 };
 
 // ---- Built-in provider resolvers ----
-// All OpenAI-compatible providers use createOpenAI with a custom baseURL.
-// This avoids the @ai-sdk/google v4 / ai v6 version mismatch.
-
 function resolveOpenAIModel(modelId: string): ResolvedModel {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
@@ -45,7 +43,7 @@ function resolveGoogleModel(modelId: string): ResolvedModel {
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) throw new Error("GOOGLE_API_KEY is not set");
     return {
-        // Gemini OpenAI-compatible endpoint — avoids @ai-sdk/google v4 incompatibility
+        // Built-in Google still uses OpenAI-compatible endpoint for simplicity.
         model: createOpenAI({
             baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
             apiKey,
@@ -104,7 +102,6 @@ function resolveSupportedChatModel(model: SupportedChatModel): ResolvedModel {
         case "mistral": return resolveMistralModel(model.id);
         case "groq": return resolveGroqModel(model.id);
         case "together": return resolveTogetherModel(model.id);
-        // Local providers have no built-in API keys — they only work via BYOK
         case "ollama":
         case "lmstudio":
         case "vllm":
@@ -116,7 +113,6 @@ function resolveSupportedChatModel(model: SupportedChatModel): ResolvedModel {
 }
 
 // ---- BYOK connection resolver ----
-
 export async function resolveChatModel(
     selection: ChatModelSelection,
     userId: string
@@ -144,16 +140,18 @@ export async function resolveChatModel(
         data: { lastUsedAt: new Date() },
     });
 
-    // Route BYOK connections to the right factory.
-    // openai, gemini, deepseek, mistral, groq, together, ollama, lmstudio, vllm, custom
-    // ALL of these are OpenAI-compatible except anthropic.
-    let provider: ReturnType<typeof createOpenAI> | ReturnType<typeof createAnthropic>;
+    let provider: any;
 
     if (conn.protocol === "anthropic") {
         provider = createAnthropic({ baseURL: conn.baseUrl, apiKey: resolvedApiKey });
+    } else if (conn.protocol === "gemini") {
+        // Use official Google provider – expects native Gemini base URL
+        provider = createGoogleGenerativeAI({
+            baseURL: conn.baseUrl,
+            apiKey: resolvedApiKey,
+        });
     } else {
-        // Everything else (openai, gemini, deepseek, mistral, groq, together, ollama, lmstudio, vllm, custom)
-        // goes through the OpenAI-compatible factory.
+        // OpenAI-compatible: openai, deepseek, mistral, groq, together, ollama, lmstudio, vllm, custom
         provider = createOpenAI({ baseURL: conn.baseUrl, apiKey: resolvedApiKey });
     }
 

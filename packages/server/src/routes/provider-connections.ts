@@ -18,12 +18,6 @@ const createConnectionSchema = z.object({
     protocol: z.enum(["openai", "anthropic", "gemini"]),
     baseUrl: z.string().trim().url(),
     modelId: z.string().trim().min(1).max(200),
-    // FIXED: empty string must be allowed here. Local/self-hosted providers
-    // (Ollama, LM Studio, vLLM) intentionally have no key — the CLI's own
-    // copy says so, and validateProviderConnection() already treats "" as
-    // "send no auth header". A cloud provider that actually needs a key
-    // will still fail validation below with a clear 401/403 message; this
-    // schema was rejecting local connections before that check ever ran.
     apiKey: z.string(),
 });
 
@@ -51,7 +45,8 @@ const app = new Hono<AuthenticatedEnv>()
         await assertSafeBaseUrl(baseUrl);
 
         try {
-            await validateProviderConnection({ protocol, baseUrl, apiKey });
+            // FIX: pass modelId
+            await validateProviderConnection({ protocol, baseUrl, apiKey, modelId });
         } catch (error) {
             const message = error instanceof ProviderConnectionValidationError
                 ? error.message
@@ -95,7 +90,9 @@ const app = new Hono<AuthenticatedEnv>()
             const apiKey = await decryptApiKey(connection.encryptedKey);
             await validateProviderConnection({
                 protocol: connection.protocol as "openai" | "anthropic" | "gemini",
-                baseUrl: connection.baseUrl, apiKey,
+                baseUrl: connection.baseUrl,
+                apiKey,
+                modelId: connection.modelId,
             });
             const updated = await db.providerConnection.update({
                 where: { id },
@@ -126,10 +123,11 @@ const app = new Hono<AuthenticatedEnv>()
         const protocol = input.protocol ?? (current.protocol as "openai" | "anthropic" | "gemini");
         const baseUrl = input.baseUrl ?? current.baseUrl;
         const apiKey = input.apiKey ?? await decryptApiKey(current.encryptedKey);
+        const modelId = input.modelId ?? current.modelId;
 
         try {
             await assertSafeBaseUrl(baseUrl);
-            await validateProviderConnection({ protocol, baseUrl, apiKey });
+            await validateProviderConnection({ protocol, baseUrl, apiKey, modelId });
         } catch (error) {
             const message = error instanceof ProviderConnectionValidationError
                 ? error.message

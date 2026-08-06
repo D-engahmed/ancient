@@ -1,6 +1,5 @@
-
 // Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License. 
+// Licensed under the MIT License.
 // file: packages/cli/src/components/messages/bot-message.tsx
 
 import prettyMs from "pretty-ms";
@@ -11,7 +10,6 @@ import { Mode, type ModeType } from "@ANCIENT/shared";
 import { TextAttributes } from "@opentui/core";
 
 type ClientMessagePart = Message["parts"][number];
-type ToolPart = Extract<ClientMessagePart, { type: `tool-${string}` | "dynamic-tool" }>;
 
 type Props = {
   parts: ClientMessagePart[];
@@ -25,16 +23,12 @@ function formatToolName(name: string): string {
   return name
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/^./, (c) => c.toUpperCase());
-};
+}
 
-function isToolPart(part: ClientMessagePart): part is ToolPart {
-  return part.type === "dynamic-tool" || part.type.startsWith("tool-");
-};
-
-function formatToolArgs(tc: ToolPart): string {
-  if (!("input" in tc) || tc.input == null) return "";
-  if (typeof tc.input !== "object") return String(tc.input);
-  return Object.values(tc.input).map(String).join(" ");
+function formatToolArgs(args: Record<string, unknown>): string {
+  if (args == null) return "";
+  if (typeof args !== "object") return String(args);
+  return Object.values(args).map(String).join(" ");
 }
 
 type PartGroup = {
@@ -54,13 +48,15 @@ function groupConsecutiveParts(parts: ClientMessagePart[]): PartGroup[] {
       lastGroup.parts.push(part);
     } else {
       const key =
-        isToolPart(part) ? `group-tc-${part.toolCallId}` : `group-${part.type}-${i}`;
+        part.type === "tool-call"
+          ? `group-tc-${part.id}`
+          : `group-${part.type}-${i}`;
       groups.push({ type: part.type, parts: [part], key });
     }
   }
 
   return groups;
-};
+}
 
 export function BotMessage({
   parts,
@@ -95,13 +91,10 @@ export function BotMessage({
               );
             }
 
-            if (isToolPart(part)) {
-              const toolName =
-                part.type === "dynamic-tool" ? part.toolName : part.type.slice("tool-".length);
-
+            if (part.type === "tool-call") {
               return (
                 <box
-                  key={part.toolCallId}
+                  key={part.id}
                   border={["left"]}
                   borderColor={colors.thinkingBorder}
                   customBorderChars={{
@@ -112,12 +105,9 @@ export function BotMessage({
                   paddingX={2}
                 >
                   <text attributes={TextAttributes.DIM}>
-                    <em fg={colors.info}>{formatToolName(toolName)}:</em> {formatToolArgs(part)}
-                    {part.state !== "output-available" && part.state !== "output-error"
-                      ? " …"
-                      : ""
-                    }
-                    {part.state === "output-error" ? ` ${part.errorText}` : ""}
+                    <em fg={colors.info}>{formatToolName(part.name)}:</em>{" "}
+                    {formatToolArgs(part.args)}
+                    {part.result == null ? " …" : ""}
                   </text>
                 </box>
               );
@@ -162,4 +152,4 @@ export function BotMessage({
       </box>
     </box>
   );
-};
+}

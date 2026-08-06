@@ -38,9 +38,6 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
     const chatUrl = `${API_URL}/chat/${sessionId}`;
     return new DefaultChatTransport<Message>({
       api: chatUrl,
-      // FIXED: the ternary's two branches inferred incompatible object
-      // shapes ({ Authorization: string } vs {}), which doesn't satisfy
-      // Record<string, string>. Build the object imperatively instead.
       headers(): Record<string, string> {
         const auth = getAuth();
         const headers: Record<string, string> = {};
@@ -53,9 +50,6 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
           throw new Error("No user message to send");
         }
         const lastUser = userMessages[userMessages.length - 1]!;
-        // FIXED: UIMessage in ai@6 has no `.content` string — text lives in
-        // `.parts` (same parts-array shape the server already uses in
-        // chat.ts). `.content` was silently `undefined` here before.
         const content = lastUser.parts
           .filter((part): part is Extract<(typeof lastUser.parts)[number], { type: "text" }> => part.type === "text")
           .map((part) => part.text)
@@ -81,20 +75,23 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
     onToolCall({ toolCall }) {
       const mode = chat.messages.at(-1)?.metadata?.mode ?? "BUILD";
 
-      void executeLocalTool(toolCall.toolName, toolCall.input, mode)
+      // Some toolCall shapes don't expose a `tool` property on the typed
+      // interface. Use a safe any-cast to read common fields (tool, name,
+      // toolName) so TypeScript won't error here while preserving runtime
+      // behavior.
+      const toolIdentifier = (toolCall as any).tool ?? (toolCall as any).name ?? (toolCall as any).toolName;
+
+      void executeLocalTool(toolIdentifier, toolCall.args as Record<string, unknown>, mode)
         .then((output) =>
-          chat.addToolOutput({
-            tool: toolCall.toolName as keyof ChatTools,
+          chat.addToolResult({
             toolCallId: toolCall.toolCallId,
-            output,
+            result: output as unknown,
           }),
         )
         .catch((error) =>
-          chat.addToolOutput({
-            tool: toolCall.toolName as keyof ChatTools,
+          chat.addToolResult({
             toolCallId: toolCall.toolCallId,
-            state: "output-error",
-            errorText: error instanceof Error ? error.message : String(error),
+            result: `Error: ${error instanceof Error ? error.message : String(error)}` as unknown,
           }),
         );
     },

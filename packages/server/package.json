@@ -14,12 +14,12 @@
     "@ANCIENT/database": "workspace:*",
     "@ANCIENT/shared": "workspace:*",
     "@ai-sdk/anthropic": "^4.0.27",
-    "@ai-sdk/google": "1",
-    "@ai-sdk/openai": "1",
+    "@ai-sdk/google": "^4.0.36",
+    "@ai-sdk/openai": "^4.0.0",
     "@clerk/backend": "^3.2.8",
-    "@hono/zod-validator": "^0.7.6",
-    "ai": "^7.0.48",
-    "dotenv": "^17.4.1",
+    "@hono/zod-validator": "^0.8.0",
+    "ai": "^7.0.55",
+    "dotenv": "^16.4.7",
     "hono": "^4.12.12",
     "zod": "^4.3.6"
   }
