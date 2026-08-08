@@ -1,0 +1,52 @@
+diff --git a/packages/cli/src/hooks/use-chat.ts b/packages/cli/src/hooks/use-chat.ts
+index 22bdc1c..eadc59c 100644
+--- a/packages/cli/src/hooks/use-chat.ts
++++ b/packages/cli/src/hooks/use-chat.ts
+@@ -32,7 +32,7 @@ type ChatTools = {
+   };
+ };
+ 
+-export type Message = UIMessage<ChatMessageMetadata, UIDataTypes, ChatTools>;+export type Message = UIMessage<ChatMessageMetadata, UIDataTypes, ChatTools>;
+ 
+ export function useChat(sessionId: string, initialMessages: Message[]) {
+   const transport = useMemo(() => {
+diff --git a/packages/server/src/lib/provider-connection-validation.ts b/packages/server/src/lib/provider-connection-validation.ts
+index 8d9a7ff..e3e7af2 100644
+--- a/packages/server/src/lib/provider-connection-validation.ts
++++ b/packages/server/src/lib/provider-connection-validation.ts
+@@ -7,7 +7,7 @@ type ConnectionInput = {
+     protocol: ConnectionProtocol;
+     baseUrl: string;
+     apiKey: string;
+-    Model?: string;
++    modelId?: string;
+ };
+ 
+ export class ProviderConnectionValidationError extends Error { }
+diff --git a/packages/server/src/routes/chat.ts b/packages/server/src/routes/chat.ts
+index 7ca3715..54bf2ce 100644
+--- a/packages/server/src/routes/chat.ts
++++ b/packages/server/src/routes/chat.ts
+@@ -96,12 +96,19 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
+           type: "tool-call",
+           id: chunk.toolCallId,
+           name: chunk.toolName,
+-          args: chunk.input,
++          args: chunk.input as Record<string, unknown>,
+         });
+       } else if (chunk.type === "tool-result") {
+-        const tc = parts.find((p) => p.type === "tool-call" && p.id === chunk.toolCallId);
++        // .find()'s predicate doesn't narrow the array's element type on its
++        // own — it needs to be declared as a type guard (`p is ...`) or `tc`
++        // stays typed as the full MessagePart union and .result isn't
++        // assignable on it.
++        const tc = parts.find(
++          (p): p is Extract<MessagePart, { type: "tool-call" }> =>
++            p.type === "tool-call" && p.id === chunk.toolCallId,
++        );
+         if (tc) {
+-          tc.result = chunk.output;
++          tc.result = typeof chunk.output === "string" ? chunk.output : JSON.stringify(chunk.output);
+         }
+       }
+     },

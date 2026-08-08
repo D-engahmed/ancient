@@ -56,7 +56,7 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
 export const apiClient = {
   sessions: {
     list: () => request<any[]>("/sessions"),
-    create: (data: { title: string }) => request("/sessions", { method: "POST", body: data }),
+    create: (data: { title: string; cwd?: string }) => request("/sessions", { method: "POST", body: data }),
     get: (id: string) => request(`/sessions/${id}`),
   },
   chat: {

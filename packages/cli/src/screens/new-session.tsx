@@ -42,6 +42,7 @@ export function NewSession() {
             try {
                 const session = await apiClient.sessions.create({
                     title: state.message.slice(0, 100),
+                    cwd: process.cwd(),
                 });
                 if (ignore) return;
                 navigate(

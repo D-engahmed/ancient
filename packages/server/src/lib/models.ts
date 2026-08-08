@@ -23,7 +23,7 @@ function resolveOpenAIModel(modelId: string): ResolvedModel {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
     return {
-        model: createOpenAI({ apiKey })(modelId) as unknown as LanguageModel,
+        model: createOpenAI({ apiKey }).chat(modelId) as unknown as LanguageModel,
         provider: "openai",
         modelId,
     };
@@ -43,11 +43,13 @@ function resolveGoogleModel(modelId: string): ResolvedModel {
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) throw new Error("GOOGLE_API_KEY is not set");
     return {
-        // Built-in Google still uses OpenAI-compatible endpoint for simplicity.
-        model: createOpenAI({
-            baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
-            apiKey,
-        })(modelId) as unknown as LanguageModel,
+        // Native Google provider, not the OpenAI-compat shim: Gemini's
+        // OpenAI-compatible streaming format omits `index` on tool-call
+        // deltas, which fails the ai SDK's strict OpenAI chunk schema
+        // (AI_TypeValidationError / invalid_union). The native provider
+        // speaks Gemini's actual wire format, so this class of mismatch
+        // doesn't apply.
+        model: createGoogleGenerativeAI({ apiKey })(modelId) as unknown as LanguageModel,
         provider: "google",
         modelId,
     };
@@ -57,7 +59,7 @@ function resolveDeepSeekModel(modelId: string): ResolvedModel {
     const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not set");
     return {
-        model: createOpenAI({ baseURL: "https://api.deepseek.com/v1", apiKey })(modelId) as unknown as LanguageModel,
+        model: createOpenAI({ baseURL: "https://api.deepseek.com/v1", apiKey }).chat(modelId) as unknown as LanguageModel,
         provider: "deepseek",
         modelId,
     };
@@ -67,7 +69,7 @@ function resolveMistralModel(modelId: string): ResolvedModel {
     const apiKey = process.env.MISTRAL_API_KEY;
     if (!apiKey) throw new Error("MISTRAL_API_KEY is not set");
     return {
-        model: createOpenAI({ baseURL: "https://api.mistral.ai/v1", apiKey })(modelId) as unknown as LanguageModel,
+        model: createOpenAI({ baseURL: "https://api.mistral.ai/v1", apiKey }).chat(modelId) as unknown as LanguageModel,
         provider: "mistral",
         modelId,
     };
@@ -77,7 +79,7 @@ function resolveGroqModel(modelId: string): ResolvedModel {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) throw new Error("GROQ_API_KEY is not set");
     return {
-        model: createOpenAI({ baseURL: "https://api.groq.com/openai/v1", apiKey })(modelId) as unknown as LanguageModel,
+        model: createOpenAI({ baseURL: "https://api.groq.com/openai/v1", apiKey }).chat(modelId) as unknown as LanguageModel,
         provider: "groq",
         modelId,
     };
@@ -87,7 +89,7 @@ function resolveTogetherModel(modelId: string): ResolvedModel {
     const apiKey = process.env.TOGETHER_API_KEY;
     if (!apiKey) throw new Error("TOGETHER_API_KEY is not set");
     return {
-        model: createOpenAI({ baseURL: "https://api.together.xyz/v1", apiKey })(modelId) as unknown as LanguageModel,
+        model: createOpenAI({ baseURL: "https://api.together.xyz/v1", apiKey }).chat(modelId) as unknown as LanguageModel,
         provider: "together",
         modelId,
     };
@@ -140,16 +142,26 @@ export async function resolveChatModel(
         data: { lastUsedAt: new Date() },
     });
 
-    let provider: any;
+    let model: LanguageModel;
 
     if (conn.protocol === "anthropic") {
-        provider = createAnthropic({ baseURL: conn.baseUrl, apiKey: resolvedApiKey });
+        model = createAnthropic({ baseURL: conn.baseUrl, apiKey: resolvedApiKey })(conn.modelId) as unknown as LanguageModel;
+    } else if (conn.protocol === "gemini") {
+        // Native provider, not the OpenAI-compat shim — see the comment
+        // in resolveGoogleModel above for why. Deliberately NOT passing
+        // conn.baseUrl through: it was captured for the OpenAI-compat
+        // endpoint shape (".../v1beta/openai") and doesn't apply to the
+        // native API's request paths. Google's generative-language API
+        // has one standard endpoint; if you need custom-baseURL support
+        // for Gemini specifically (e.g. a proxy), that needs its own
+        // explicit handling here, not a silent pass-through.
+        model = createGoogleGenerativeAI({ apiKey: resolvedApiKey })(conn.modelId) as unknown as LanguageModel;
     } else {
-        // openai, gemini (.../v1beta/openai), deepseek, mistral, groq, together, ollama, lmstudio, vllm, custom
-        provider = createOpenAI({ baseURL: conn.baseUrl, apiKey: resolvedApiKey });
+        // openai, deepseek, mistral, groq, together, ollama, lmstudio, vllm, custom
+        model = createOpenAI({ baseURL: conn.baseUrl, apiKey: resolvedApiKey }).chat(conn.modelId) as unknown as LanguageModel;
     }
     return {
-        model: provider(conn.modelId) as unknown as LanguageModel,
+        model,
         provider: conn.protocol as SupportedProvider | "custom",
         modelId: conn.modelId,
         apiKey: apiKey || undefined,

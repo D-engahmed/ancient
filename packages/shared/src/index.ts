@@ -34,3 +34,4 @@ export {
   type ProviderDefinition,
   type ProviderModel,
 } from "./providers";
+export { createLogger } from "./logger";

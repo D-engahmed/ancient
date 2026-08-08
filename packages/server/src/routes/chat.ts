@@ -3,7 +3,7 @@
 
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
-import { streamText, stepCountIs } from "ai";
+import { streamText, stepCountIs, APICallError, RetryError } from "ai";
 import { db } from "@ANCIENT/database/client";
 import { Mode, MessageStatus } from "@ANCIENT/database/enums";
 import type { Prisma } from "@ANCIENT/database";
@@ -12,12 +12,16 @@ import {
   messagePartsSchema,
   submitSchema,
   type ChatModelSelection,
+  createLogger,
 } from "@ANCIENT/shared";
 
 import { createTools } from "../tools";
 import { buildSystemPrompt } from "../system-prompt";
 import { resolveChatModel } from "../lib/models";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
+
+const log = createLogger("chat");
+
 
 const MAX_RESPONSE_CHARS = Number.parseInt(process.env.ANCIENT_MAX_RESPONSE_CHARS ?? "200000", 10);
 const CHAT_TIMEOUT_MS = Number.parseInt(process.env.ANCIENT_CHAT_TIMEOUT_MS ?? "60000", 10);
@@ -60,7 +64,27 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
   const apiKey = resolved.apiKey;
 
   const sanitizeError = (err: unknown): string => {
-    let msg = err instanceof Error ? err.message : String(err);
+    let msg: string;
+    if (err instanceof Error) {
+      msg = err.message;
+    } else if (err && typeof err === "object") {
+      const nested = (err as { error?: unknown }).error;
+      const nestedMsg = nested && typeof nested === "object" ? (nested as { message?: unknown }).message : undefined;
+      const directMsg = (err as { message?: unknown }).message;
+      if (typeof nestedMsg === "string") {
+        msg = nestedMsg;
+      } else if (typeof directMsg === "string") {
+        msg = directMsg;
+      } else {
+        try {
+          msg = JSON.stringify(err);
+        } catch {
+          msg = String(err);
+        }
+      }
+    } else {
+      msg = String(err);
+    }
     if (apiKey && typeof msg === "string") {
       const escaped = apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       msg = msg.replace(new RegExp(escaped, "g"), "[REDACTED]");
@@ -91,17 +115,21 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
         } else {
           parts.push({ type: "reasoning", text: chunk.text });
         }
+
       } else if (chunk.type === "tool-call") {
         parts.push({
           type: "tool-call",
           id: chunk.toolCallId,
           name: chunk.toolName,
-          args: chunk.input,
+          args: chunk.input as Record<string, unknown>,
         });
       } else if (chunk.type === "tool-result") {
-        const tc = parts.find((p) => p.type === "tool-call" && p.id === chunk.toolCallId);
+        const tc = parts.find(
+          (p): p is Extract<MessagePart, { type: "tool-call" }> =>
+            p.type === "tool-call" && p.id === chunk.toolCallId,
+        );
         if (tc) {
-          tc.result = chunk.output;
+          tc.result = typeof chunk.output === "string" ? chunk.output : JSON.stringify(chunk.output);
         }
       }
     },
@@ -166,6 +194,14 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
       const errMsg = sanitizeError(error);
       const modelKind = selection.modelKind;
       const modelRef = selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
+      const cause = (error as { cause?: unknown })?.cause;
+      const unwrapped = RetryError.isInstance(error) ? error.lastError : error;
+      const apiError = APICallError.isInstance(unwrapped)
+        ? { requestUrl: unwrapped.url, statusCode: unwrapped.statusCode, responseBody: unwrapped.responseBody }
+        : APICallError.isInstance(cause)
+          ? { requestUrl: cause.url, statusCode: cause.statusCode, responseBody: cause.responseBody }
+          : undefined;
+      log.warn("stream error", { sessionId, modelKind, modelRef, error: errMsg, ...apiError });
       await db.message.create({
         data: {
           sessionId,
@@ -288,57 +324,64 @@ app.post("/:sessionId/resume", async (c) => {
   }
 });
 
-app.post("/:sessionId", zValidator("json", submitSchema), async (c) => {
-  const sessionId = c.req.param("sessionId");
-  const userId = c.get("userId");
+app.post(
+  "/:sessionId",
+  async (c, next) => {
+    console.log("DEBUG raw body:", await c.req.raw.clone().text());
+    await next();
+  },
+  zValidator("json", submitSchema),
+  async (c) => {
+    const sessionId = c.req.param("sessionId");
+    const userId = c.get("userId");
 
-  const session = await db.session.findUnique({
-    where: { id: sessionId, userId },
-    include: { messages: { orderBy: { createdAt: "asc" } } },
-  });
-  if (!session) return c.json({ error: "Session not found" }, 404);
-
-  const data = c.req.valid("json");
-  const modelKind = data.model.modelKind;
-  const modelRef = data.model.modelKind === "builtin" ? data.model.modelId : data.model.connectionId;
-
-  await db.message.create({
-    data: {
-      sessionId,
-      role: "USER",
-      status: MessageStatus.COMPLETE,
-      modelKind,
-      modelRef,
-      content: data.content,
-      mode: data.mode,
-    },
-  });
-
-  const history = buildConversationHistory([
-    ...session.messages,
-    { role: "USER" as const, content: data.content, status: MessageStatus.COMPLETE },
-  ]);
-
-  const abortController = new AbortController();
-  const timeoutId = setTimeout(() => abortController.abort(), CHAT_TIMEOUT_MS);
-
-  try {
-    const response = await streamAIResponse({
-      sessionId,
-      userId,
-      selection: data.model,
-      cwd: session.cwd,
-      history,
-      mode: data.mode,
-      abortController,
+    const session = await db.session.findUnique({
+      where: { id: sessionId, userId },
+      include: { messages: { orderBy: { createdAt: "asc" } } },
     });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (err) {
-    clearTimeout(timeoutId);
-    const msg = err instanceof Error ? err.message : String(err);
-    return c.json({ error: msg }, 500);
-  }
-});
+    if (!session) return c.json({ error: "Session not found" }, 404);
+
+    const data = c.req.valid("json");
+    const modelKind = data.model.modelKind;
+    const modelRef = data.model.modelKind === "builtin" ? data.model.modelId : data.model.connectionId;
+
+    await db.message.create({
+      data: {
+        sessionId,
+        role: "USER",
+        status: MessageStatus.COMPLETE,
+        modelKind,
+        modelRef,
+        content: data.content,
+        mode: data.mode,
+      },
+    });
+
+    const history = buildConversationHistory([
+      ...session.messages,
+      { role: "USER" as const, content: data.content, status: MessageStatus.COMPLETE },
+    ]);
+
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), CHAT_TIMEOUT_MS);
+
+    try {
+      const response = await streamAIResponse({
+        sessionId,
+        userId,
+        selection: data.model,
+        cwd: session.cwd,
+        history,
+        mode: data.mode,
+        abortController,
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const msg = err instanceof Error ? err.message : String(err);
+      return c.json({ error: msg }, 500);
+    }
+  });
 
 export default app;
