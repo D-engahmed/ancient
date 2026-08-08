@@ -5,11 +5,11 @@ import { mkdir, readFile, readdir, stat, writeFile } from "fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { toolInputSchemas, Mode, type ModeType } from "@ANCIENT/shared";
 
-const MAX_FILE_SIZE = 10_000;
-const MAX_RESULTS = 200;
-const MAX_MATCHES = 50;
-const MAX_OUTPUT = 20_000;
-const DEFAULT_TIMEOUT = 30_000;
+const MAX_FILE_SIZE = 100_000;
+const MAX_RESULTS = 2000;
+const MAX_MATCHES = 500;
+const MAX_OUTPUT = 200_000;
+const DEFAULT_TIMEOUT = 300_000;
 
 function resolveInsideCwd(path: string) {
   const cwd = process.cwd();

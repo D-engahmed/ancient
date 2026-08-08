@@ -1,4 +1,5 @@
 // use-chat.ts
+import { appendFileSync } from "node:fs";
 import { useMemo } from "react";
 import { useChat as useAiChat } from "@ai-sdk/react";
 import {
@@ -32,7 +33,7 @@ type ChatTools = {
   };
 };
 
-export type Message = UIMessage<ChatMessageMetadata, any, ChatTools>;
+export type Message = UIMessage<ChatMessageMetadata, UIDataTypes, ChatTools>;
 
 export function useChat(sessionId: string, initialMessages: Message[]) {
   const transport = useMemo(() => {
@@ -58,6 +59,8 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
         const metadata = messages.findLast(
           (m) => m.metadata?.mode && m.metadata?.model,
         )?.metadata;
+        appendFileSync("ancient-debug.log", `lastUser.metadata: ${JSON.stringify(lastUser.metadata)}\n`);
+        appendFileSync("ancient-debug.log", `metadata: ${JSON.stringify(metadata)}\n`);
         return {
           body: {
             content,
@@ -110,6 +113,7 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
       mode: ModeType;
       modelSelection: ChatModelSelection;
     }) => {
+      appendFileSync("ancient-debug.log", `submit() params.modelSelection: ${JSON.stringify(params.modelSelection)}\n`);
       return chat.sendMessage({
         text: params.userText,
         metadata: {

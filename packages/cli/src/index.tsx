@@ -1,6 +1,3 @@
-// Copyright (c) 2026 NXG AI Solutions. All rights reserved.
-// Proprietary and confidential. Unauthorized copying or distribution prohibited.
-
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -17,12 +14,12 @@ const router = createMemoryRouter([
       { index: true, element: <Home /> },
       { path: "sessions/new", element: <NewSession /> },
       { path: "sessions/:id", element: <Session /> },
-    ],
-  },
+    ]
+  }
 ]);
 
 function App() {
-  return <RouterProvider router={router} />;
+  return <RouterProvider router={router} />
 }
 
 const renderer = await createCliRenderer({
