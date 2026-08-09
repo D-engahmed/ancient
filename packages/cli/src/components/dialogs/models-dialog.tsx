@@ -1,16 +1,22 @@
 // packages/cli/src/components/dialogs/models-dialog.tsx
-import { useCallback, useEffect, useState, useMemo } from "react";
-import { TextAttributes } from "@opentui/core";
+import { useCallback, useEffect, useState, useMemo, useRef } from "react";
+import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
+import { useKeyboard } from "@opentui/react";
 import { useDialog } from "../../providers/dialog";
 import { useToast } from "../../providers/toast";
 import { usePromptConfig } from "../../providers/prompt-config";
+import { useKeyboardLayer } from "../../providers/Keyboard-layer";
+import { useTheme } from "../../providers/theme";
 import { apiClient } from "../../lib/api-client";
 import {
   PROVIDERS,
   type ProviderDefinition,
+  type ProviderModel,
   DEFAULT_CHAT_MODEL_ID,
 } from "@ANCIENT/shared";
 import { DialogSearchList } from "../dialog-search-list";
+
+const MAX_VISIBLE_MODEL_SUGGESTIONS = 5;
 
 type Connection = {
   id: string;
@@ -28,6 +34,8 @@ export const ModelsDialogContent = () => {
   const dialog = useDialog();
   const toast = useToast();
   const { setModelSelection } = usePromptConfig();
+  const { isTopLayer } = useKeyboardLayer();
+  const { colors } = useTheme();
 
   const [view, setView] = useState<ViewState>("list");
   const [selectedProvider, setSelectedProvider] = useState<ProviderDefinition | null>(null);
@@ -38,6 +46,8 @@ export const ModelsDialogContent = () => {
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [modelSuggestIndex, setModelSuggestIndex] = useState(0);
+  const modelScrollRef = useRef<ScrollBoxRenderable>(null);
 
   // Fetch existing connections
   useEffect(() => {
@@ -111,6 +121,7 @@ export const ModelsDialogContent = () => {
     setSelectedModelId(provider.defaultModelId || "");
     setBaseUrl(provider.defaultBaseUrl || "");
     setApiKey("");
+    setModelSuggestIndex(0);
     setView("form");
   };
 
@@ -169,7 +180,62 @@ export const ModelsDialogContent = () => {
     setSelectedModelId("");
     setBaseUrl("");
     setApiKey("");
+    setModelSuggestIndex(0);
   };
+
+  // ----- Model ID suggestions (form view) -----
+  const filteredModels = useMemo(() => {
+    if (!selectedProvider) return [];
+    const query = modelSearch.toLowerCase();
+    return selectedProvider.models.filter(
+      (m) => m.id.toLowerCase().includes(query) || m.label.toLowerCase().includes(query)
+    );
+  }, [selectedProvider, modelSearch]);
+
+  const selectModelSuggestion = useCallback((model: ProviderModel) => {
+    setModelSearch(model.id);
+    setSelectedModelId(model.id);
+    setModelSuggestIndex(0);
+  }, []);
+
+  // Down arrow steps through the matching models for the current provider;
+  // Enter fills the Model ID field with whichever one is highlighted.
+  useKeyboard((key) => {
+    if (view !== "form" || !isTopLayer("dialog")) return;
+    if (filteredModels.length === 0) return;
+
+    if (key.name === "down") {
+      key.preventDefault();
+      setModelSuggestIndex((i) => {
+        const nextIndex = Math.min(filteredModels.length - 1, i + 1);
+        const sb = modelScrollRef.current;
+        if (sb) {
+          const viewportHeight = sb.viewport.height;
+          const visibleEnd = sb.scrollTop + viewportHeight - 1;
+          if (nextIndex > visibleEnd) {
+            sb.scrollTo(nextIndex - viewportHeight + 1);
+          }
+        }
+        return nextIndex;
+      });
+    } else if (key.name === "up") {
+      key.preventDefault();
+      setModelSuggestIndex((i) => {
+        const nextIndex = Math.max(0, i - 1);
+        const sb = modelScrollRef.current;
+        if (sb && nextIndex < sb.scrollTop) {
+          sb.scrollTo(nextIndex);
+        }
+        return nextIndex;
+      });
+    } else if (key.name === "return" || key.name === "enter") {
+      const model = filteredModels[modelSuggestIndex];
+      if (model) {
+        key.preventDefault();
+        selectModelSuggestion(model);
+      }
+    }
+  });
 
   // ----- Render helpers -----
   const renderListItem = (item: any, isSelected: boolean) => {
@@ -284,11 +350,6 @@ export const ModelsDialogContent = () => {
     const provider = selectedProvider;
     const isLocal = provider.id === "ollama" || provider.id === "lmstudio" || provider.id === "vllm";
 
-    const filteredModels = provider.models.filter((m) =>
-      m.id.toLowerCase().includes(modelSearch.toLowerCase()) ||
-      m.label.toLowerCase().includes(modelSearch.toLowerCase())
-    );
-
     return (
       <box flexDirection="column" gap={2}>
         <box flexDirection="column" gap={0.5}>
@@ -304,22 +365,49 @@ export const ModelsDialogContent = () => {
             onInput={(value) => {
               setModelSearch(value);
               setSelectedModelId(value);
+              setModelSuggestIndex(0);
             }}
           />
-          {modelSearch && filteredModels.length > 0 && (
-            <box flexDirection="column" maxHeight={4} overflow="hidden" paddingTop={0.5}>
-              {filteredModels.slice(0, 5).map((m) => (
-                <text
-                  key={m.id}
-                  attributes={TextAttributes.DIM}
-                  onMouseDown={() => {
-                    setModelSearch(m.id);
-                    setSelectedModelId(m.id);
-                  }}
-                >
-                  {m.label} ({m.id})
-                </text>
-              ))}
+          {filteredModels.length > 0 && (
+            <box flexDirection="column" paddingTop={0.5}>
+              <scrollbox
+                ref={modelScrollRef}
+                height={Math.min(filteredModels.length, MAX_VISIBLE_MODEL_SUGGESTIONS)}
+              >
+                {filteredModels.map((m, index) => {
+                  const isSelected = index === modelSuggestIndex;
+                  return (
+                    <box
+                      key={m.id}
+                      flexDirection="row"
+                      height={1}
+                      overflow="hidden"
+                      backgroundColor={isSelected ? colors.selection : undefined}
+                      onMouseMove={() => setModelSuggestIndex(index)}
+                      onMouseDown={() => selectModelSuggestion(m)}
+                    >
+                      <box flexShrink={0} overflow="hidden">
+                        <text selectable={false} fg={isSelected ? "black" : "white"}>
+                          {m.label}
+                        </text>
+                      </box>
+                      <box flexGrow={1} />
+                      <box flexShrink={0} paddingLeft={1} overflow="hidden">
+                        <text
+                          selectable={false}
+                          attributes={TextAttributes.DIM}
+                          fg={isSelected ? "black" : undefined}
+                        >
+                          {m.id}
+                        </text>
+                      </box>
+                    </box>
+                  );
+                })}
+              </scrollbox>
+              <text attributes={TextAttributes.DIM}>
+                ↓/↑ to browse, enter to select
+              </text>
             </box>
           )}
         </box>

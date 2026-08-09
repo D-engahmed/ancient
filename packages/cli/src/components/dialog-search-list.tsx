@@ -1,11 +1,25 @@
 // dialog-search-list.tsx
 import { useCallback, useRef, useState, type ReactNode, type RefObject } from "react";
-import { TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "@opentui/core";
+import { TextAttributes, defaultTextareaKeyBindings, type InputRenderable, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { useKeyboardLayer } from "../providers/Keyboard-layer";
 import { useTheme } from "../providers/theme";
 
 const MAX_VISIBLE_ITEMS = 6;
+
+// InputRenderable extends TextareaRenderable and inherits its keybindings —
+// including plain up/down (cursor-move-by-line) and plain return
+// (insert-newline, suppressed by Input but still "handled" at the widget
+// level). Since the search box is always focused, it consumes those keys
+// itself before our own useKeyboard handler below ever sees them — a
+// single-line search field has no real use for "move cursor up a line,"
+// but the binding doesn't know that. Strip just those three off; every
+// other binding (left/right, word-jump, select, backspace, etc.) is left
+// exactly as the library defines it.
+const searchInputKeyBindings = defaultTextareaKeyBindings.filter((b) => {
+  const isPlain = !b.shift && !b.ctrl && !b.meta && !b.super;
+  return !(isPlain && (b.name === "up" || b.name === "down" || b.name === "return"));
+});
 
 type DialogSearchListProps<T> = {
   items: T[];
@@ -94,6 +108,7 @@ export function DialogSearchList<T>({
         ref={inputRef}
         placeholder={placeholder}
         focused
+        keyBindings={searchInputKeyBindings}
         onContentChange={handleContentChange}
       />
       {filtered.length === 0 ? (

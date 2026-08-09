@@ -59,7 +59,7 @@ export const PROVIDERS = [
             { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite (fastest)" },
             { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (preview, 2M ctx)" },
             { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro (GA)" },
-            { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (GA)" },
+            { id: "gemini-2.5-flash", label: "Gemini 2 Flash (GA)" },
         ],
     },
     {
