@@ -57,6 +57,7 @@ export const SUPPORTED_CHAT_MODELS = [
   { id: "gemini-3.6-flash", provider: "google", pricing: { inputUsdPerMillionTokens: 0.15, outputUsdPerMillionTokens: 0.6 } },
   { id: "gemini-3.5-flash-lite", provider: "google", pricing: { inputUsdPerMillionTokens: 0.075, outputUsdPerMillionTokens: 0.3 } },
   { id: "gemini-3.1-pro", provider: "google", pricing: { inputUsdPerMillionTokens: 1.25, outputUsdPerMillionTokens: 5 } },
+  { id: "gemini-2.5-flash", provider: "google", pricing: { inputUsdPerMillionTokens: 1.25, outputUsdPerMillionTokens: 5 } },
 
   // ---- DeepSeek ----
   { id: "deepseek-v4", provider: "deepseek", pricing: { inputUsdPerMillionTokens: 0.5, outputUsdPerMillionTokens: 2 } },
