@@ -85,6 +85,12 @@ export const PROVIDERS = [
         ],
     },
     {
+        id: "openrouter", label: "OpenRouter", protocol: "openai" as const,
+        defaultBaseUrl: "https://openrouter.ai/api/v1",
+        description: "Free-tier :free models + paid access to 300+ models via one key",
+        models: [],
+    },
+    {
         id: "groq", label: "Groq", protocol: "openai" as const,
         defaultBaseUrl: "https://api.groq.com/openai/v1", defaultModelId: "llama-3.3-70b-versatile",
         description: "Llama 3.3 70B, Llama 4 Scout/Maverick, GPT-OSS",
