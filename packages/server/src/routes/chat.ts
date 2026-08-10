@@ -3,7 +3,7 @@
 
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
-import { streamText, stepCountIs, APICallError, RetryError } from "ai";
+import { streamText, stepCountIs, APICallError, RetryError, type ModelMessage } from "ai";
 import { db } from "@ANCIENT/database/client";
 import { Mode, MessageStatus } from "@ANCIENT/database/enums";
 import type { Prisma } from "@ANCIENT/database";
@@ -27,14 +27,88 @@ const MAX_RESPONSE_CHARS = Number.parseInt(process.env.ANCIENT_MAX_RESPONSE_CHAR
 const CHAT_TIMEOUT_MS = Number.parseInt(process.env.ANCIENT_CHAT_TIMEOUT_MS ?? "60000", 10);
 const MAX_TOOL_STEPS = Number.parseInt(process.env.ANCIENT_MAX_TOOL_STEPS ?? "50", 10);
 
+function toolCallParts(parts: MessagePart[]) {
+  return parts.filter(
+    (p): p is Extract<MessagePart, { type: "tool-call" }> => p.type === "tool-call",
+  );
+}
+
+/**
+ * Rebuilds the message array sent back to the model from DB rows.
+ *
+ * The previous version used only `content` (the flattened text), which
+ * silently dropped every tool call and tool result — and dropped the whole
+ * turn outright when an assistant message had no final text (exactly what
+ * happens when a turn ends mid-exploration, e.g. hitting MAX_TOOL_STEPS or a
+ * timeout). That's why "continue" looked like a full restart: the model was
+ * handed a conversation with the entire middle removed.
+ *
+ * This version reconstructs real ModelMessage[] from `parts`: an assistant
+ * message (text + tool-call parts) followed by a tool message (matching
+ * tool-result parts), the shape most providers require for multi-step tool
+ * conversations. A tool-call with no `result` (saved mid-flight by onAbort)
+ * still gets a synthetic tool-result — most providers reject a request
+ * where a tool-call has no matching tool-result in the next message, and
+ * silently dropping it would just recreate the same "lost turn" bug for a
+ * different reason.
+ */
 function buildConversationHistory(
-  messages: { role: "USER" | "ASSISTANT" | "ERROR"; content: string; status: MessageStatus }[],
-) {
-  return messages.flatMap((m) => {
-    if (m.role === "ERROR") return [];
-    if (m.role === "ASSISTANT" && m.content.length === 0) return [];
-    return [{ role: m.role === "USER" ? ("user" as const) : ("assistant" as const), content: m.content }];
-  });
+  messages: {
+    role: "USER" | "ASSISTANT" | "ERROR";
+    content: string;
+    parts?: unknown;
+    status: MessageStatus;
+  }[],
+): ModelMessage[] {
+  const result: ModelMessage[] = [];
+
+  for (const m of messages) {
+    if (m.role === "ERROR") continue;
+
+    if (m.role === "USER") {
+      result.push({ role: "user", content: m.content });
+      continue;
+    }
+
+    // ASSISTANT
+    const parsed = messagePartsSchema.safeParse(m.parts ?? []);
+    const parts = parsed.success ? parsed.data : [];
+    const toolCalls = toolCallParts(parts);
+
+    // Genuinely nothing to represent this turn — safe to drop.
+    if (m.content.length === 0 && toolCalls.length === 0) continue;
+
+    const assistantContent: Array<
+      | { type: "text"; text: string }
+      | { type: "tool-call"; toolCallId: string; toolName: string; input: unknown }
+    > = [];
+
+    if (m.content.length > 0) {
+      assistantContent.push({ type: "text", text: m.content });
+    }
+    for (const tc of toolCalls) {
+      assistantContent.push({ type: "tool-call", toolCallId: tc.id, toolName: tc.name, input: tc.args });
+    }
+
+    result.push({ role: "assistant", content: assistantContent });
+
+    if (toolCalls.length > 0) {
+      result.push({
+        role: "tool",
+        content: toolCalls.map((tc) => ({
+          type: "tool-result" as const,
+          toolCallId: tc.id,
+          toolName: tc.name,
+          output:
+            typeof tc.result === "string"
+              ? { type: "text" as const, value: tc.result }
+              : { type: "error-text" as const, value: "Interrupted before this call finished." },
+        })),
+      });
+    }
+  }
+
+  return result;
 }
 
 function getResumableUserMessage(messages: any[]) {
@@ -48,7 +122,7 @@ type StreamParams = {
   userId: string;
   selection: ChatModelSelection;
   cwd: string | null;
-  history: { role: "user" | "assistant"; content: string }[];
+  history: ModelMessage[];
   mode: Mode;
   abortController: AbortController;
 };
