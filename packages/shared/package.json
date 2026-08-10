@@ -4,7 +4,7 @@
   "private": true,
   "exports": {
     ".": "./src/index.ts",
-    "./logger": "./src/logger.ts",
+    "./logger": "./src/logger.ts"
   },
   "dependencies": {
     "ai": "^7.0.55",

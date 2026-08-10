@@ -10,6 +10,7 @@ import { createEditFileTool } from "./edit-file";
 import { createGrepTool } from "./grep";
 import { createGlobTool } from "./glob";
 import { createBashTool } from "./bash";
+import { createGovernor } from "../lib/governor";
 
 export function createTools(cwd: string, mode: Mode) {
     const readOnlyTools = {
@@ -17,6 +18,7 @@ export function createTools(cwd: string, mode: Mode) {
         listDirectory: createListDirectoryTool(cwd),
         grep: createGrepTool(cwd),
         glob: createGlobTool(cwd),
+        governor: createGovernor(),
     };
 
     if (mode === "PLAN") {
