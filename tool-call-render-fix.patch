@@ -1,0 +1,50 @@
+diff --git a/packages/cli/src/components/messages/bot-message.tsx b/packages/cli/src/components/messages/bot-message.tsx
+index 2bf926f..da4dd09 100644
+--- a/packages/cli/src/components/messages/bot-message.tsx
++++ b/packages/cli/src/components/messages/bot-message.tsx
+@@ -8,6 +8,7 @@ import { useTheme } from "../../providers/theme";
+ import type { Message } from "../../hooks/use-chat";
+ import { Mode, type ModeType } from "@ANCIENT/shared";
+ import { TextAttributes } from "@opentui/core";
++import { isToolUIPart, isDynamicToolUIPart, getToolName } from "ai";
+ 
+ type ClientMessagePart = Message["parts"][number];
+ 
+@@ -48,7 +49,7 @@ function groupConsecutiveParts(parts: ClientMessagePart[]): PartGroup[] {
+       lastGroup.parts.push(part);
+     } else {
+       const key =
+-        part.type === "dynamic-tool"
++        isToolUIPart(part) || isDynamicToolUIPart(part)
+           ? `group-tc-${part.toolCallId}`
+           : `group-${part.type}-${i}`;
+       groups.push({ type: part.type, parts: [part], key });
+@@ -92,7 +93,12 @@ export function BotMessage({
+               );
+             }
+ 
+-            if (part.type === "dynamic-tool") {
++            if (isToolUIPart(part) || isDynamicToolUIPart(part)) {
++              const toolName = getToolName(part);
++              const isDone =
++                part.state === "output-available" ||
++                part.state === "output-error" ||
++                part.state === "output-denied";
+               return (
+                 <box
+                   key={part.toolCallId}
+@@ -106,11 +112,9 @@ export function BotMessage({
+                   paddingX={2}
+                 >
+                   <text attributes={TextAttributes.DIM}>
+-                    <em fg={colors.info}>{formatToolName(part.toolName)}:</em>{" "}
+-                    {formatToolArgs(
+-                      "args" in part ? (part.args as Record<string, unknown>) : {}
+-                    )}
+-                    {("result" in part && part.result != null) ? "" : " …"}
++                    <em fg={colors.info}>{formatToolName(toolName)}:</em>{" "}
++                    {formatToolArgs((part.input as Record<string, unknown>) ?? {})}
++                    {isDone ? "" : " …"}
+                   </text>
+                 </box>
+               );
