@@ -66,6 +66,7 @@ export function BotMessage({
   streaming = false,
 }: Props) {
   const { colors } = useTheme();
+  const safeParts = Array.isArray(parts) ? parts : [];
   return (
     <box width="100%" alignItems="center">
       {groupConsecutiveParts(parts).map((group, i) => (
