@@ -114,6 +114,34 @@ function resolveSupportedChatModel(model: SupportedChatModel): ResolvedModel {
     }
 }
 
+// ---- Free/local model resolver ----
+// Used by the model router (free-first lane) and by subagents with
+// `model: cheap`. Resolution order:
+//   1. modelRouting.freeModel in .ancient/settings.json (passed in as cfg)
+//   2. ANCIENT_FREE_MODEL_* env vars
+//   3. null — caller falls back to the user's selected model
+export type FreeModelConfig = {
+    baseUrl: string;
+    modelId: string;
+    apiKeyEnv?: string;
+};
+
+export function resolveFreeModel(cfg?: FreeModelConfig): ResolvedModel | null {
+    const baseUrl = cfg?.baseUrl || process.env.ANCIENT_FREE_MODEL_BASE_URL;
+    const modelId = cfg?.modelId || process.env.ANCIENT_FREE_MODEL_ID;
+    if (!baseUrl || !modelId) return null;
+
+    const keyEnv = cfg?.apiKeyEnv ?? "ANCIENT_FREE_MODEL_API_KEY";
+    const apiKey = process.env[keyEnv]; // local servers (Ollama etc.) need none
+
+    return {
+        model: createOpenAI({ baseURL: baseUrl, apiKey }).chat(modelId) as unknown as LanguageModel,
+        provider: "custom",
+        modelId,
+        apiKey: apiKey || undefined,
+    };
+}
+
 // ---- BYOK connection resolver ----
 export async function resolveChatModel(
     selection: ChatModelSelection,

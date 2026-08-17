@@ -15,17 +15,29 @@ import {
   createLogger,
 } from "@ANCIENT/shared";
 
-import { createTools } from "../tools";
+import { createToolsAsync } from "../tools";
 import { buildSystemPrompt } from "../system-prompt";
-import { resolveChatModel } from "../lib/models";
+import { resolveChatModel, resolveFreeModel, type ResolvedModel } from "../lib/models";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
+import { loadSettings, type AncientSettings } from "../hooks/settings";
+import { runHooks, type HookContext } from "../hooks/runner";
+import { loadMemory, buildMemoryPromptBlock } from "../memory/loader";
+import { listSkills, buildSkillsPromptBlock } from "../skills/loader";
+import { listAgents, buildAgentsPromptBlock } from "../agents/loader";
+import { listMcpServers } from "../mcp/client";
+import { expandSlashCommand, listCommands } from "../commands/loader";
+import { routeTurn } from "../lib/model-router";
+import { createCheckpoint } from "../checkpoints/store";
 
 const log = createLogger("chat");
 
-
 const MAX_RESPONSE_CHARS = Number.parseInt(process.env.ANCIENT_MAX_RESPONSE_CHARS ?? "200000", 10);
-const CHAT_TIMEOUT_MS = Number.parseInt(process.env.ANCIENT_CHAT_TIMEOUT_MS ?? "60000", 10);
+// Raised from 60s: subagent tasks and MCP tools legitimately run longer.
+const CHAT_TIMEOUT_MS = Number.parseInt(process.env.ANCIENT_CHAT_TIMEOUT_MS ?? "300000", 10);
 const MAX_TOOL_STEPS = Number.parseInt(process.env.ANCIENT_MAX_TOOL_STEPS ?? "50", 10);
+
+/** Marker prefix for compaction summaries — see routes/extensions.ts /compact. */
+export const SUMMARY_MARKER = "<ancient-context-summary>";
 
 function toolCallParts(parts: MessagePart[]) {
   return parts.filter(
@@ -36,21 +48,15 @@ function toolCallParts(parts: MessagePart[]) {
 /**
  * Rebuilds the message array sent back to the model from DB rows.
  *
- * The previous version used only `content` (the flattened text), which
- * silently dropped every tool call and tool result — and dropped the whole
- * turn outright when an assistant message had no final text (exactly what
- * happens when a turn ends mid-exploration, e.g. hitting MAX_TOOL_STEPS or a
- * timeout). That's why "continue" looked like a full restart: the model was
- * handed a conversation with the entire middle removed.
- *
- * This version reconstructs real ModelMessage[] from `parts`: an assistant
- * message (text + tool-call parts) followed by a tool message (matching
- * tool-result parts), the shape most providers require for multi-step tool
+ * Reconstructs real ModelMessage[] from `parts`: an assistant message
+ * (text + tool-call parts) followed by a tool message (matching tool-result
+ * parts), the shape most providers require for multi-step tool
  * conversations. A tool-call with no `result` (saved mid-flight by onAbort)
  * still gets a synthetic tool-result — most providers reject a request
- * where a tool-call has no matching tool-result in the next message, and
- * silently dropping it would just recreate the same "lost turn" bug for a
- * different reason.
+ * where a tool-call has no matching tool-result in the next message.
+ *
+ * Compaction: if a context-summary message exists (created by /compact),
+ * everything before the latest one is dropped — the summary replaces it.
  */
 function buildConversationHistory(
   messages: {
@@ -60,9 +66,19 @@ function buildConversationHistory(
     status: MessageStatus;
   }[],
 ): ModelMessage[] {
+  // Find the latest compaction summary and discard everything before it.
+  let startIndex = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role === "USER" && m.content.startsWith(SUMMARY_MARKER)) {
+      startIndex = i;
+      break;
+    }
+  }
+  const window = messages.slice(startIndex);
   const result: ModelMessage[] = [];
 
-  for (const m of messages) {
+  for (const m of window) {
     if (m.role === "ERROR") continue;
 
     if (m.role === "USER") {
@@ -120,22 +136,68 @@ function getResumableUserMessage(messages: any[]) {
 type StreamParams = {
   sessionId: string;
   userId: string;
+  /** The user's selection — used for persistence + subagent inheritance. */
   selection: ChatModelSelection;
+  /** Set when the model router moved this turn to the free lane. */
+  preResolved?: ResolvedModel;
+  routeReason?: string;
   cwd: string | null;
   history: ModelMessage[];
   mode: Mode;
+  settings: AncientSettings;
+  /** Extra context injected by UserPromptSubmit/SessionStart hooks. */
+  hookContext?: string;
   abortController: AbortController;
 };
 
 async function streamAIResponse(params: StreamParams): Promise<Response> {
-  const { sessionId, userId, selection, cwd, history, mode, abortController } = params;
+  const {
+    sessionId, userId, selection, preResolved, routeReason,
+    cwd, history, mode, settings, hookContext, abortController,
+  } = params;
   const startTime = Date.now();
   const parts: MessagePart[] = [];
-  const tools = cwd ? createTools(cwd, mode) : undefined;
 
-  const resolved = await resolveChatModel(selection, userId);
+  const resolved = preResolved ?? await resolveChatModel(selection, userId);
   const model = resolved.model;
   const apiKey = resolved.apiKey;
+
+  // ---- Assemble the layered system prompt (each block self-budgets) ----
+  let memoryBlock = "";
+  let skillsBlock = "";
+  let agentsBlock = "";
+  let mcpBlock = "";
+  if (cwd) {
+    const [memory, skills, agents, mcpStatuses] = await Promise.all([
+      loadMemory(cwd),
+      listSkills(cwd),
+      listAgents(cwd),
+      settings.mcp?.enabled === false ? Promise.resolve([]) : listMcpServers(cwd).catch(() => []),
+    ]);
+    memoryBlock = buildMemoryPromptBlock(memory);
+    skillsBlock = buildSkillsPromptBlock(skills);
+    agentsBlock = buildAgentsPromptBlock(agents);
+    if (mcpStatuses.length > 0) {
+      const lines = mcpStatuses.map((s) =>
+        s.connected
+          ? `- **${s.name}** — connected, ${s.toolCount} tool(s) available as \`mcp__${s.name}__*\``
+          : `- **${s.name}** — unavailable (${s.error ?? "connection failed"})`);
+      mcpBlock = ["## MCP Servers", ...lines].join("\n");
+    }
+  }
+
+  const hookContextFull: HookContext | undefined = cwd
+    ? { cwd, sessionId, settings }
+    : undefined;
+
+  const tools = cwd
+    ? await createToolsAsync(cwd, mode, {
+        sessionId,
+        userId,
+        selection,
+        hookContext: hookContextFull,
+      })
+    : undefined;
 
   const sanitizeError = (err: unknown): string => {
     let msg: string;
@@ -168,7 +230,16 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
 
   const result = streamText({
     model,
-    system: buildSystemPrompt({ cwd, mode }),
+    system: buildSystemPrompt({
+      cwd,
+      mode,
+      memoryBlock,
+      skillsBlock,
+      agentsBlock,
+      mcpBlock,
+      hookContext,
+      today: new Date().toISOString().slice(0, 10),
+    }),
     messages: history,
     tools,
     stopWhen: tools ? stepCountIs(MAX_TOOL_STEPS) : undefined,
@@ -247,7 +318,9 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
         parts.length > 0 ? (messagePartsSchema.parse(parts) as Prisma.InputJsonValue) : undefined;
 
       const modelKind = selection.modelKind;
-      const modelRef = selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
+      const modelRef = preResolved
+        ? `free:${resolved.modelId}`
+        : selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
 
       await db.message.create({
         data: {
@@ -267,7 +340,9 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
     onError: async (error) => {
       const errMsg = sanitizeError(error);
       const modelKind = selection.modelKind;
-      const modelRef = selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
+      const modelRef = preResolved
+        ? `free:${resolved.modelId}`
+        : selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
       const cause = (error as { cause?: unknown })?.cause;
       const unwrapped = RetryError.isInstance(error) ? error.lastError : error;
       const apiError = APICallError.isInstance(unwrapped)
@@ -296,7 +371,7 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
         .join("");
       if (fullText.length === 0 && parts.length === 0) return;
       const elapsedMs = Date.now() - startTime;
-      const validatedParts = parts.length ? messagePartsSchema.parse(parts) : undefined;
+      const validatedParts = parts.length ? (messagePartsSchema.parse(parts) as Prisma.InputJsonValue) : undefined;
       const modelKind = selection.modelKind;
       const modelRef = selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
       await db.message.create({
@@ -325,24 +400,25 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
       if (part.type === "start") {
         return {
           mode,
-          model:
-            selection.modelKind === "builtin"
+          model: preResolved
+            ? `free:${resolved.modelId}`
+            : selection.modelKind === "builtin"
               ? selection.modelId
               : selection.connectionId,
+          routed: routeReason,
         };
       }
 
       if (part.type === "finish") {
         return {
           mode,
-
-          model:
-            selection.modelKind === "builtin"
+          model: preResolved
+            ? `free:${resolved.modelId}`
+            : selection.modelKind === "builtin"
               ? selection.modelId
               : selection.connectionId,
-
+          routed: routeReason,
           durationMs: Date.now() - startTime,
-
           usage: part.totalUsage,
         };
       }
@@ -350,6 +426,69 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
       return undefined;
     },
   });
+}
+
+/**
+ * Shared turn preparation for POST /:sessionId: slash-command expansion,
+ * hooks, checkpointing, model routing. Returns either an error response or
+ * everything streamAIResponse needs.
+ */
+async function prepareTurn(params: {
+  sessionId: string;
+  userId: string;
+  content: string;
+  mode: Mode;
+  cwd: string | null;
+  isFirstMessage: boolean;
+}): Promise<
+  | { ok: true; content: string; settings: AncientSettings; hookContext?: string; preResolved?: ResolvedModel; routeReason?: string }
+  | { ok: false; status: 400; error: string }
+> {
+  const { sessionId, cwd, mode, isFirstMessage } = params;
+  const settings = await loadSettings(cwd);
+
+  // ---- Slash commands ----
+  const expansion = await expandSlashCommand(params.content, cwd);
+  if (expansion.kind === "ui-command") {
+    return { ok: false, status: 400, error: `/${expansion.name} is a UI command — run it from the command menu (Ctrl+K) instead of the chat input.` };
+  }
+  if (expansion.kind === "unknown") {
+    const available = (await listCommands(cwd)).map((c) => `/${c.name}`).join(", ");
+    return { ok: false, status: 400, error: `Unknown command: /${expansion.name}. Available: ${available || "(none)"}` };
+  }
+  const content = expansion.kind === "expanded" ? expansion.content : params.content;
+
+  // ---- Lifecycle hooks ----
+  let hookContext: string | undefined;
+  if (cwd) {
+    const hookCtx: HookContext = { cwd, sessionId, settings };
+    const contextBits: string[] = [];
+    if (isFirstMessage) {
+      const outputs = await runHooks(hookCtx, "SessionStart", { source: "startup" });
+      contextBits.push(...outputs.map((o) => o.additionalContext).filter((s): s is string => Boolean(s)));
+    }
+    const promptOutputs = await runHooks(hookCtx, "UserPromptSubmit", { prompt: content });
+    contextBits.push(...promptOutputs.map((o) => o.additionalContext).filter((s): s is string => Boolean(s)));
+    if (contextBits.length > 0) hookContext = contextBits.join("\n\n");
+  }
+
+  // ---- Checkpoint before BUILD turns ----
+  if (cwd && mode === Mode.BUILD && settings.checkpoints?.enabled !== false) {
+    await createCheckpoint(cwd, sessionId, content).catch(() => null);
+  }
+
+  // ---- Model routing (free-first lane) ----
+  const route = routeTurn(content, mode, settings.modelRouting);
+  let preResolved: ResolvedModel | undefined;
+  if (route.lane === "free") {
+    const free = resolveFreeModel(settings.modelRouting?.freeModel);
+    if (free) {
+      preResolved = free;
+      log.info("routed to free model", { sessionId, model: free.modelId, score: route.score });
+    }
+  }
+
+  return { ok: true, content, settings, hookContext, preResolved, routeReason: route.reason };
 }
 
 const app = new Hono<AuthenticatedEnv>();
@@ -375,6 +514,7 @@ app.post("/:sessionId/resume", async (c) => {
     return c.json({ error: "The model used in this session is no longer available" }, 409);
   }
 
+  const settings = await loadSettings(session.cwd);
   const history = buildConversationHistory(session.messages);
   const abortController = new AbortController();
   const timeoutId = setTimeout(() => abortController.abort(), CHAT_TIMEOUT_MS);
@@ -387,6 +527,7 @@ app.post("/:sessionId/resume", async (c) => {
       cwd: session.cwd,
       history,
       mode: lastUser.mode,
+      settings,
       abortController,
     });
     clearTimeout(timeoutId);
@@ -400,10 +541,6 @@ app.post("/:sessionId/resume", async (c) => {
 
 app.post(
   "/:sessionId",
-  async (c, next) => {
-    console.log("DEBUG raw body:", await c.req.raw.clone().text());
-    await next();
-  },
   zValidator("json", submitSchema),
   async (c) => {
     const sessionId = c.req.param("sessionId");
@@ -416,6 +553,17 @@ app.post(
     if (!session) return c.json({ error: "Session not found" }, 404);
 
     const data = c.req.valid("json");
+
+    const prepared = await prepareTurn({
+      sessionId,
+      userId,
+      content: data.content,
+      mode: data.mode,
+      cwd: session.cwd,
+      isFirstMessage: session.messages.length === 0,
+    });
+    if (!prepared.ok) return c.json({ error: prepared.error }, prepared.status);
+
     const modelKind = data.model.modelKind;
     const modelRef = data.model.modelKind === "builtin" ? data.model.modelId : data.model.connectionId;
 
@@ -426,14 +574,14 @@ app.post(
         status: MessageStatus.COMPLETE,
         modelKind,
         modelRef,
-        content: data.content,
+        content: prepared.content,
         mode: data.mode,
       },
     });
 
     const history = buildConversationHistory([
       ...session.messages,
-      { role: "USER" as const, content: data.content, status: MessageStatus.COMPLETE },
+      { role: "USER" as const, content: prepared.content, status: MessageStatus.COMPLETE },
     ]);
 
     const abortController = new AbortController();
@@ -444,9 +592,13 @@ app.post(
         sessionId,
         userId,
         selection: data.model,
+        preResolved: prepared.preResolved,
+        routeReason: prepared.routeReason,
         cwd: session.cwd,
         history,
         mode: data.mode,
+        settings: prepared.settings,
+        hookContext: prepared.hookContext,
         abortController,
       });
       clearTimeout(timeoutId);

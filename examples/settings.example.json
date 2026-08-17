@@ -1,0 +1,31 @@
+{
+  "$comment": "Copy to .ancient/settings.json in your project (or ~/.ancient/settings.json for user-global). All sections optional.",
+  "modelRouting": {
+    "enabled": true,
+    "strategy": "free-first",
+    "freeModel": {
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "modelId": "mistralai/devstral-2512:free",
+      "apiKeyEnv": "OPENROUTER_API_KEY"
+    }
+  },
+  "checkpoints": { "enabled": true },
+  "mcp": { "enabled": true },
+  "hooks": {
+    "SessionStart": [
+      { "command": "echo \"{\"additionalContext\": \"Project uses bun, not npm. Never run npm install.\"}\"" }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "bash",
+        "command": "sh -c 'input=$(cat); echo \"$input\" | grep -q \"git push\" && echo \"{\\\"decision\\\": \\\"block\\\", \\\"reason\\\": \\\"git push requires manual approval\\\"}\" || true'"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "editFile",
+        "command": "sh -c 'echo \"{\\\"additionalContext\\\": \\\"Remember: run the typecheck before finishing.\\\"}\"'"
+      }
+    ]
+  }
+}

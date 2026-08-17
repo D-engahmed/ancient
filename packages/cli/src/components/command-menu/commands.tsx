@@ -4,10 +4,16 @@
 
 import {
   AgentsDialogContent,
+  AgentsDialogListContent,
+  CheckpointsDialogContent,
+  CommandsDialogContent,
+  McpDialogContent,
   ModelsDialogContent,
   SessionsDialogContent,
+  SkillsDialogContent,
   ThemeDialogContent,
 } from "../dialogs/index";
+import { apiClient } from "../../lib/api-client";
 import type { Command } from "./types";
 
 import { performLogin } from "../../lib/oauth";
@@ -52,6 +58,89 @@ export const COMMANDS: Command[] = [
       ctx.dialog.open({
         title: "Sessions",
         children: <SessionsDialogContent />,
+      })
+    },
+  },
+  {
+    name: "skills",
+    description: "Browse installed skills",
+    value: "/skills",
+    action: (ctx) => {
+      ctx.dialog.open({
+        title: "Skills",
+        children: <SkillsDialogContent cwd={ctx.cwd} />,
+      })
+    },
+  },
+  {
+    name: "prompts",
+    description: "Browse prompt slash-commands (/review, /fix, ...)",
+    value: "/prompts",
+    action: (ctx) => {
+      ctx.dialog.open({
+        title: "Prompt Commands",
+        children: <CommandsDialogContent cwd={ctx.cwd} />,
+      })
+    },
+  },
+  {
+    name: "subagents",
+    description: "Browse subagents available for delegation",
+    value: "/subagents",
+    action: (ctx) => {
+      ctx.dialog.open({
+        title: "Subagents",
+        children: <AgentsDialogListContent cwd={ctx.cwd} />,
+      })
+    },
+  },
+  {
+    name: "mcp",
+    description: "Show MCP server connections",
+    value: "/mcp",
+    action: (ctx) => {
+      ctx.dialog.open({
+        title: "MCP Servers",
+        children: <McpDialogContent cwd={ctx.cwd} />,
+      })
+    },
+  },
+  {
+    name: "compact",
+    description: "Compact this session's history into a summary",
+    value: "/compact",
+    action: async (ctx) => {
+      if (!ctx.sessionId) {
+        ctx.toast.show({ variant: "error", message: "Open a session first" });
+        return;
+      }
+      ctx.toast.show({ message: "Compacting conversation..." });
+      try {
+        const result = await apiClient.extensions.compact(ctx.sessionId);
+        ctx.toast.show({
+          variant: "success",
+          message: `Compacted ${result.summarizedMessages ?? ""} messages with ${result.model ?? "model"}`,
+        });
+      } catch (error) {
+        ctx.toast.show({
+          variant: "error",
+          message: error instanceof Error ? error.message : "Compaction failed",
+        });
+      }
+    },
+  },
+  {
+    name: "rewind",
+    description: "Restore files & history to an earlier checkpoint",
+    value: "/rewind",
+    action: (ctx) => {
+      if (!ctx.sessionId) {
+        ctx.toast.show({ variant: "error", message: "Open a session first" });
+        return;
+      }
+      ctx.dialog.open({
+        title: "Rewind to checkpoint",
+        children: <CheckpointsDialogContent sessionId={ctx.sessionId} />,
       })
     },
   },

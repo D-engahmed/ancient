@@ -3,6 +3,27 @@
 
 ---
 
+## ⭐ What's new in 2.0
+
+ANCIENT 2.0 brings the full Claude-Code-style extension surface, engineered for minimal token usage:
+
+| Feature | Docs |
+|---|---|
+| **Skills** — installable SKILL.md packages with progressive disclosure (near-zero standing token cost) | `docs/SKILLS.md` |
+| **Subagents** — `explore`, `review`, `test` built-ins + your own, isolated contexts, per-agent cheap-model routing | `docs/SUBAGENTS.md` |
+| **Slash commands** — prompt templates in `.ancient/commands/` + built-ins (`/review`, `/fix`, `/test`, `/commit`…) | `docs/SLASH-COMMANDS.md` |
+| **Hooks** — SessionStart / UserPromptSubmit / PreToolUse (blocking) / PostToolUse shell hooks | `docs/HOOKS.md` |
+| **MCP** — `.mcp.json` servers, tools exposed as `mcp__<server>__<tool>` | `docs/MCP.md` |
+| **Memory** — `ANCIENT.md` project/user memory with `@imports`, auto-loaded and budgeted | `docs/MEMORY.md` |
+| **Checkpoints & rewind** — shadow-git snapshot before every BUILD turn, `/rewind` restores files + history | `docs/CHECKPOINTS.md` |
+| **Compaction** — `/compact` collapses long sessions into a dense summary | `docs/SLASH-COMMANDS.md` |
+| **Smart model routing** — free-first lane sends simple turns to free/local models (OpenRouter `:free`, Ollama…), complex turns keep your premium model | `docs/MODEL-ROUTING.md` |
+
+Starter packs live in `examples/` (6 skills, 2 agents, 2 commands, settings + MCP configs).
+Strategy docs: `docs/ROADMAP.md` (feature parity plan) and `docs/BUSINESS.md` (open-core + SaaS model).
+
+---
+
 ## 1. Executive Overview
 
 **ANCIENT** is a self-hosted AI coding agent designed to replace per-seat subscription costs for AI coding assistants. It consists of a terminal-based UI (`packages/cli`), an API server (`packages/server`), a shared type/schema library (`packages/shared`), and a Prisma-based database layer (`packages/database`).
