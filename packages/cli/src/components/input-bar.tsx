@@ -13,7 +13,7 @@ import { TextAttributes } from "@opentui/core";
 import type { TextareaRenderable, ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import type { KeyBinding } from "@opentui/core";
-import { useNavigate } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { EmptyBorder } from "./border";
 import { StatusBar } from "./status-bar";
 import { CommandMenu } from "./command-menu";
@@ -284,6 +284,7 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
 
   const renderer = useRenderer();
   const navigate = useNavigate();
+  const routeParams = useParams();
   const toast = useToast();
   const dialog = useDialog();
   const { colors } = useTheme();
@@ -405,11 +406,13 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
         mode,
         setMode,
         setModel,
+        sessionId: routeParams["id"],
+        cwd: process.cwd(),
       });
     } else {
       textarea.insertText(command.value + " ");
     }
-  }, [renderer, toast, dialog, navigate, mode, setMode, setModel]);
+  }, [renderer, toast, dialog, navigate, mode, setMode, setModel, routeParams]);
 
   const handleCommandExecute = useCallback(
     (index: number) => {

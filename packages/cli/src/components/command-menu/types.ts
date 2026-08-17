@@ -15,6 +15,10 @@ export type CommandContext = {
   mode: ModeType;
   setMode: (mode: ModeType) => void;
   setModel: (model: SupportedChatModelId) => void;
+  /** Active session id when the palette is opened inside a session route. */
+  sessionId?: string;
+  /** The directory the CLI was launched in (workspace for skills/agents/MCP). */
+  cwd?: string;
 };
 
 export type Command = {

@@ -65,6 +65,23 @@ export const apiClient = {
     resume: (sessionId: string) =>
       request(`/chat/${sessionId}/resume`, { method: "POST" }),
   },
+  extensions: {
+    skills: (cwd?: string) =>
+      request<any[]>(`/extensions/skills${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`),
+    agents: (cwd?: string) =>
+      request<any[]>(`/extensions/agents${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`),
+    commands: (cwd?: string) =>
+      request<any[]>(`/extensions/commands${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`),
+    mcpServers: (cwd?: string) =>
+      request<any[]>(`/extensions/mcp${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`),
+    reloadMcp: () => request("/extensions/mcp/reload", { method: "POST" }),
+    compact: (sessionId: string) =>
+      request(`/extensions/compact/${sessionId}`, { method: "POST" }),
+    checkpoints: (sessionId: string) =>
+      request<any[]>(`/extensions/checkpoints/${sessionId}`),
+    rewind: (sessionId: string, checkpointId: string) =>
+      request(`/extensions/rewind/${sessionId}`, { method: "POST", body: { checkpointId } }),
+  },
   providerConnections: {
     list: () => request<any[]>("/provider-connections"),
     create: (data: any) => request("/provider-connections", { method: "POST", body: data }),
