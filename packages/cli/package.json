@@ -23,7 +23,7 @@
     "@opentui/core": "^0.1.97",
     "@opentui/react": "^0.1.97",
     "ai": "^7.0.55",
-    "@ai-sdk/react": "^3.0.239",
+    "@ai-sdk/react": "^4.0.70",
     "date-fns": "^4.1.0",
     "hono": "^4.12.12",
     "open": "^11.0.0",
