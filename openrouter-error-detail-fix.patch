@@ -1,0 +1,101 @@
+diff --git a/packages/server/src/routes/chat.ts b/packages/server/src/routes/chat.ts
+index 17bb945..7e7dc22 100644
+--- a/packages/server/src/routes/chat.ts
++++ b/packages/server/src/routes/chat.ts
+@@ -199,7 +199,47 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
+       })
+     : undefined;
+ 
++  // Gateways like OpenRouter deliberately collapse the real failure into a
++  // generic top-level message (e.g. "Provider returned error") and put the
++  // actual upstream detail in error.metadata.raw inside the JSON response
++  // body. @ai-sdk's error classes normally carry that body on
++  // `.responseBody`, but we duck-type it here (rather than requiring
++  // `APICallError.isInstance`) because retries/wrapping can lose the exact
++  // class identity while the property itself survives.
++  const extractUpstreamDetail = (err: unknown): string | undefined => {
++    if (!err || typeof err !== "object") return undefined;
++    const responseBody = (err as { responseBody?: unknown }).responseBody;
++    if (typeof responseBody !== "string" || responseBody.length === 0) return undefined;
++    try {
++      const parsed = JSON.parse(responseBody) as {
++        error?: { message?: unknown; metadata?: { raw?: unknown; provider_name?: unknown } };
++      };
++      const metadata = parsed.error?.metadata;
++      let raw = metadata?.raw;
++      if (typeof raw === "string") {
++        // OpenRouter's `raw` is often itself a JSON-encoded upstream error.
++        try {
++          const rawParsed = JSON.parse(raw) as { error?: { message?: unknown } };
++          if (typeof rawParsed.error?.message === "string") raw = rawParsed.error.message;
++        } catch {
++          // raw wasn't JSON — use it as-is.
++        }
++      }
++      const detail = typeof raw === "string" ? raw : typeof parsed.error?.message === "string" ? parsed.error.message : undefined;
++      if (!detail) return undefined;
++      const providerName = typeof metadata?.provider_name === "string" ? metadata.provider_name : undefined;
++      return providerName ? `${providerName}: ${detail}` : detail;
++    } catch {
++      return undefined;
++    }
++  };
++
+   const sanitizeError = (err: unknown): string => {
++    // Unwrap ai SDK retry wrapping to get at the error that actually failed.
++    const lastError = err && typeof err === "object" ? (err as { lastError?: unknown }).lastError : undefined;
++    const upstreamDetail = extractUpstreamDetail(lastError) ?? extractUpstreamDetail(err)
++      ?? extractUpstreamDetail((err as { cause?: unknown })?.cause);
++
+     let msg: string;
+     if (err instanceof Error) {
+       msg = err.message;
+@@ -221,6 +261,9 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
+     } else {
+       msg = String(err);
+     }
++    if (upstreamDetail) {
++      msg = `${msg} — ${upstreamDetail}`;
++    }
+     if (apiKey && typeof msg === "string") {
+       const escaped = apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+       msg = msg.replace(new RegExp(escaped, "g"), "[REDACTED]");
+@@ -337,7 +380,18 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
+       });
+     },
+ 
+-    onError: async (error) => {
++    // NOTE: streamText's `onError` callback receives `{ error }` — a wrapper
++    // object, not the error itself (see StreamTextOnErrorCallback = Callback<{
++    // error: unknown }> in the ai package's types). This previously destructured
++    // the parameter as if it *were* the error, so `RetryError.isInstance(error)`,
++    // `APICallError.isInstance(...)`, and the `.cause` lookup below were all
++    // silently checking the wrapper object instead of the real error — they
++    // never matched, so `apiError` was always undefined here. (sanitizeError's
++    // own `err.error` fallback masked this for the top-level message text,
++    // which is why the *displayed* error still looked reasonable while the
++    // richer detail silently failed to make it into this log line or the
++    // persisted DB message.) Destructuring `{ error }` here fixes that.
++    onError: async ({ error }) => {
+       const errMsg = sanitizeError(error);
+       const modelKind = selection.modelKind;
+       const modelRef = preResolved
+@@ -349,7 +403,17 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
+         ? { requestUrl: unwrapped.url, statusCode: unwrapped.statusCode, responseBody: unwrapped.responseBody }
+         : APICallError.isInstance(cause)
+           ? { requestUrl: cause.url, statusCode: cause.statusCode, responseBody: cause.responseBody }
+-          : undefined;
++          // Duck-typed fallback: some wrapped/retried errors carry the same
++          // shape (url/statusCode/responseBody) without passing the branded
++          // isInstance check, and we'd otherwise silently drop the detail
++          // that errMsg above already worked to surface.
++          : unwrapped && typeof unwrapped === "object" && "responseBody" in unwrapped
++            ? {
++                requestUrl: (unwrapped as { url?: unknown }).url,
++                statusCode: (unwrapped as { statusCode?: unknown }).statusCode,
++                responseBody: (unwrapped as { responseBody?: unknown }).responseBody,
++              }
++            : undefined;
+       log.warn("stream error", { sessionId, modelKind, modelRef, error: errMsg, ...apiError });
+       await db.message.create({
+         data: {

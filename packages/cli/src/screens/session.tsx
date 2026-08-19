@@ -44,17 +44,27 @@ const sessionLocationSchema = z.object({
 });
 
 function ChatMessage({ msg }: { msg: Message }) {
-    if (msg.role === "user") {
-        const text = msg.parts
-            .filter((p) => p.type === "text")
-            .map((p) => p.text)
-            .join("");
+    const role = String(msg.role).toLowerCase();
+    const parts = Array.isArray(msg.parts) ? msg.parts : [];
+    const rawContent = (msg as unknown as { content?: string }).content ?? "";
+
+    if (role === "user") {
+        const text = parts.length
+            ? parts.filter((p) => p.type === "text").map((p) => p.text).join("")
+            : rawContent;
         return <UserMessage message={text} mode={msg.metadata?.mode ?? "BUILD"} />;
+    }
+
+    if (role === "error") {
+        const text = parts.length
+            ? parts.filter((p) => p.type === "text").map((p) => p.text).join("")
+            : rawContent;
+        return <ErrorMessage message={text} />;
     }
 
     return (
         <BotMessage
-            parts={msg.parts}
+            parts={parts}
             model={msg.metadata?.model?.modelKind === "builtin" ? msg.metadata.model.modelId : "custom"}
             mode={msg.metadata?.mode ?? "BUILD"}
             durationMs={msg.metadata?.durationMs}
