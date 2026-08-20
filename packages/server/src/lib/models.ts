@@ -18,6 +18,59 @@ export type ResolvedModel = {
     apiKey?: string;
 };
 
+// ---- OpenRouter model-fallback fetch wrapper (opt-in) ----
+// Some `:free` models (e.g. z-ai/glm-5.2:free) are currently served by a
+// single upstream provider (Decart). When that provider rate-limits, there
+// is no *other* provider to route around — excluding it via `provider.ignore`
+// just leaves zero eligible providers and turns a retryable 429 into a hard
+// 404 ("All providers have been ignored"). Learned that the hard way; do not
+// reintroduce provider.ignore for this reason.
+//
+// The safe lever is OpenRouter's model-level fallback: pass a `models` array
+// and OpenRouter tries the next *model* (which may live on a different
+// provider entirely) if the primary one fails.
+// https://openrouter.ai/docs/features/model-routing
+//
+// Off by default — only activates when ANCIENT_OPENROUTER_FALLBACK_MODELS is
+// set, so connections that don't opt in see no behavior change.
+function parseFallbackModels(): string[] {
+    const raw = process.env.ANCIENT_OPENROUTER_FALLBACK_MODELS;
+    if (!raw) return [];
+    return raw.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+function openRouterModelFallbackFetch(primaryModelId: string, fallbackModels: string[]): typeof fetch {
+    return async (input, init) => {
+        if (init?.body && typeof init.body === "string") {
+            try {
+                const body = JSON.parse(init.body);
+                if (body.model === primaryModelId) {
+                    body.models = [primaryModelId, ...fallbackModels];
+                }
+                init = { ...init, body: JSON.stringify(body) };
+            } catch {
+                // Body wasn't JSON (or wasn't a chat-completions call) — pass through unchanged.
+            }
+        }
+        return fetch(input, init);
+    };
+}
+
+function isOpenRouterBaseUrl(baseUrl: string): boolean {
+    try {
+        return new URL(baseUrl).hostname === "openrouter.ai";
+    } catch {
+        return false;
+    }
+}
+
+function maybeOpenRouterFetch(baseUrl: string, modelId: string): { fetch: typeof fetch } | Record<string, never> {
+    if (!isOpenRouterBaseUrl(baseUrl)) return {};
+    const fallbacks = parseFallbackModels();
+    if (fallbacks.length === 0) return {};
+    return { fetch: openRouterModelFallbackFetch(modelId, fallbacks) };
+}
+
 // ---- Built-in provider resolvers ----
 function resolveOpenAIModel(modelId: string): ResolvedModel {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -135,7 +188,11 @@ export function resolveFreeModel(cfg?: FreeModelConfig): ResolvedModel | null {
     const apiKey = process.env[keyEnv]; // local servers (Ollama etc.) need none
 
     return {
-        model: createOpenAI({ baseURL: baseUrl, apiKey }).chat(modelId) as unknown as LanguageModel,
+        model: createOpenAI({
+            baseURL: baseUrl,
+            apiKey,
+            ...maybeOpenRouterFetch(baseUrl, modelId),
+        }).chat(modelId) as unknown as LanguageModel,
         provider: "custom",
         modelId,
         apiKey: apiKey || undefined,
@@ -186,7 +243,16 @@ export async function resolveChatModel(
         model = createGoogleGenerativeAI({ apiKey: resolvedApiKey })(conn.modelId) as unknown as LanguageModel;
     } else {
         // openai, deepseek, mistral, groq, together, ollama, lmstudio, vllm, custom
-        model = createOpenAI({ baseURL: conn.baseUrl, apiKey: resolvedApiKey }).chat(conn.modelId) as unknown as LanguageModel;
+        //
+        // If ANCIENT_OPENROUTER_FALLBACK_MODELS is set and this connection
+        // points at OpenRouter, failed requests fall back to those models
+        // instead of retrying the same (possibly rate-limited) provider.
+        // No-op when the env var is unset.
+        model = createOpenAI({
+            baseURL: conn.baseUrl,
+            apiKey: resolvedApiKey,
+            ...maybeOpenRouterFetch(conn.baseUrl, conn.modelId),
+        }).chat(conn.modelId) as unknown as LanguageModel;
     }
     return {
         model,
