@@ -86,6 +86,10 @@ export const apiClient = {
     list: () => request<any[]>("/provider-connections"),
     create: (data: any) => request("/provider-connections", { method: "POST", body: data }),
     get: (id: string) => request(`/provider-connections/${id}`),
+    // Server route already existed (PATCH /:id) — client just never had a
+    // wrapper for it, so nothing in the CLI could call it.
+    update: (id: string, data: any) =>
+      request(`/provider-connections/${id}`, { method: "PATCH", body: data }),
     delete: (id: string) => request(`/provider-connections/${id}`, { method: "DELETE" }),
     validate: (id: string) => request(`/provider-connections/${id}/validate`, { method: "POST" }),
   },
