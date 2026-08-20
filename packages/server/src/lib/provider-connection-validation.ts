@@ -44,6 +44,17 @@ function extractModelIds(body: unknown): string[] {
         .filter((id): id is string => !!id);
 }
 
+// Google's /openai/models shim still reports ids in its native resource-name
+// form ("models/gemini-2.5-flash") even though every other Gemini surface in
+// this app — the actual chat request in lib/models.ts, the shared provider
+// catalog, and whatever the user typed — uses the bare id ("gemini-2.5-flash").
+// Left unstripped, that mismatch meant a *correct* Gemini modelId still failed
+// this cross-check every time, because "gemini-2.5-flash" !== "models/gemini-2.5-flash".
+// Stripping the prefix is a no-op for OpenAI/Anthropic, which never emit it.
+function stripModelsPrefix(id: string): string {
+    return id.startsWith("models/") ? id.slice("models/".length) : id;
+}
+
 export async function validateProviderConnection(input: ConnectionInput): Promise<void> {
     const headers = new Headers({ Accept: "application/json" });
     let url: URL;
@@ -96,22 +107,28 @@ export async function validateProviderConnection(input: ConnectionInput): Promis
             // over that; there's nothing to cross-check against.
             return;
         }
-        const availableIds = extractModelIds(body);
-        if (availableIds.length === 0) return;
-        if (availableIds.includes(input.modelId)) return;
+        const rawAvailableIds = extractModelIds(body);
+        if (rawAvailableIds.length === 0) return;
 
-        const caseInsensitiveMatch = availableIds.find(
-            (id) => id.toLowerCase() === input.modelId!.toLowerCase(),
+        // Compare (and suggest) using the normalized form, but keep the
+        // original strings around so any error message still shows models
+        // the way this provider's list actually spells them.
+        const availableIds = rawAvailableIds.map(stripModelsPrefix);
+        const wantedId = stripModelsPrefix(input.modelId);
+        if (availableIds.includes(wantedId)) return;
+
+        const caseInsensitiveIndex = availableIds.findIndex(
+            (id) => id.toLowerCase() === wantedId.toLowerCase(),
         );
-        if (caseInsensitiveMatch) {
+        if (caseInsensitiveIndex !== -1) {
             throw new ProviderConnectionValidationError(
-                `Model "${input.modelId}" was not found — did you mean "${caseInsensitiveMatch}"? Model IDs are case-sensitive.`,
+                `Model "${input.modelId}" was not found — did you mean "${rawAvailableIds[caseInsensitiveIndex]}"? Model IDs are case-sensitive.`,
             );
         }
 
-        const suggestions = availableIds.slice(0, 5).join(", ");
+        const suggestions = rawAvailableIds.slice(0, 5).join(", ");
         throw new ProviderConnectionValidationError(
-            `Model "${input.modelId}" was not found in this provider's model list. Available models include: ${suggestions}${availableIds.length > 5 ? ", …" : ""}.`,
+            `Model "${input.modelId}" was not found in this provider's model list. Available models include: ${suggestions}${rawAvailableIds.length > 5 ? ", …" : ""}.`,
         );
     }
 }

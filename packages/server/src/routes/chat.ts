@@ -18,6 +18,7 @@ import {
 import { createToolsAsync } from "../tools";
 import { buildSystemPrompt } from "../system-prompt";
 import { resolveChatModel, resolveFreeModel, type ResolvedModel } from "../lib/models";
+import { modelKey, checkCooldown, recordRateLimitFailure, isRateLimitError, RateLimitCooldownError } from "../lib/rate-limit-breaker";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 import { loadSettings, type AncientSettings } from "../hooks/settings";
 import { runHooks, type HookContext } from "../hooks/runner";
@@ -161,6 +162,16 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
   const resolved = preResolved ?? await resolveChatModel(selection, userId);
   const model = resolved.model;
   const apiKey = resolved.apiKey;
+
+  // Fail fast if this exact model tripped a rate limit recently, instead of
+  // making (and likely losing) another call against a limit that hasn't
+  // reset yet — see rate-limit-breaker.ts for why this matters especially
+  // for subagent-heavy turns.
+  const rlKey = modelKey(resolved.provider, resolved.modelId);
+  const cooldown = checkCooldown(rlKey);
+  if (cooldown.onCooldown) {
+    throw new RateLimitCooldownError(resolved.modelId, cooldown.retryAfterSeconds);
+  }
 
   // ---- Assemble the layered system prompt (each block self-budgets) ----
   let memoryBlock = "";
@@ -399,6 +410,10 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
         : selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
       const cause = (error as { cause?: unknown })?.cause;
       const unwrapped = RetryError.isInstance(error) ? error.lastError : error;
+
+      if (isRateLimitError(unwrapped) || isRateLimitError(error) || isRateLimitError(cause)) {
+        recordRateLimitFailure(rlKey);
+      }
       const apiError = APICallError.isInstance(unwrapped)
         ? { requestUrl: unwrapped.url, statusCode: unwrapped.statusCode, responseBody: unwrapped.responseBody }
         : APICallError.isInstance(cause)
@@ -544,15 +559,26 @@ async function prepareTurn(params: {
   // ---- Model routing (free-first lane) ----
   const route = routeTurn(content, mode, settings.modelRouting);
   let preResolved: ResolvedModel | undefined;
+  let routeReason = route.reason;
   if (route.lane === "free") {
     const free = resolveFreeModel(settings.modelRouting?.freeModel);
     if (free) {
-      preResolved = free;
-      log.info("routed to free model", { sessionId, model: free.modelId, score: route.score });
+      const cooldown = checkCooldown(modelKey(free.provider, free.modelId));
+      if (cooldown.onCooldown) {
+        // The free model was rate-limited recently — don't hit it again,
+        // use the user's actual selection for this turn instead.
+        routeReason = `free model on cooldown (~${cooldown.retryAfterSeconds}s left) after a recent rate limit — using your selected model instead`;
+        log.info("free model on cooldown, staying on selected model", {
+          sessionId, model: free.modelId, retryAfterSeconds: cooldown.retryAfterSeconds,
+        });
+      } else {
+        preResolved = free;
+        log.info("routed to free model", { sessionId, model: free.modelId, score: route.score });
+      }
     }
   }
 
-  return { ok: true, content, settings, hookContext, preResolved, routeReason: route.reason };
+  return { ok: true, content, settings, hookContext, preResolved, routeReason };
 }
 
 const app = new Hono<AuthenticatedEnv>();
@@ -598,6 +624,10 @@ app.post("/:sessionId/resume", async (c) => {
     return response;
   } catch (err) {
     clearTimeout(timeoutId);
+    if (err instanceof RateLimitCooldownError) {
+      c.header("Retry-After", String(err.retryAfterSeconds));
+      return c.json({ error: err.message }, 429);
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return c.json({ error: msg }, 500);
   }
@@ -669,6 +699,10 @@ app.post(
       return response;
     } catch (err) {
       clearTimeout(timeoutId);
+      if (err instanceof RateLimitCooldownError) {
+        c.header("Retry-After", String(err.retryAfterSeconds));
+        return c.json({ error: err.message }, 429);
+      }
       const msg = err instanceof Error ? err.message : String(err);
       return c.json({ error: msg }, 500);
     }

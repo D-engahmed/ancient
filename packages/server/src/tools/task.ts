@@ -13,6 +13,7 @@ import type { ChatModelSelection } from "@ANCIENT/shared";
 import { getAgent } from "../agents/loader";
 import { createBaseTools } from "./base";
 import { resolveChatModel, resolveFreeModel } from "../lib/models";
+import { modelKey, checkCooldown, recordRateLimitFailure, isRateLimitError } from "../lib/rate-limit-breaker";
 import { createLogger } from "@ANCIENT/shared";
 
 const log = createLogger("task");
@@ -46,16 +47,25 @@ export function createTaskTool(ctx: TaskToolContext) {
             // model when one exists, falling back to the session model.
             let model;
             let usedModel: string;
+            let usedFreeModelKey: string | undefined;
             try {
                 if (def.model.kind === "cheap") {
                     const free = resolveFreeModel();
-                    if (free) {
+                    // Skip a free model that was rate-limited recently instead of
+                    // hitting it again — a single task can run up to
+                    // SUBAGENT_MAX_STEPS calls, so re-attempting an already
+                    // limited endpoint on every step is how it stays exhausted.
+                    const freeCooldown = free ? checkCooldown(modelKey(free.provider, free.modelId)) : undefined;
+                    if (free && !freeCooldown?.onCooldown) {
                         model = free.model;
                         usedModel = `${free.modelId} (free tier)`;
+                        usedFreeModelKey = modelKey(free.provider, free.modelId);
                     } else {
                         const resolved = await resolveChatModel(ctx.selection, ctx.userId);
                         model = resolved.model;
-                        usedModel = `${resolved.modelId} (no free model configured — inherited)`;
+                        usedModel = freeCooldown?.onCooldown
+                            ? `${resolved.modelId} (free tier on cooldown — inherited)`
+                            : `${resolved.modelId} (no free model configured — inherited)`;
                     }
                 } else {
                     const resolved = await resolveChatModel(ctx.selection, ctx.userId);
@@ -103,6 +113,9 @@ export function createTaskTool(ctx: TaskToolContext) {
                     report: truncated,
                 };
             } catch (err) {
+                if (usedFreeModelKey && isRateLimitError(err)) {
+                    recordRateLimitFailure(usedFreeModelKey);
+                }
                 const message = err instanceof Error ? err.message : String(err);
                 log.warn("subagent failed", { agent, error: message });
                 return { error: `Subagent '${agent}' failed: ${message}` };
