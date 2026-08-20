@@ -65,6 +65,16 @@ model ProviderConnection {
   lastUsedAt          DateTime?
   createdAt           DateTime  @default(now())
 
+  // ---- Quota tracking (learned, not configured) ----
+  // Populated from the provider's own 429 response the first time one is
+  // seen (see packages/server/src/lib/quota.ts). All nullable: until a
+  // rate-limit response has actually been observed, the app has no
+  // trustworthy number to show and should say so rather than guess.
+  lastKnownQuotaLimit         Int?      // e.g. 20 (requests) — parsed from the provider's quota error
+  lastKnownQuotaWindowSeconds Int?      // e.g. 86400 for a daily quota — inferred from the quotaId text
+  lastKnownQuotaResetAt       DateTime? // best-effort: now + the provider's retryDelay at time of the 429
+  lastKnownQuotaMetric        String?   // e.g. "generate_content_free_tier_requests" — shown for context
+
   @@index([userId, createdAt])
 }
 

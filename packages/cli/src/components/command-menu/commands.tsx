@@ -12,6 +12,7 @@ import {
   SessionsDialogContent,
   SkillsDialogContent,
   ThemeDialogContent,
+  UsageDialogContent,
 } from "../dialogs/index";
 import { apiClient } from "../../lib/api-client";
 import type { Command } from "./types";
@@ -47,6 +48,17 @@ export const COMMANDS: Command[] = [
       ctx.dialog.open({
         title: "Select Model",
         children: <ModelsDialogContent />,
+      })
+    },
+  },
+  {
+    name: "usage",
+    description: "View request usage against each connection's known rate limit",
+    value: "/usage",
+    action: (ctx) => {
+      ctx.dialog.open({
+        title: "Usage",
+        children: <UsageDialogContent />,
       })
     },
   },

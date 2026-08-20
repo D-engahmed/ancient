@@ -97,4 +97,8 @@ export const apiClient = {
     callback: (code: string, state: string) =>
       request(`/auth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`),
   },
+  usage: {
+    list: () => request<any[]>("/usage"),
+    get: (connectionId: string) => request(`/usage/${connectionId}`),
+  },
 };
