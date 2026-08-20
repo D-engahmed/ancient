@@ -66,10 +66,7 @@ export const PROVIDERS = [
         // types by hand still passes.
         models: [
             { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro (GA)" },
-            { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (GA)" },
-            { id: "gemini-2.5-flash-preview-tts", label: "Gemini 2.5 Flash Preview TTS" },
-            { id: "gemini-2.5-pro-preview-tts", label: "Gemini 2.5 Pro Preview TTS" },
-            { id: "gemma-4-26b-a4b-it", label: "Gemma 4 26B-A4B IT" },
+            { id: "gemini-2.5-flash", label: "Gemini 2 Flash (GA)" },
         ],
     },
     {

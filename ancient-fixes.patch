@@ -1,0 +1,291 @@
+diff --git a/packages/cli/src/components/dialogs/models-dialog.tsx b/packages/cli/src/components/dialogs/models-dialog.tsx
+index 26d46b2..6b88368 100644
+--- a/packages/cli/src/components/dialogs/models-dialog.tsx
++++ b/packages/cli/src/components/dialogs/models-dialog.tsx
+@@ -130,7 +130,11 @@ export const ModelsDialogContent = () => {
+     setFormMode("add");
+     setEditingConnection(null);
+     setSelectedProvider(provider);
+-    setModelSearch(provider.defaultModelId || "");
++    // Leave the search box empty so the full model list shows in the
++    // suggestion dropdown (placeholder shows the default as a hint).
++    // selectedModelId still carries the default so "Add" works even if
++    // the user never touches the field.
++    setModelSearch("");
+     setSelectedModelId(provider.defaultModelId || "");
+     setBaseUrl(provider.defaultBaseUrl || "");
+     setApiKey("");
+diff --git a/packages/server/src/lib/rate-limit-breaker.ts b/packages/server/src/lib/rate-limit-breaker.ts
+new file mode 100644
+index 0000000..06ca0c3
+--- /dev/null
++++ b/packages/server/src/lib/rate-limit-breaker.ts
+@@ -0,0 +1,100 @@
++// Copyright (c) 2026 NXG AI Solutions. All rights reserved.
++// Proprietary and confidential. Unauthorized copying or distribution prohibited.
++
++// Per-model circuit breaker for upstream rate-limit errors.
++//
++// Why this exists: without it, a single rate-limited model (most often a
++// shared free tier like an OpenRouter `:free` model) keeps getting hit again
++// on the very next turn, and again on every step of every subagent `task`
++// call in the same turn (subagents can run up to 30 steps). Each of those
++// calls re-fails against a limit that hasn't reset yet, which is what makes
++// it look like "the models hit their limits very fast" — it's not one call
++// hitting the limit, it's dozens of calls in quick succession all hitting
++// the *same already-tripped* limit.
++//
++// This module tracks a short cooldown per (provider, modelId) after a
++// rate-limit error is observed. Callers check the cooldown BEFORE making a
++// network call and skip/fallback instead of re-attempting a call that's
++// almost certain to fail.
++
++const cooldowns = new Map<string, number>(); // key -> cooldown-expires-at (epoch ms)
++
++function getCooldownMs(): number {
++    const configured = Number.parseInt(process.env.ANCIENT_RATE_LIMIT_COOLDOWN_MS ?? "60000", 10);
++    return Number.isFinite(configured) && configured > 0 ? configured : 60_000;
++}
++
++/** Stable key for a resolved model — provider + modelId is specific enough:
++ *  the upstream rate limit is shared per model regardless of which local
++ *  BYOK connection row resolved to it. */
++export function modelKey(provider: string, modelId: string): string {
++    return `${provider}:${modelId}`;
++}
++
++export type CooldownStatus =
++    | { onCooldown: false }
++    | { onCooldown: true; retryAfterSeconds: number };
++
++export function checkCooldown(key: string): CooldownStatus {
++    const expiresAt = cooldowns.get(key);
++    if (!expiresAt) return { onCooldown: false };
++    const now = Date.now();
++    if (now >= expiresAt) {
++        cooldowns.delete(key);
++        return { onCooldown: false };
++    }
++    return { onCooldown: true, retryAfterSeconds: Math.max(1, Math.ceil((expiresAt - now) / 1000)) };
++}
++
++export function recordRateLimitFailure(key: string): void {
++    cooldowns.set(key, Date.now() + getCooldownMs());
++}
++
++/** Best-effort detection of "this failed because of an upstream rate limit"
++ *  across the various shapes errors take once the ai SDK (and gateways like
++ *  OpenRouter) have wrapped/unwrapped them. Duck-typed on purpose — retries
++ *  and wrapping can lose the exact error class identity while these fields
++ *  and phrases survive. */
++export function isRateLimitError(err: unknown): boolean {
++    if (!err || typeof err !== "object") return false;
++
++    const statusCode = (err as { statusCode?: unknown }).statusCode;
++    if (statusCode === 429) return true;
++
++    const cause = (err as { cause?: unknown }).cause;
++    if (cause && typeof cause === "object" && (cause as { statusCode?: unknown }).statusCode === 429) {
++        return true;
++    }
++
++    const lastError = (err as { lastError?: unknown }).lastError;
++    if (lastError && lastError !== err && isRateLimitError(lastError)) return true;
++
++    const message =
++        (err as { message?: unknown }).message ??
++        (err as { responseBody?: unknown }).responseBody;
++    if (typeof message === "string") {
++        const lower = message.toLowerCase();
++        if (lower.includes("rate-limit") || lower.includes("rate limit") || lower.includes("429")) {
++            return true;
++        }
++    }
++
++    return false;
++}
++
++/** Thrown when a call is short-circuited before it's even attempted, so
++ *  callers (HTTP routes) can surface a proper 429 with Retry-After instead
++ *  of the generic 500 used for other failures. */
++export class RateLimitCooldownError extends Error {
++    readonly status = 429;
++    readonly retryAfterSeconds: number;
++
++    constructor(modelLabel: string, retryAfterSeconds: number) {
++        super(
++            `${modelLabel} was rate-limited recently and is on a short cooldown. ` +
++            `Try again in ~${retryAfterSeconds}s, or switch models via the model picker.`
++        );
++        this.name = "RateLimitCooldownError";
++        this.retryAfterSeconds = retryAfterSeconds;
++    }
++}
+diff --git a/packages/server/src/routes/chat.ts b/packages/server/src/routes/chat.ts
+index 15af87d..cfd57cb 100644
+--- a/packages/server/src/routes/chat.ts
++++ b/packages/server/src/routes/chat.ts
+@@ -18,6 +18,7 @@ import {
+ import { createToolsAsync } from "../tools";
+ import { buildSystemPrompt } from "../system-prompt";
+ import { resolveChatModel, resolveFreeModel, type ResolvedModel } from "../lib/models";
++import { modelKey, checkCooldown, recordRateLimitFailure, isRateLimitError, RateLimitCooldownError } from "../lib/rate-limit-breaker";
+ import type { AuthenticatedEnv } from "../middleware/require-auth";
+ import { loadSettings, type AncientSettings } from "../hooks/settings";
+ import { runHooks, type HookContext } from "../hooks/runner";
+@@ -162,6 +163,16 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
+   const model = resolved.model;
+   const apiKey = resolved.apiKey;
+ 
++  // Fail fast if this exact model tripped a rate limit recently, instead of
++  // making (and likely losing) another call against a limit that hasn't
++  // reset yet — see rate-limit-breaker.ts for why this matters especially
++  // for subagent-heavy turns.
++  const rlKey = modelKey(resolved.provider, resolved.modelId);
++  const cooldown = checkCooldown(rlKey);
++  if (cooldown.onCooldown) {
++    throw new RateLimitCooldownError(resolved.modelId, cooldown.retryAfterSeconds);
++  }
++
+   // ---- Assemble the layered system prompt (each block self-budgets) ----
+   let memoryBlock = "";
+   let skillsBlock = "";
+@@ -399,6 +410,10 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
+         : selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
+       const cause = (error as { cause?: unknown })?.cause;
+       const unwrapped = RetryError.isInstance(error) ? error.lastError : error;
++
++      if (isRateLimitError(unwrapped) || isRateLimitError(error) || isRateLimitError(cause)) {
++        recordRateLimitFailure(rlKey);
++      }
+       const apiError = APICallError.isInstance(unwrapped)
+         ? { requestUrl: unwrapped.url, statusCode: unwrapped.statusCode, responseBody: unwrapped.responseBody }
+         : APICallError.isInstance(cause)
+@@ -544,15 +559,26 @@ async function prepareTurn(params: {
+   // ---- Model routing (free-first lane) ----
+   const route = routeTurn(content, mode, settings.modelRouting);
+   let preResolved: ResolvedModel | undefined;
++  let routeReason = route.reason;
+   if (route.lane === "free") {
+     const free = resolveFreeModel(settings.modelRouting?.freeModel);
+     if (free) {
+-      preResolved = free;
+-      log.info("routed to free model", { sessionId, model: free.modelId, score: route.score });
++      const cooldown = checkCooldown(modelKey(free.provider, free.modelId));
++      if (cooldown.onCooldown) {
++        // The free model was rate-limited recently — don't hit it again,
++        // use the user's actual selection for this turn instead.
++        routeReason = `free model on cooldown (~${cooldown.retryAfterSeconds}s left) after a recent rate limit — using your selected model instead`;
++        log.info("free model on cooldown, staying on selected model", {
++          sessionId, model: free.modelId, retryAfterSeconds: cooldown.retryAfterSeconds,
++        });
++      } else {
++        preResolved = free;
++        log.info("routed to free model", { sessionId, model: free.modelId, score: route.score });
++      }
+     }
+   }
+ 
+-  return { ok: true, content, settings, hookContext, preResolved, routeReason: route.reason };
++  return { ok: true, content, settings, hookContext, preResolved, routeReason };
+ }
+ 
+ const app = new Hono<AuthenticatedEnv>();
+@@ -598,6 +624,10 @@ app.post("/:sessionId/resume", async (c) => {
+     return response;
+   } catch (err) {
+     clearTimeout(timeoutId);
++    if (err instanceof RateLimitCooldownError) {
++      c.header("Retry-After", String(err.retryAfterSeconds));
++      return c.json({ error: err.message }, 429);
++    }
+     const msg = err instanceof Error ? err.message : String(err);
+     return c.json({ error: msg }, 500);
+   }
+@@ -669,6 +699,10 @@ app.post(
+       return response;
+     } catch (err) {
+       clearTimeout(timeoutId);
++      if (err instanceof RateLimitCooldownError) {
++        c.header("Retry-After", String(err.retryAfterSeconds));
++        return c.json({ error: err.message }, 429);
++      }
+       const msg = err instanceof Error ? err.message : String(err);
+       return c.json({ error: msg }, 500);
+     }
+diff --git a/packages/server/src/tools/task.ts b/packages/server/src/tools/task.ts
+index d5bab42..d153df9 100644
+--- a/packages/server/src/tools/task.ts
++++ b/packages/server/src/tools/task.ts
+@@ -13,6 +13,7 @@ import type { ChatModelSelection } from "@ANCIENT/shared";
+ import { getAgent } from "../agents/loader";
+ import { createBaseTools } from "./base";
+ import { resolveChatModel, resolveFreeModel } from "../lib/models";
++import { modelKey, checkCooldown, recordRateLimitFailure, isRateLimitError } from "../lib/rate-limit-breaker";
+ import { createLogger } from "@ANCIENT/shared";
+ 
+ const log = createLogger("task");
+@@ -46,16 +47,25 @@ export function createTaskTool(ctx: TaskToolContext) {
+             // model when one exists, falling back to the session model.
+             let model;
+             let usedModel: string;
++            let usedFreeModelKey: string | undefined;
+             try {
+                 if (def.model.kind === "cheap") {
+                     const free = resolveFreeModel();
+-                    if (free) {
++                    // Skip a free model that was rate-limited recently instead of
++                    // hitting it again — a single task can run up to
++                    // SUBAGENT_MAX_STEPS calls, so re-attempting an already
++                    // limited endpoint on every step is how it stays exhausted.
++                    const freeCooldown = free ? checkCooldown(modelKey(free.provider, free.modelId)) : undefined;
++                    if (free && !freeCooldown?.onCooldown) {
+                         model = free.model;
+                         usedModel = `${free.modelId} (free tier)`;
++                        usedFreeModelKey = modelKey(free.provider, free.modelId);
+                     } else {
+                         const resolved = await resolveChatModel(ctx.selection, ctx.userId);
+                         model = resolved.model;
+-                        usedModel = `${resolved.modelId} (no free model configured — inherited)`;
++                        usedModel = freeCooldown?.onCooldown
++                            ? `${resolved.modelId} (free tier on cooldown — inherited)`
++                            : `${resolved.modelId} (no free model configured — inherited)`;
+                     }
+                 } else {
+                     const resolved = await resolveChatModel(ctx.selection, ctx.userId);
+@@ -103,6 +113,9 @@ export function createTaskTool(ctx: TaskToolContext) {
+                     report: truncated,
+                 };
+             } catch (err) {
++                if (usedFreeModelKey && isRateLimitError(err)) {
++                    recordRateLimitFailure(usedFreeModelKey);
++                }
+                 const message = err instanceof Error ? err.message : String(err);
+                 log.warn("subagent failed", { agent, error: message });
+                 return { error: `Subagent '${agent}' failed: ${message}` };
+diff --git a/packages/shared/src/models.ts b/packages/shared/src/models.ts
+index c3bac69..ad27dd8 100644
+--- a/packages/shared/src/models.ts
++++ b/packages/shared/src/models.ts
+@@ -56,7 +56,7 @@ export const SUPPORTED_CHAT_MODELS = [
+   // ---- Google Gemini ----
+   { id: "gemini-3.6-flash", provider: "google", pricing: { inputUsdPerMillionTokens: 0.15, outputUsdPerMillionTokens: 0.6 } },
+   { id: "gemini-3.5-flash-lite", provider: "google", pricing: { inputUsdPerMillionTokens: 0.075, outputUsdPerMillionTokens: 0.3 } },
+-  { id: "gemini-3.1-pro", provider: "google", pricing: { inputUsdPerMillionTokens: 1.25, outputUsdPerMillionTokens: 5 } },
++  { id: "gemini-3.1-pro-preview", provider: "google", pricing: { inputUsdPerMillionTokens: 1.25, outputUsdPerMillionTokens: 5 } },
+   { id: "gemini-2.5-flash", provider: "google", pricing: { inputUsdPerMillionTokens: 1.25, outputUsdPerMillionTokens: 5 } },
+ 
+   // ---- DeepSeek ----
+diff --git a/packages/shared/src/providers.ts b/packages/shared/src/providers.ts
+index dee8114..8a62aa8 100644
+--- a/packages/shared/src/providers.ts
++++ b/packages/shared/src/providers.ts
+@@ -59,7 +59,7 @@ export const PROVIDERS = [
+             { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite (fastest)" },
+             { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (preview, 2M ctx)" },
+             { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro (GA)" },
+-            { id: "gemini-2.5-flash", label: "Gemini 2 Flash (GA)" },
++            { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (GA)" },
+         ],
+     },
+     {

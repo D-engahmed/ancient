@@ -130,7 +130,11 @@ export const ModelsDialogContent = () => {
     setFormMode("add");
     setEditingConnection(null);
     setSelectedProvider(provider);
-    setModelSearch(provider.defaultModelId || "");
+    // Leave the search box empty so the full model list shows in the
+    // suggestion dropdown (placeholder shows the default as a hint).
+    // selectedModelId still carries the default so "Add" works even if
+    // the user never touches the field.
+    setModelSearch("");
     setSelectedModelId(provider.defaultModelId || "");
     setBaseUrl(provider.defaultBaseUrl || "");
     setApiKey("");
