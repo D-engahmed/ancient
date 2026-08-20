@@ -1,0 +1,97 @@
+diff --git a/packages/server/src/lib/provider-connection-validation.ts b/packages/server/src/lib/provider-connection-validation.ts
+index 2421cbe..6b90f13 100644
+--- a/packages/server/src/lib/provider-connection-validation.ts
++++ b/packages/server/src/lib/provider-connection-validation.ts
+@@ -44,6 +44,17 @@ function extractModelIds(body: unknown): string[] {
+         .filter((id): id is string => !!id);
+ }
+ 
++// Google's /openai/models shim still reports ids in its native resource-name
++// form ("models/gemini-2.5-flash") even though every other Gemini surface in
++// this app — the actual chat request in lib/models.ts, the shared provider
++// catalog, and whatever the user typed — uses the bare id ("gemini-2.5-flash").
++// Left unstripped, that mismatch meant a *correct* Gemini modelId still failed
++// this cross-check every time, because "gemini-2.5-flash" !== "models/gemini-2.5-flash".
++// Stripping the prefix is a no-op for OpenAI/Anthropic, which never emit it.
++function stripModelsPrefix(id: string): string {
++    return id.startsWith("models/") ? id.slice("models/".length) : id;
++}
++
+ export async function validateProviderConnection(input: ConnectionInput): Promise<void> {
+     const headers = new Headers({ Accept: "application/json" });
+     let url: URL;
+@@ -96,22 +107,28 @@ export async function validateProviderConnection(input: ConnectionInput): Promis
+             // over that; there's nothing to cross-check against.
+             return;
+         }
+-        const availableIds = extractModelIds(body);
+-        if (availableIds.length === 0) return;
+-        if (availableIds.includes(input.modelId)) return;
++        const rawAvailableIds = extractModelIds(body);
++        if (rawAvailableIds.length === 0) return;
+ 
+-        const caseInsensitiveMatch = availableIds.find(
+-            (id) => id.toLowerCase() === input.modelId!.toLowerCase(),
++        // Compare (and suggest) using the normalized form, but keep the
++        // original strings around so any error message still shows models
++        // the way this provider's list actually spells them.
++        const availableIds = rawAvailableIds.map(stripModelsPrefix);
++        const wantedId = stripModelsPrefix(input.modelId);
++        if (availableIds.includes(wantedId)) return;
++
++        const caseInsensitiveIndex = availableIds.findIndex(
++            (id) => id.toLowerCase() === wantedId.toLowerCase(),
+         );
+-        if (caseInsensitiveMatch) {
++        if (caseInsensitiveIndex !== -1) {
+             throw new ProviderConnectionValidationError(
+-                `Model "${input.modelId}" was not found — did you mean "${caseInsensitiveMatch}"? Model IDs are case-sensitive.`,
++                `Model "${input.modelId}" was not found — did you mean "${rawAvailableIds[caseInsensitiveIndex]}"? Model IDs are case-sensitive.`,
+             );
+         }
+ 
+-        const suggestions = availableIds.slice(0, 5).join(", ");
++        const suggestions = rawAvailableIds.slice(0, 5).join(", ");
+         throw new ProviderConnectionValidationError(
+-            `Model "${input.modelId}" was not found in this provider's model list. Available models include: ${suggestions}${availableIds.length > 5 ? ", …" : ""}.`,
++            `Model "${input.modelId}" was not found in this provider's model list. Available models include: ${suggestions}${rawAvailableIds.length > 5 ? ", …" : ""}.`,
+         );
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/packages/shared/src/providers.ts b/packages/shared/src/providers.ts
+index dee8114..ca44ec5 100644
+--- a/packages/shared/src/providers.ts
++++ b/packages/shared/src/providers.ts
+@@ -52,14 +52,24 @@ export const PROVIDERS = [
+     },
+     {
+         id: "gemini", label: "Google Gemini", protocol: "gemini" as const,
+-        defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModelId: "gemini-3.6-flash",
+-        description: "Gemini 3.6 Flash, 3.5 Flash-Lite, 3.1 Pro",
++        defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModelId: "gemini-2.5-flash",
++        description: "Gemini 2.5 Pro, 2.5 Flash",
++        // NOTE: this catalog is only used for the add/edit form's autocomplete
++        // suggestions — the live provider's /models list is still the source
++        // of truth at save time (see provider-connection-validation.ts). It
++        // previously listed "gemini-3.6-flash" / "3.5-flash-lite" /
++        // "3.1-pro-preview", none of which exist on the real API; every
++        // connection built from those suggestions failed validation. Replaced
++        // with the ids actually confirmed present on a live provider response.
++        // If Google adds new GA models later this list will drift again —
++        // it's a suggestion list, not enforcement, so a correct id the user
++        // types by hand still passes.
+         models: [
+-            { id: "gemini-3.6-flash", label: "Gemini 3.6 Flash (GA)" },
+-            { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite (fastest)" },
+-            { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (preview, 2M ctx)" },
+             { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro (GA)" },
+-            { id: "gemini-2.5-flash", label: "Gemini 2 Flash (GA)" },
++            { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (GA)" },
++            { id: "gemini-2.5-flash-preview-tts", label: "Gemini 2.5 Flash Preview TTS" },
++            { id: "gemini-2.5-pro-preview-tts", label: "Gemini 2.5 Pro Preview TTS" },
++            { id: "gemma-4-26b-a4b-it", label: "Gemma 4 26B-A4B IT" },
+         ],
+     },
+     {

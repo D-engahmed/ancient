@@ -52,14 +52,24 @@ export const PROVIDERS = [
     },
     {
         id: "gemini", label: "Google Gemini", protocol: "gemini" as const,
-        defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModelId: "gemini-3.6-flash",
-        description: "Gemini 3.6 Flash, 3.5 Flash-Lite, 3.1 Pro",
+        defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModelId: "gemini-2.5-flash",
+        description: "Gemini 2.5 Pro, 2.5 Flash",
+        // NOTE: this catalog is only used for the add/edit form's autocomplete
+        // suggestions — the live provider's /models list is still the source
+        // of truth at save time (see provider-connection-validation.ts). It
+        // previously listed "gemini-3.6-flash" / "3.5-flash-lite" /
+        // "3.1-pro-preview", none of which exist on the real API; every
+        // connection built from those suggestions failed validation. Replaced
+        // with the ids actually confirmed present on a live provider response.
+        // If Google adds new GA models later this list will drift again —
+        // it's a suggestion list, not enforcement, so a correct id the user
+        // types by hand still passes.
         models: [
-            { id: "gemini-3.6-flash", label: "Gemini 3.6 Flash (GA)" },
-            { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite (fastest)" },
-            { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (preview, 2M ctx)" },
             { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro (GA)" },
-            { id: "gemini-2.5-flash", label: "Gemini 2 Flash (GA)" },
+            { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (GA)" },
+            { id: "gemini-2.5-flash-preview-tts", label: "Gemini 2.5 Flash Preview TTS" },
+            { id: "gemini-2.5-pro-preview-tts", label: "Gemini 2.5 Pro Preview TTS" },
+            { id: "gemma-4-26b-a4b-it", label: "Gemma 4 26B-A4B IT" },
         ],
     },
     {
