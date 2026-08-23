@@ -1,0 +1,27 @@
+{
+  "name": "@ANCIENT/server",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "bun run --hot src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "postinstall": "bun run --cwd ../database db:generate"
+  },
+  "dependencies": {
+    "@ANCIENT/database": "workspace:*",
+    "@ANCIENT/shared": "workspace:*",
+    "@ai-sdk/anthropic": "^4.0.27",
+    "@ai-sdk/google": "^4.0.36",
+    "@ai-sdk/openai": "^4.0.0",
+    "@clerk/backend": "^3.2.8",
+    "@hono/zod-validator": "^0.8.0",
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "ai": "^7.0.55",
+    "dotenv": "^16.4.7",
+    "hono": "^4.12.12",
+    "zod": "^4.3.6"
+  }
+}
