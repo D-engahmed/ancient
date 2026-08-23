@@ -4,6 +4,7 @@
 // (its exploration never pollutes the main conversation — the single biggest
 // token saver in agentic coding), its own tool allow-list, and an optional
 // cheaper model.
+// take the hoal logec from packeges/agent
 
 import { readdir, readFile } from "fs/promises";
 import { join } from "path";
