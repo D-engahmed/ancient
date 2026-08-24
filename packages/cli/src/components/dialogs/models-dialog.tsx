@@ -138,8 +138,6 @@ export const ModelsDialogContent = () => {
     setSelectedModelId(provider.defaultModelId || "");
     setBaseUrl(provider.defaultBaseUrl || "");
     setApiKey("");
-    setModelSuggestIndex(0);
-    setView("form");
   };
 
   // Opens the same form used for "add", pre-filled from the connection.
@@ -620,8 +618,8 @@ export const ModelsDialogContent = () => {
               isEdit
                 ? `Leave blank to keep current key (••••${editingConnection?.keyLastFour ?? "????"})`
                 : isLocal
-                ? "Optional for local servers"
-                : "sk-... (required)"
+                  ? "Optional for local servers"
+                  : "sk-... (required)"
             }
             value={apiKey}
             onInput={(value) => setApiKey(value)}
@@ -630,8 +628,8 @@ export const ModelsDialogContent = () => {
             {isEdit
               ? "Only sent if you type a new key — the stored key is otherwise left untouched."
               : isLocal
-              ? "Leave blank if your local server doesn't require authentication."
-              : "Your API key is encrypted before storage."}
+                ? "Leave blank if your local server doesn't require authentication."
+                : "Your API key is encrypted before storage."}
           </text>
         </box>
 

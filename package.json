@@ -2,17 +2,22 @@
   "name": "ANCIENT",
   "version": "1.0.0",
   "workspaces": ["packages/*"],
+  "resolutions": {
+    "scheduler": "0.25.0"
+  },
   "scripts": {
     "dev:cli": "bun run --watch packages/cli/src/index.tsx",
-    "dev:server": "bun --hot run packages/server/src/index.ts"
+    "dev:server": "bun --hot run packages/server/src/index.ts",
+    "test": "bun test"
   },
   "devDependencies": {
     "@types/bun": "latest"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.27",
-    "@ai-sdk/openai": "^1.0.0",
+    "@ai-sdk/openai": "^4.0.0",
     "ai": "^7.0.55",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "hono": "^4.13.4"
   }
 }
