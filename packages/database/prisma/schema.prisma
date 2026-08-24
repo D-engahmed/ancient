@@ -99,3 +99,84 @@ model ModelCatalogEntry {
   @@unique([providerId, modelId])
   @@index([providerId])
 }
+
+
+// ============================================================================
+// Agent System Models
+// ============================================================================
+
+model AgentTeam {
+  id                String   @id @default(uuid())
+  name              String
+  description       String?
+  coordinatorId     String
+  protocol          String   // JSON string of ProtocolConfig
+  maxParallelAgents Int      @default(5)
+  sharedContext     Boolean  @default(true)
+  checkpointEnabled Boolean  @default(true)
+  fallbackStrategy  String   // JSON string
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  agents            AgentDefinition[]
+  executions        AgentExecution[]
+}
+
+model AgentDefinition {
+  id                 String    @id @default(uuid())
+  teamId             String
+  team               AgentTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name               String
+  role               String
+  description        String?
+  systemPrompt       String?   @db.Text
+  capabilities       String[]  @default([])
+  tools              String[]  @default([])
+  backend            String    // JSON string of BackendConfig
+  fallbackBackends   String[]  @default([]) // JSON strings
+  maxDelegationDepth Int       @default(0)
+  canDelegateTo      String[]  @default([])
+  parentId           String?
+  metadata           String?   // JSON string
+}
+
+model AgentExecution {
+  id           String   @id @default(uuid())
+  teamId       String
+  team         AgentTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  taskId       String
+  status       String   @default("running") // running, paused, completed, failed, cancelled
+  currentAgent String?
+  progress     Int      @default(0)
+  result       String?  // JSON string of TaskResult
+  startedAt    DateTime @default(now())
+  completedAt  DateTime?
+  
+  messages     AgentMessage[]
+  checkpoints  AgentCheckpoint[]
+}
+
+model AgentMessage {
+  id          String   @id @default(uuid())
+  executionId String
+  execution   AgentExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  senderId    String
+  senderRole  String
+  senderName  String
+  recipientId String?
+  content     String   @db.Text
+  messageType String   @default("chat")
+  metadata    String?  // JSON string
+  timestamp   DateTime @default(now())
+}
+
+model AgentCheckpoint {
+  id            String   @id @default(uuid())
+  executionId   String
+  execution     AgentExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  agentId       String
+  taskId        String
+  contextSnapshot String @db.Text // JSON string of SharedContext
+  reason        String
+  timestamp     DateTime @default(now())
+}

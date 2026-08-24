@@ -25,8 +25,8 @@ function getCooldownMs(): number {
 }
 
 /** Stable key for a resolved model — provider + modelId is specific enough:
- *  the upstream rate limit is shared per model regardless of which local
- *  BYOK connection row resolved to it. */
+ * the upstream rate limit is shared per model regardless of which local
+ * BYOK connection row resolved to it. */
 export function modelKey(provider: string, modelId: string): string {
     return `${provider}:${modelId}`;
 }
@@ -51,10 +51,10 @@ export function recordRateLimitFailure(key: string): void {
 }
 
 /** Best-effort detection of "this failed because of an upstream rate limit"
- *  across the various shapes errors take once the ai SDK (and gateways like
- *  OpenRouter) have wrapped/unwrapped them. Duck-typed on purpose — retries
- *  and wrapping can lose the exact error class identity while these fields
- *  and phrases survive. */
+ * across the various shapes errors take once the ai SDK (and gateways like
+ * OpenRouter) have wrapped/unwrapped them. Duck-typed on purpose — retries
+ * and wrapping can lose the exact error class identity while these fields
+ * and phrases survive. */
 export function isRateLimitError(err: unknown): boolean {
     if (!err || typeof err !== "object") return false;
 
@@ -62,39 +62,16 @@ export function isRateLimitError(err: unknown): boolean {
     if (statusCode === 429) return true;
 
     const cause = (err as { cause?: unknown }).cause;
-    if (cause && typeof cause === "object" && (cause as { statusCode?: unknown }).statusCode === 429) {
-        return true;
+    if (cause && typeof cause === "object") {
+        const causeStatusCode = (cause as { statusCode?: unknown }).statusCode;
+        if (causeStatusCode === 429) return true;
     }
 
-    const lastError = (err as { lastError?: unknown }).lastError;
-    if (lastError && lastError !== err && isRateLimitError(lastError)) return true;
-
-    const message =
-        (err as { message?: unknown }).message ??
-        (err as { responseBody?: unknown }).responseBody;
+    const message = (err as { message?: unknown }).message;
     if (typeof message === "string") {
         const lower = message.toLowerCase();
-        if (lower.includes("rate-limit") || lower.includes("rate limit") || lower.includes("429")) {
-            return true;
-        }
+        if (lower.includes("rate limit") || lower.includes("too many requests")) return true;
     }
 
     return false;
-}
-
-/** Thrown when a call is short-circuited before it's even attempted, so
- *  callers (HTTP routes) can surface a proper 429 with Retry-After instead
- *  of the generic 500 used for other failures. */
-export class RateLimitCooldownError extends Error {
-    readonly status = 429;
-    readonly retryAfterSeconds: number;
-
-    constructor(modelLabel: string, retryAfterSeconds: number) {
-        super(
-            `${modelLabel} was rate-limited recently and is on a short cooldown. ` +
-            `Try again in ~${retryAfterSeconds}s, or switch models via the model picker.`
-        );
-        this.name = "RateLimitCooldownError";
-        this.retryAfterSeconds = retryAfterSeconds;
-    }
 }
