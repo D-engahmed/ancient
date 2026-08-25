@@ -1,11 +1,7 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/D-engahmed/ancient/main/assets/logo-dark.svg#gh-dark-mode-only" width="180" alt="ANCIENT Logo">
-<img src="https://raw.githubusercontent.com/D-engahmed/ancient/main/assets/logo-light.svg#gh-light-mode-only" width="180" alt="ANCIENT Logo">
+<img src="assets/logo-animated.svg" width="100%" alt="ANCIENT Logo">
 
-# **ANCIENT** — The Autonomous Coding Agent
-
-### *Design Your Agent Army. Route Models Per Agent. Ship Faster.*
 
 [![Version](https://img.shields.io/badge/version-3.0.0-8A2BE2?style=flat-square)](https://github.com/D-engahmed/ancient/releases)
 [![License](https://img.shields.io/badge/license-Proprietary-ff6b6b?style=flat-square)](LICENSE)
