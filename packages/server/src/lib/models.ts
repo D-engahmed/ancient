@@ -72,12 +72,31 @@ function maybeOpenRouterFetch(baseUrl: string, modelId: string): { fetch: typeof
 }
 
 // ---- Built-in provider resolvers ----
-function resolveOpenAIModel(modelId: string): ResolvedModel {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
+
+// openai/deepseek/mistral/groq/together were previously five separate
+// functions that each did the exact same three things (read one env var,
+// throw if missing, call createOpenAI with a fixed baseURL) and differed
+// only in which env var and which URL. That shape is data, not behavior —
+// expressed as a table instead, so adding provider #6 to this group is a
+// one-line addition here instead of a new copy-pasted function plus a new
+// switch case below.
+const OPENAI_COMPATIBLE_PROVIDERS = {
+    openai: { envVar: "OPENAI_API_KEY" },
+    deepseek: { envVar: "DEEPSEEK_API_KEY", baseURL: "https://api.deepseek.com/v1" },
+    mistral: { envVar: "MISTRAL_API_KEY", baseURL: "https://api.mistral.ai/v1" },
+    groq: { envVar: "GROQ_API_KEY", baseURL: "https://api.groq.com/openai/v1" },
+    together: { envVar: "TOGETHER_API_KEY", baseURL: "https://api.together.xyz/v1" },
+} as const satisfies Record<string, { envVar: string; baseURL?: string }>;
+
+type OpenAICompatibleProvider = keyof typeof OPENAI_COMPATIBLE_PROVIDERS;
+
+function resolveOpenAICompatibleModel(provider: OpenAICompatibleProvider, modelId: string): ResolvedModel {
+    const { envVar, baseURL } = OPENAI_COMPATIBLE_PROVIDERS[provider];
+    const apiKey = process.env[envVar];
+    if (!apiKey) throw new Error(`${envVar} is not set`);
     return {
-        model: createOpenAI({ apiKey }).chat(modelId) as unknown as LanguageModel,
-        provider: "openai",
+        model: createOpenAI({ apiKey, baseURL }).chat(modelId) as unknown as LanguageModel,
+        provider,
         modelId,
     };
 }
@@ -108,55 +127,16 @@ function resolveGoogleModel(modelId: string): ResolvedModel {
     };
 }
 
-function resolveDeepSeekModel(modelId: string): ResolvedModel {
-    const apiKey = process.env.DEEPSEEK_API_KEY;
-    if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not set");
-    return {
-        model: createOpenAI({ baseURL: "https://api.deepseek.com/v1", apiKey }).chat(modelId) as unknown as LanguageModel,
-        provider: "deepseek",
-        modelId,
-    };
-}
-
-function resolveMistralModel(modelId: string): ResolvedModel {
-    const apiKey = process.env.MISTRAL_API_KEY;
-    if (!apiKey) throw new Error("MISTRAL_API_KEY is not set");
-    return {
-        model: createOpenAI({ baseURL: "https://api.mistral.ai/v1", apiKey }).chat(modelId) as unknown as LanguageModel,
-        provider: "mistral",
-        modelId,
-    };
-}
-
-function resolveGroqModel(modelId: string): ResolvedModel {
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) throw new Error("GROQ_API_KEY is not set");
-    return {
-        model: createOpenAI({ baseURL: "https://api.groq.com/openai/v1", apiKey }).chat(modelId) as unknown as LanguageModel,
-        provider: "groq",
-        modelId,
-    };
-}
-
-function resolveTogetherModel(modelId: string): ResolvedModel {
-    const apiKey = process.env.TOGETHER_API_KEY;
-    if (!apiKey) throw new Error("TOGETHER_API_KEY is not set");
-    return {
-        model: createOpenAI({ baseURL: "https://api.together.xyz/v1", apiKey }).chat(modelId) as unknown as LanguageModel,
-        provider: "together",
-        modelId,
-    };
-}
-
 function resolveSupportedChatModel(model: SupportedChatModel): ResolvedModel {
     switch (model.provider) {
-        case "openai": return resolveOpenAIModel(model.id);
+        case "openai":
+        case "deepseek":
+        case "mistral":
+        case "groq":
+        case "together":
+            return resolveOpenAICompatibleModel(model.provider, model.id);
         case "anthropic": return resolveAnthropicModel(model.id);
         case "google": return resolveGoogleModel(model.id);
-        case "deepseek": return resolveDeepSeekModel(model.id);
-        case "mistral": return resolveMistralModel(model.id);
-        case "groq": return resolveGroqModel(model.id);
-        case "together": return resolveTogetherModel(model.id);
         case "ollama":
         case "lmstudio":
         case "vllm":

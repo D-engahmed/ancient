@@ -245,10 +245,7 @@ export const ModelsDialogContent = () => {
       return;
     }
 
-    const isLocal = selectedProvider.id === "ollama" ||
-      selectedProvider.id === "lmstudio" ||
-      selectedProvider.id === "vllm";
-    if (!apiKey && !isLocal) {
+    if (!apiKey && selectedProvider.requiresApiKey) {
       toast.show({ variant: "error", message: `API key is required for ${selectedProvider.label}` });
       return;
     }
@@ -526,7 +523,7 @@ export const ModelsDialogContent = () => {
   if (view === "form" && (selectedProvider || formMode === "edit")) {
     const provider = selectedProvider; // null in edit mode — see handleEditConnection
     const isEdit = formMode === "edit";
-    const isLocal = provider ? (provider.id === "ollama" || provider.id === "lmstudio" || provider.id === "vllm") : false;
+    const isLocal = provider ? !provider.requiresApiKey : false;
 
     return (
       <box flexDirection="column" gap={2}>
