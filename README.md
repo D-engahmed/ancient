@@ -2,7 +2,6 @@
 
 <img src="assets/logo-animated.svg" width="100%" alt="ANCIENT Logo">
 
-
 [![Version](https://img.shields.io/badge/version-3.0.0-8A2BE2?style=flat-square)](https://github.com/D-engahmed/ancient/releases)
 [![License](https://img.shields.io/badge/license-Proprietary-ff6b6b?style=flat-square)](LICENSE)
 [![Bun](https://img.shields.io/badge/built%20with-Bun-f9f1a5?style=flat-square&logo=bun)](https://bun.sh)
@@ -60,29 +59,49 @@ ANCIENT 3.0 introduces the **most powerful multi-agent orchestration framework**
 
 ### 6 Coordination Protocols
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  HIERARCHICAL        COORDINATOR delegates to specialists        │
-│  ├── Coordinator (gpt-4o)                                       │
-│  ├── Architect (Claude)                                         │
-│  ├── Coder (Claude)                                             │
-│  └── Reviewer (GPT-4o-mini)                                     │
-├─────────────────────────────────────────────────────────────────┤
-│  PIPELINE            Assembly line — each agent improves output   │
-│  Plan → Design → Code → Review → Test                           │
-├─────────────────────────────────────────────────────────────────┤
-│  SWARM               N agents solve in parallel, judge picks best │
-│  Coder A + Coder B + Coder C → Judge evaluates                  │
-├─────────────────────────────────────────────────────────────────┤
-│  CONSENSUS           Agents vote, majority wins                 │
-│  5 reviewers vote → threshold 3 → result approved               │
-├─────────────────────────────────────────────────────────────────┤
-│  DEBATE              Adversarial argumentation                   │
-│  Architect A vs Architect B → Moderator synthesizes             │
-├─────────────────────────────────────────────────────────────────┤
-│  ROUND-ROBIN         Agents take turns improving artifact        │
-│  Turn 1: Coder → Turn 2: Reviewer → Turn 3: Optimizer           │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph HIERARCHICAL["🏢 HIERARCHICAL"]
+        direction TB
+        H1[👑 Coordinator<br/>gpt-4o] --> H2[🏗️ Architect<br/>Claude]
+        H1 --> H3[💻 Coder<br/>Claude]
+        H1 --> H4[🔍 Reviewer<br/>GPT-4o-mini]
+    end
+
+    subgraph PIPELINE["🔄 PIPELINE"]
+        direction LR
+        P1[Plan] --> P2[Design] --> P3[Code] --> P4[Review] --> P5[Test]
+    end
+
+    subgraph SWARM["🐝 SWARM"]
+        direction TB
+        S1[Coder A] --> Judge
+        S2[Coder B] --> Judge
+        S3[Coder C] --> Judge
+        Judge[⚖️ Judge] --> Result[✅ Best Solution]
+    end
+
+    subgraph CONSENSUS["🗳️ CONSENSUS"]
+        direction TB
+        C1[Reviewer 1] --> Vote
+        C2[Reviewer 2] --> Vote
+        C3[Reviewer 3] --> Vote
+        C4[Reviewer 4] --> Vote
+        C5[Reviewer 5] --> Vote
+        Vote{Majority<br/>Threshold} --> Approved[✅ Approved]
+    end
+
+    subgraph DEBATE["⚔️ DEBATE"]
+        direction TB
+        D1[Architect A] <--> Moderator
+        D2[Architect B] <--> Moderator
+        Moderator[🎯 Moderator] --> Synthesis[📄 Synthesis]
+    end
+
+    subgraph ROUNDROBIN["🔁 ROUND-ROBIN"]
+        direction TB
+        R1[Turn 1: Coder] --> R2[Turn 2: Reviewer] --> R3[Turn 3: Optimizer]
+    end
 ```
 
 ### 12 Built-In Agent Roles
@@ -91,18 +110,18 @@ Every role comes with **pre-configured system prompts**, **capability flags**, *
 
 | Role | Purpose | Default Model |
 |------|---------|---------------|
-| **Coordinator** | Delegates, plans, synthesizes | `gpt-4o` |
-| **Planner** | Breaks tasks into milestones | `claude-3.5-sonnet` |
-| **Architect** | Designs system structure | `claude-3.5-sonnet` |
-| **Coder** | Writes implementation | `claude-3.5-sonnet` |
-| **Reviewer** | Quality gate, finds bugs | `gpt-4o-mini` |
-| **Tester** | Writes tests, verifies coverage | `gpt-4o-mini` |
-| **Debugger** | Root-cause analysis | `claude-3.5-sonnet` |
-| **Researcher** | Gathers docs, evaluates approaches | `gpt-4o` |
-| **Documenter** | READMEs, API docs, ADRs | `claude-3.5-sonnet` |
-| **Specialist** | Domain expert (customizable) | `claude-3.5-sonnet` |
-| **Executor** | Runs shell commands safely | `gpt-4o-mini` / Free |
-| **Validator** | Final approval gate | `gpt-4o` |
+| 👑 **Coordinator** | Delegates, plans, synthesizes | `gpt-4o` |
+| 📋 **Planner** | Breaks tasks into milestones | `claude-3.5-sonnet` |
+| 🏗️ **Architect** | Designs system structure | `claude-3.5-sonnet` |
+| 💻 **Coder** | Writes implementation | `claude-3.5-sonnet` |
+| 🔍 **Reviewer** | Quality gate, finds bugs | `gpt-4o-mini` |
+| 🧪 **Tester** | Writes tests, verifies coverage | `gpt-4o-mini` |
+| 🐛 **Debugger** | Root-cause analysis | `claude-3.5-sonnet` |
+| 📚 **Researcher** | Gathers docs, evaluates approaches | `gpt-4o` |
+| 📝 **Documenter** | READMEs, API docs, ADRs | `claude-3.5-sonnet` |
+| 🎯 **Specialist** | Domain expert (customizable) | `claude-3.5-sonnet` |
+| ⚡ **Executor** | Runs shell commands safely | `gpt-4o-mini` / Free |
+| ✅ **Validator** | Final approval gate | `gpt-4o` |
 
 ### Per-Agent Model Routing
 
@@ -135,67 +154,77 @@ const team = TeamBuilder.create("EliteSquad")
 
 ## 🏗 Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         TERMINAL (Ink UI)                           │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐ │
-│  │  Chat Screen │  │ Command Menu │  │  Agent Hierarchy Viewer  │ │
-│  └──────────────┘  └──────────────┘  └──────────────────────────┘ │
-└────────────────────────┬────────────────────────────────────────────┘
-                         │  imports
-                         ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      @ANCIENT/agent                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────────┐│
-│  │   Arena     │  │    Team     │  │          Runtime            ││
-│  │ Coordinator │  │   Builder   │  │  Executor → Scheduler →     ││
-│  │  (6 proto-  │  │  (12 roles) │  │  StateManager → Context     ││
-│  │   cols)     │  │  Templates  │  │                             ││
-│  └─────────────┘  └─────────────┘  └─────────────────────────────┘│
-│  ┌─────────────┐  ┌─────────────┐                                  │
-│  │    Tasks    │  │   Backends  │  • Model Router                 │
-│  │ Decomposer  │  │   Router    │  • Fallback Chains              │
-│  │  Assigner   │  │   Factory   │  • Cost Tracking                │
-│  │   Tracker   │  │  Registry   │  • Latency Optimization         │
-│  └─────────────┘  └─────────────┘                                  │
-└────────────────────────┬────────────────────────────────────────────┘
-                         │  imports
-                         ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      @ANCIENT/server (Hono)                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐ │
-│  │  /auth       │  │  /chat       │  │  /agent/* (REST API)     │ │
-│  │  OAuth/JWT   │  │  SSE Stream  │  │  Teams · Execute ·       │ │
-│  └──────────────┘  └──────────────┘  │  Templates · Status      │ │
-│                                        └──────────────────────────┘ │
-└────────────────────────┬────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      @ANCIENT/database (Prisma)                     │
-│  Users · Sessions · Messages · Teams · Agents · Executions ·        │
-│  Checkpoints · ProviderConnections                                    │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Terminal["💻 TERMINAL (Ink UI)"]
+        direction LR
+        Chat["💬 Chat Screen"]
+        Menu["📋 Command Menu"]
+        Viewer["🌳 Agent Hierarchy Viewer"]
+    end
+
+    subgraph Agent["@ANCIENT/agent"]
+        direction TB
+        Arena["🎯 Arena<br/>Coordinator<br/>6 protocols"]
+        Team["👥 Team<br/>Builder<br/>12 roles"]
+        Runtime["⚙️ Runtime<br/>Executor → Scheduler<br/>StateManager → Context"]
+        Tasks["📋 Tasks<br/>Decomposer<br/>Assigner<br/>Tracker"]
+        Backends["🔌 Backends<br/>Router<br/>Factory<br/>Registry"]
+    end
+
+    subgraph Server["@ANCIENT/server (Hono)"]
+        direction LR
+        Auth["🔐 /auth<br/>OAuth/JWT"]
+        ChatAPI["💬 /chat<br/>SSE Stream"]
+        AgentAPI["🤖 /agent/*<br/>REST API"]
+    end
+
+    subgraph Database["@ANCIENT/database (Prisma)"]
+        direction LR
+        Users["👤 Users"]
+        Sessions["📅 Sessions"]
+        Messages["💬 Messages"]
+        TeamsDB["👥 Teams"]
+        AgentsDB["🤖 Agents"]
+        Executions["⚡ Executions"]
+        Checkpoints["📸 Checkpoints"]
+        Providers["🔑 ProviderConnections"]
+    end
+
+    Terminal --> Agent
+    Agent --> Server
+    Server --> Database
+
+    style Terminal fill:#1a1a2e,stroke:#8A2BE2,color:#fff
+    style Agent fill:#0f3460,stroke:#7FC4BE,color:#fff
+    style Server fill:#16213e,stroke:#ff6b6b,color:#fff
+    style Database fill:#0a1931,stroke:#f9f1a5,color:#fff
 ```
 
 ### Monorepo Structure
 
-```
-ancient/
-├── packages/
-│   ├── cli/              # Terminal UI (React + Ink)
-│   ├── agent/            # 🆕 Multi-agent orchestration system
-│   │   ├── src/arena/    # 6 coordination protocols
-│   │   ├── src/team/     # Team builder + 12 roles + templates
-│   │   ├── src/tasks/    # Decomposer, assigner, tracker
-│   │   ├── src/runtime/  # Execution engine + state manager
-│   │   └── src/backends/ # Model router + fallback chains
-│   ├── server/           # Hono HTTP API
-│   ├── database/         # Prisma ORM + PostgreSQL
-│   └── shared/           # Zod schemas + types (cross-package)
-├── docker-compose.yml    # Postgres + App
-├── .env.example          # Configuration template
-└── LICENSE               # Proprietary (Commercial)
+```mermaid
+graph TD
+    Root["ancient/"] --> Packages["packages/"]
+    Root --> DockerCompose["docker-compose.yml"]
+    Root --> EnvExample[".env.example"]
+    Root --> License["LICENSE"]
+
+    Packages --> CLI["cli/<br/>Terminal UI<br/>React + Ink"]
+    Packages --> Agent["agent/<br/>Multi-agent system"]
+    Packages --> Server["server/<br/>Hono HTTP API"]
+    Packages --> Database["database/<br/>Prisma + PostgreSQL"]
+    Packages --> Shared["shared/<br/>Zod schemas + types"]
+
+    Agent --> Arena["src/arena/<br/>6 coordination protocols"]
+    Agent --> Team["src/team/<br/>12 roles + templates"]
+    Agent --> Tasks["src/tasks/<br/>Decomposer, assigner, tracker"]
+    Agent --> Runtime["src/runtime/<br/>Execution engine"]
+    Agent --> Backends["src/backends/<br/>Model router"]
+
+    style Root fill:#8A2BE2,stroke:#fff,color:#fff
+    style Packages fill:#7FC4BE,stroke:#fff,color:#000
+    style Agent fill:#ff6b6b,stroke:#fff,color:#fff
 ```
 
 ---
@@ -329,13 +358,14 @@ Teams are stored as JSON files in your home directory for instant loading:
 
 ANCIENT supports **Bring-Your-Own-Key** (BYOK) per user. Each team member can use their own API keys, encrypted at rest with AES-256-GCM.
 
-Supported providers:
-- **OpenAI** (GPT-4o, GPT-4o-mini, o1)
-- **Anthropic** (Claude 3.5 Sonnet, Claude 3 Opus)
-- **OpenRouter** (100+ models, including free tiers)
-- **Google** (Gemini Pro)
-- **Ollama** (local models — Llama 3, Mistral, CodeLlama)
-- **Local** (any OpenAI-compatible endpoint)
+| Provider | Models Supported |
+|----------|-----------------|
+| **OpenAI** | GPT-4o, GPT-4o-mini, o1 |
+| **Anthropic** | Claude 3.5 Sonnet, Claude 3 Opus |
+| **OpenRouter** | 100+ models, including free tiers |
+| **Google** | Gemini Pro |
+| **Ollama** | Local models — Llama 3, Mistral, CodeLlama |
+| **Local** | Any OpenAI-compatible endpoint |
 
 ---
 
@@ -343,16 +373,32 @@ Supported providers:
 
 ANCIENT is built for production teams:
 
-- **🔒 Encrypted API Keys** — AES-256-GCM at rest
-- **🛡 Filesystem Sandboxing** — Agents cannot escape the project directory
-- **⚠ Dangerous Command Blocklist** — `rm -rf /`, `mkfs`, `dd` require explicit approval
-- **📋 Checkpoint System** — Shadow-git snapshots before every BUILD turn. `/rewind` restores files + history
-- **🧠 Smart Model Routing** — Free models for simple queries, premium models for complex reasoning
-- **📊 Cost Tracking** — Per-execution cost breakdown across all agents
+- 🔒 **Encrypted API Keys** — AES-256-GCM at rest
+- 🛡 **Filesystem Sandboxing** — Agents cannot escape the project directory
+- ⚠️ **Dangerous Command Blocklist** — `rm -rf /`, `mkfs`, `dd` require explicit approval
+- 📋 **Checkpoint System** — Shadow-git snapshots before every BUILD turn. `/rewind` restores files + history
+- 🧠 **Smart Model Routing** — Free models for simple queries, premium models for complex reasoning
+- 📊 **Cost Tracking** — Per-execution cost breakdown across all agents
 
 ---
 
 ## 📈 Roadmap
+
+```mermaid
+gantt
+    title ANCIENT Development Roadmap
+    dateFormat  YYYY-MM
+    section Completed
+    v1.0 Terminal UI           :done, 2024-01, 2024-06
+    v2.0 Skills & MCP          :done, 2024-07, 2025-03
+    v3.0 Multi-agent System    :done, 2025-04, 2026-08
+    section In Progress
+    v3.1 VS Code Extension     :active, 2026-08, 2026-12
+    v3.2 Web Dashboard         :active, 2026-09, 2027-02
+    section Planned
+    v4.0 Self-improving Agents :2027-03, 2027-09
+    v4.0 Agent Marketplace     :2027-06, 2027-12
+```
 
 | Phase | Feature | Status |
 |-------|---------|--------|
@@ -370,9 +416,9 @@ ANCIENT is built for production teams:
 
 ANCIENT is **proprietary software** (not open source). We welcome:
 
-- **Bug reports** via GitHub Issues
-- **Feature requests** via GitHub Discussions
-- **Enterprise partnerships** — contact us for custom deployments
+- 🐛 **Bug reports** via GitHub Issues
+- 💡 **Feature requests** via GitHub Discussions
+- 🏢 **Enterprise partnerships** — contact us for custom deployments
 
 For commercial licensing, multi-tenant SaaS deployment, or white-label solutions, please reach out.
 
@@ -384,10 +430,12 @@ For commercial licensing, multi-tenant SaaS deployment, or white-label solutions
 
 This software is provided under a commercial license. See [LICENSE](LICENSE) for full terms.
 
-- ✅ **Self-host** for your organization
-- ✅ **Modify** for internal use
-- ❌ **Redistribute** without authorization
-- ❌ **Use** in competing products
+| Permission | Status |
+|------------|--------|
+| ✅ **Self-host** for your organization | Allowed |
+| ✅ **Modify** for internal use | Allowed |
+| ❌ **Redistribute** without authorization | Prohibited |
+| ❌ **Use** in competing products | Prohibited |
 
 For licensing inquiries: [Contact Us](mailto:contact@ancient.dev)
 
