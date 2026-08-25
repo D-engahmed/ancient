@@ -66,11 +66,33 @@ which lane produced what.
 If no free model is configured, everything silently falls back to the
 session's selected model. Nothing breaks.
 
+## When a free/OpenRouter model gets rate-limited
+
+Two things happen automatically now:
+
+1. **A per-model cooldown ("breaker")** — the first 429 from a given model
+   starts a short cooldown (`ANCIENT_RATE_LIMIT_COOLDOWN_MS`, default 60s).
+   Any turn on that exact model during the cooldown fails immediately with a
+   clear "on cooldown" message and an HTTP 429 + `Retry-After` header,
+   instead of repeating the same multi-attempt retry cycle against a limit
+   that hasn't reset. The free-first lane also checks this before routing a
+   turn free — if the free model is on cooldown it uses your selected model
+   for that turn instead.
+2. **OpenRouter model-level fallback (opt-in)** — set
+   `ANCIENT_OPENROUTER_FALLBACK_MODELS` to a comma-separated list of other
+   OpenRouter model IDs. Any OpenRouter-routed call (free lane, `cheap`
+   subagents, or a BYOK connection pointed at `openrouter.ai`) then asks
+   OpenRouter to try those models next if the primary one fails, instead of
+   hard-failing. This is the actual fix for "a single `:free` model has only
+   one upstream provider and rate-limits often" — see the comment above
+   `openRouterModelFallbackFetch` in `packages/server/src/lib/models.ts`.
+
 ## Honest limitations
 
 - The classifier is a heuristic, not an oracle. When it guesses wrong, the
   cost is one weaker answer — ask again with more detail (longer prompt →
   higher score → premium lane), or disable routing for that project.
-- Mid-stream escalation (retry a failed free call on the premium model) is on
-  the Phase-3 roadmap (`docs/ROADMAP.md`); today a free-lane provider error is
-  surfaced as a normal error message.
+- The breaker and the OpenRouter fallback above cover the common case. True
+  mid-stream escalation (retry a failed free call on the premium model
+  *within the same turn*, rather than failing the turn or waiting for the
+  next one) is still on the Phase-3 roadmap (`docs/ROADMAP.md`).

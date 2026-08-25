@@ -20,6 +20,8 @@ export interface ExecutionOptions {
     jsonSchema?: Record<string, unknown>;
     timeoutMs?: number;
     maxRetries?: number;
+    /** Lets a caller (ArenaCoordinator.cancelExecution) actually abort an in-flight model call. */
+    abortSignal?: AbortSignal;
 }
 
 export class AgentExecutor {
@@ -39,7 +41,7 @@ export class AgentExecutor {
     ): Promise<TaskResult> {
         const startTime = Date.now();
         let retries = 0;
-        const maxRetries = options.maxRetries || agent.backend.timeoutMs ? 3 : 3;
+        const maxRetries = options.maxRetries ?? 3;
 
         this.messageBus.publish({
             type: "agent:started",
@@ -61,6 +63,7 @@ export class AgentExecutor {
                     jsonSchema: options.jsonSchema,
                     timeoutMs: options.timeoutMs || agent.backend.timeoutMs,
                     tools: agent.tools,
+                    abortSignal: options.abortSignal,
                 });
 
                 const latencyMs = Date.now() - startTime;
@@ -99,7 +102,7 @@ export class AgentExecutor {
             } catch (error) {
                 retries++;
 
-                if (retries > maxRetries) {
+                if (options.abortSignal?.aborted || retries > maxRetries) {
                     this.messageBus.publish({
                         type: "agent:error",
                         agentId: agent.id || "",

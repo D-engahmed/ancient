@@ -12,6 +12,7 @@ import auth from "./routes/auth";
 import providerConnections from "./routes/provider-connections";
 import extensions from "./routes/extensions";
 import usage from "./routes/usage";
+import agent from "./routes/agent";
 
 const app = new Hono();
 
@@ -40,6 +41,7 @@ app.use("/chat/*", byokRateLimit);
 app.use("/provider-connections/*", requireAuth);
 app.use("/extensions/*", requireAuth);
 app.use("/usage/*", requireAuth);
+app.use("/agent/*", requireAuth);
 
 const routes = app
   .route("/auth", auth)
@@ -47,7 +49,8 @@ const routes = app
   .route("/chat", chat)
   .route("/provider-connections", providerConnections)
   .route("/extensions", extensions)
-  .route("/usage", usage);
+  .route("/usage", usage)
+  .route("/agent", agent);
 
 export type AppType = typeof routes;
 export default { port: 3000, fetch: app.fetch, idleTimeout: 255 };

@@ -7,10 +7,10 @@
   },
   "scripts": {
     "dev": "bun run --hot src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun",
-    "postinstall": "bun run --cwd ../database db:generate"
+    "build": "bun build src/index.ts --outdir dist --target bun"
   },
   "dependencies": {
+    "@ANCIENT/agent": "workspace:*",
     "@ANCIENT/database": "workspace:*",
     "@ANCIENT/shared": "workspace:*",
     "@ai-sdk/anthropic": "^4.0.27",

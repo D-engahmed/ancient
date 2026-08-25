@@ -30,7 +30,10 @@ import {
 import { v4 as uuidv4 } from "uuid";
 
 export interface AgentBuilderConfig {
-    name: string;
+    // Not required: withCoordinator()/addAgent() already take `name` as a
+    // separate positional argument and never read config.name. Making it
+    // required here just broke every call site in registry.ts's templates.
+    name?: string;
     role: AgentRole;
     model: string;
     provider: BackendConfig["provider"];
@@ -175,7 +178,7 @@ export class TeamBuilder {
         }
 
         if (!this.team.protocol) {
-            this.team.protocol = { type: "hierarchical", maxDepth: 3, streamIntermediate: true };
+            this.team.protocol = { type: "hierarchical", maxDepth: 3, timeoutMs: 120000, streamIntermediate: true };
         }
 
         // Resolve hierarchy
@@ -209,7 +212,7 @@ export class TeamBuilder {
         };
     }
 
-    private buildFallbacks(config: AgentBuilderConfig): BackendConfig[] {
+    private buildFallbacks(config: Pick<AgentBuilderConfig, "fallbackModels">): BackendConfig[] {
         if (!config.fallbackModels) return [];
         return config.fallbackModels.map(fb => ({
             provider: fb.provider,
