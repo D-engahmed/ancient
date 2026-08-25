@@ -1,0 +1,303 @@
+diff --git a/packages/agent/src/backends/factory.ts b/packages/agent/src/backends/factory.ts
+deleted file mode 100644
+index 5d10e54..0000000
+--- a/packages/agent/src/backends/factory.ts
++++ /dev/null
+@@ -1,52 +0,0 @@
+-/**
+- * Backend Factory
+- * 
+- * Creates AI SDK model instances for each provider.
+- */
+-
+-import type { BackendConfig } from "../types";
+-import { createOpenAI } from "@ai-sdk/openai";
+-import { createAnthropic } from "@ai-sdk/anthropic";
+-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+-
+-export class BackendFactory {
+-    async createModel(config: BackendConfig): Promise<unknown> {
+-        switch (config.provider) {
+-            case "openai": {
+-                const openai = createOpenAI({ apiKey: config.apiKey, baseURL: config.baseUrl });
+-                return openai(config.model);
+-            }
+-            case "anthropic": {
+-                const anthropic = createAnthropic({ apiKey: config.apiKey, baseURL: config.baseUrl });
+-                return anthropic(config.model);
+-            }
+-            case "google": {
+-                const google = createGoogleGenerativeAI({ apiKey: config.apiKey, baseURL: config.baseUrl });
+-                return google(config.model);
+-            }
+-            case "openrouter": {
+-                const openai = createOpenAI({
+-                    apiKey: config.apiKey,
+-                    baseURL: config.baseUrl || "https://openrouter.ai/api/v1"
+-                });
+-                return openai(config.model);
+-            }
+-            case "ollama": {
+-                const openai = createOpenAI({
+-                    apiKey: "ollama",
+-                    baseURL: config.baseUrl || "http://localhost:11434/api"
+-                });
+-                return openai(config.model);
+-            }
+-            case "local": {
+-                const openai = createOpenAI({
+-                    apiKey: config.apiKey || "local",
+-                    baseURL: config.baseUrl || "http://localhost:8000/v1"
+-                });
+-                return openai(config.model);
+-            }
+-            default:
+-                throw new Error(`Unknown provider: ${config.provider}`);
+-        }
+-    }
+-}
+\ No newline at end of file
+diff --git a/packages/cli/src/components/dialogs/models-dialog.tsx b/packages/cli/src/components/dialogs/models-dialog.tsx
+index 664d6d3..f794d74 100644
+--- a/packages/cli/src/components/dialogs/models-dialog.tsx
++++ b/packages/cli/src/components/dialogs/models-dialog.tsx
+@@ -245,10 +245,7 @@ export const ModelsDialogContent = () => {
+       return;
+     }
+ 
+-    const isLocal = selectedProvider.id === "ollama" ||
+-      selectedProvider.id === "lmstudio" ||
+-      selectedProvider.id === "vllm";
+-    if (!apiKey && !isLocal) {
++    if (!apiKey && selectedProvider.requiresApiKey) {
+       toast.show({ variant: "error", message: `API key is required for ${selectedProvider.label}` });
+       return;
+     }
+@@ -526,7 +523,7 @@ export const ModelsDialogContent = () => {
+   if (view === "form" && (selectedProvider || formMode === "edit")) {
+     const provider = selectedProvider; // null in edit mode — see handleEditConnection
+     const isEdit = formMode === "edit";
+-    const isLocal = provider ? (provider.id === "ollama" || provider.id === "lmstudio" || provider.id === "vllm") : false;
++    const isLocal = provider ? !provider.requiresApiKey : false;
+ 
+     return (
+       <box flexDirection="column" gap={2}>
+diff --git a/packages/server/src/lib/models.ts b/packages/server/src/lib/models.ts
+index eb98ce5..fd5f641 100644
+--- a/packages/server/src/lib/models.ts
++++ b/packages/server/src/lib/models.ts
+@@ -72,12 +72,31 @@ function maybeOpenRouterFetch(baseUrl: string, modelId: string): { fetch: typeof
+ }
+ 
+ // ---- Built-in provider resolvers ----
+-function resolveOpenAIModel(modelId: string): ResolvedModel {
+-    const apiKey = process.env.OPENAI_API_KEY;
+-    if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
++
++// openai/deepseek/mistral/groq/together were previously five separate
++// functions that each did the exact same three things (read one env var,
++// throw if missing, call createOpenAI with a fixed baseURL) and differed
++// only in which env var and which URL. That shape is data, not behavior —
++// expressed as a table instead, so adding provider #6 to this group is a
++// one-line addition here instead of a new copy-pasted function plus a new
++// switch case below.
++const OPENAI_COMPATIBLE_PROVIDERS = {
++    openai: { envVar: "OPENAI_API_KEY" },
++    deepseek: { envVar: "DEEPSEEK_API_KEY", baseURL: "https://api.deepseek.com/v1" },
++    mistral: { envVar: "MISTRAL_API_KEY", baseURL: "https://api.mistral.ai/v1" },
++    groq: { envVar: "GROQ_API_KEY", baseURL: "https://api.groq.com/openai/v1" },
++    together: { envVar: "TOGETHER_API_KEY", baseURL: "https://api.together.xyz/v1" },
++} as const satisfies Record<string, { envVar: string; baseURL?: string }>;
++
++type OpenAICompatibleProvider = keyof typeof OPENAI_COMPATIBLE_PROVIDERS;
++
++function resolveOpenAICompatibleModel(provider: OpenAICompatibleProvider, modelId: string): ResolvedModel {
++    const { envVar, baseURL } = OPENAI_COMPATIBLE_PROVIDERS[provider];
++    const apiKey = process.env[envVar];
++    if (!apiKey) throw new Error(`${envVar} is not set`);
+     return {
+-        model: createOpenAI({ apiKey }).chat(modelId) as unknown as LanguageModel,
+-        provider: "openai",
++        model: createOpenAI({ apiKey, baseURL }).chat(modelId) as unknown as LanguageModel,
++        provider,
+         modelId,
+     };
+ }
+@@ -108,55 +127,16 @@ function resolveGoogleModel(modelId: string): ResolvedModel {
+     };
+ }
+ 
+-function resolveDeepSeekModel(modelId: string): ResolvedModel {
+-    const apiKey = process.env.DEEPSEEK_API_KEY;
+-    if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not set");
+-    return {
+-        model: createOpenAI({ baseURL: "https://api.deepseek.com/v1", apiKey }).chat(modelId) as unknown as LanguageModel,
+-        provider: "deepseek",
+-        modelId,
+-    };
+-}
+-
+-function resolveMistralModel(modelId: string): ResolvedModel {
+-    const apiKey = process.env.MISTRAL_API_KEY;
+-    if (!apiKey) throw new Error("MISTRAL_API_KEY is not set");
+-    return {
+-        model: createOpenAI({ baseURL: "https://api.mistral.ai/v1", apiKey }).chat(modelId) as unknown as LanguageModel,
+-        provider: "mistral",
+-        modelId,
+-    };
+-}
+-
+-function resolveGroqModel(modelId: string): ResolvedModel {
+-    const apiKey = process.env.GROQ_API_KEY;
+-    if (!apiKey) throw new Error("GROQ_API_KEY is not set");
+-    return {
+-        model: createOpenAI({ baseURL: "https://api.groq.com/openai/v1", apiKey }).chat(modelId) as unknown as LanguageModel,
+-        provider: "groq",
+-        modelId,
+-    };
+-}
+-
+-function resolveTogetherModel(modelId: string): ResolvedModel {
+-    const apiKey = process.env.TOGETHER_API_KEY;
+-    if (!apiKey) throw new Error("TOGETHER_API_KEY is not set");
+-    return {
+-        model: createOpenAI({ baseURL: "https://api.together.xyz/v1", apiKey }).chat(modelId) as unknown as LanguageModel,
+-        provider: "together",
+-        modelId,
+-    };
+-}
+-
+ function resolveSupportedChatModel(model: SupportedChatModel): ResolvedModel {
+     switch (model.provider) {
+-        case "openai": return resolveOpenAIModel(model.id);
++        case "openai":
++        case "deepseek":
++        case "mistral":
++        case "groq":
++        case "together":
++            return resolveOpenAICompatibleModel(model.provider, model.id);
+         case "anthropic": return resolveAnthropicModel(model.id);
+         case "google": return resolveGoogleModel(model.id);
+-        case "deepseek": return resolveDeepSeekModel(model.id);
+-        case "mistral": return resolveMistralModel(model.id);
+-        case "groq": return resolveGroqModel(model.id);
+-        case "together": return resolveTogetherModel(model.id);
+         case "ollama":
+         case "lmstudio":
+         case "vllm":
+diff --git a/packages/shared/src/providers.ts b/packages/shared/src/providers.ts
+index 329143b..b4d174c 100644
+--- a/packages/shared/src/providers.ts
++++ b/packages/shared/src/providers.ts
+@@ -10,6 +10,16 @@ export type ProviderDefinition = {
+     defaultBaseUrl: string;
+     defaultModelId?: string;
+     description: string;
++    /**
++     * Whether this provider needs an API key to connect. False only for
++     * self-hosted local servers (Ollama, LM Studio, vLLM). This is the
++     * single source of truth for that distinction — call sites should read
++     * `provider.requiresApiKey` instead of hardcoding an id-list check
++     * (e.g. `id === "ollama" || id === "lmstudio" || id === "vllm"`), which
++     * previously existed as two separately-maintained copies in
++     * models-dialog.tsx and had already started to look inconsistent.
++     */
++    requiresApiKey: boolean;
+     models: ProviderModel[];
+ };
+ 
+@@ -18,6 +28,7 @@ export const PROVIDERS = [
+         id: "openai", label: "OpenAI", protocol: "openai" as const,
+         defaultBaseUrl: "https://api.openai.com/v1", defaultModelId: "gpt-5.6-sol",
+         description: "GPT-5.6, o-series, GPT-4.1",
++        requiresApiKey: true,
+         models: [
+             { id: "gpt-5.6-sol", label: "GPT-5.6 Sol (flagship)" },
+             { id: "gpt-5.5", label: "GPT-5.5" },
+@@ -37,6 +48,7 @@ export const PROVIDERS = [
+         id: "anthropic", label: "Anthropic", protocol: "anthropic" as const,
+         defaultBaseUrl: "https://api.anthropic.com", defaultModelId: "claude-fable-5",
+         description: "Claude Fable 5, Opus 4.8, Sonnet 5, Haiku 4.5",
++        requiresApiKey: true,
+         models: [
+             { id: "claude-fable-5", label: "Claude Fable 5 (most capable)" },
+             { id: "claude-opus-4-8", label: "Claude Opus 4.8" },
+@@ -54,6 +66,7 @@ export const PROVIDERS = [
+         id: "gemini", label: "Google Gemini", protocol: "gemini" as const,
+         defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModelId: "gemini-2.5-flash",
+         description: "Gemini 2.5 Pro, 2.5 Flash",
++        requiresApiKey: true,
+         // NOTE: this catalog is only used for the add/edit form's autocomplete
+         // suggestions — the live provider's /models list is still the source
+         // of truth at save time (see provider-connection-validation.ts). It
+@@ -73,6 +86,7 @@ export const PROVIDERS = [
+         id: "deepseek", label: "DeepSeek", protocol: "openai" as const,
+         defaultBaseUrl: "https://api.deepseek.com/v1", defaultModelId: "deepseek-v4-pro",
+         description: "DeepSeek-V4, V3.2",
++        requiresApiKey: true,
+         models: [
+             { id: "deepseek-v4-pro", label: "DeepSeek-V4 Pro (flagship reasoning)" },
+             { id: "deepseek-v4-flash", label: "DeepSeek-V4 Flash (fast, cheap)" },
+@@ -83,6 +97,7 @@ export const PROVIDERS = [
+         id: "mistral", label: "Mistral AI", protocol: "openai" as const,
+         defaultBaseUrl: "https://api.mistral.ai/v1", defaultModelId: "mistral-medium-3.5",
+         description: "Mistral Medium 3.5, Small 4, Large 3",
++        requiresApiKey: true,
+         models: [
+             { id: "mistral-medium-3.5", label: "Mistral Medium 3.5" },
+             { id: "mistral-small-4", label: "Mistral Small 4" },
+@@ -95,12 +110,14 @@ export const PROVIDERS = [
+         id: "openrouter", label: "OpenRouter", protocol: "openai" as const,
+         defaultBaseUrl: "https://openrouter.ai/api/v1",
+         description: "Free-tier :free models + paid access to 300+ models via one key",
++        requiresApiKey: true,
+         models: [],
+     },
+     {
+         id: "groq", label: "Groq", protocol: "openai" as const,
+         defaultBaseUrl: "https://api.groq.com/openai/v1", defaultModelId: "llama-3.3-70b-versatile",
+         description: "Llama 3.3 70B, Llama 4 Scout/Maverick, GPT-OSS",
++        requiresApiKey: true,
+         models: [
+             { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B (recommended)" },
+             { id: "llama-4-scout-17b-16e", label: "Llama 4 Scout 17B (16E)" },
+@@ -111,6 +128,7 @@ export const PROVIDERS = [
+         id: "together", label: "Together AI", protocol: "openai" as const,
+         defaultBaseUrl: "https://api.together.xyz/v1", defaultModelId: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+         description: "Llama 3.3, Qwen, DeepSeek, GPT-OSS, Nemotron",
++        requiresApiKey: true,
+         models: [
+             { id: "meta-llama/Llama-3.3-70B-Instruct-Turbo", label: "Llama 3.3 70B (Turbo)" },
+             { id: "Qwen/Qwen3.7-Max", label: "Qwen 3.7 Max" },
+@@ -121,6 +139,7 @@ export const PROVIDERS = [
+         id: "ollama", label: "Ollama (local)", protocol: "openai" as const,
+         defaultBaseUrl: "http://localhost:11434/v1", defaultModelId: "llama3.2",
+         description: "Local models via Ollama",
++        requiresApiKey: false,
+         models: [
+             { id: "llama3.2", label: "Llama 3.2" },
+             { id: "llama3.1", label: "Llama 3.1" },
+@@ -131,6 +150,7 @@ export const PROVIDERS = [
+         id: "lmstudio", label: "LM Studio (local)", protocol: "openai" as const,
+         defaultBaseUrl: "http://localhost:1234/v1", defaultModelId: "lmstudio-community/Meta-Llama-3-8B-Instruct",
+         description: "Local models via LM Studio",
++        requiresApiKey: false,
+         models: [
+             { id: "lmstudio-community/Meta-Llama-3-8B-Instruct", label: "Llama 3 8B (LM Studio)" },
+             { id: "lmstudio-community/Meta-Llama-3-70B-Instruct", label: "Llama 3 70B (LM Studio)" },
+@@ -140,6 +160,7 @@ export const PROVIDERS = [
+         id: "vllm", label: "vLLM (local)", protocol: "openai" as const,
+         defaultBaseUrl: "http://localhost:8000/v1", defaultModelId: "meta-llama/Llama-3-8B-Instruct",
+         description: "Self‑hosted vLLM server",
++        requiresApiKey: false,
+         models: [
+             { id: "meta-llama/Llama-3-8B-Instruct", label: "Llama 3 8B" },
+             { id: "mistralai/Mistral-7B-Instruct-v0.3", label: "Mistral 7B" },
+@@ -149,6 +170,7 @@ export const PROVIDERS = [
+         id: "custom", label: "Custom OpenAI-compatible", protocol: "openai" as const,
+         defaultBaseUrl: "", defaultModelId: "",
+         description: "Any OpenAI-compatible endpoint",
++        requiresApiKey: true,
+         models: [{ id: "", label: "Custom (type model ID manually)" }],
+     },
+ ] as const satisfies readonly ProviderDefinition[];
