@@ -12,5 +12,5 @@ export {
     getMaxDelegationDepth,
 } from "./roles";
 
-export type { AgentTemplate } from "./registry";
+export type { AgentTemplate, ModelOverrides } from "./registry";
 export type { AgentBuilderConfig } from "./builder";

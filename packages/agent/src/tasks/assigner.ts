@@ -4,7 +4,7 @@
  * Matches subtasks to agents based on capabilities, load, and performance history.
  */
 
-import type { AgentDefinition, SubTask, AgentId, AgentCapability } from "../types";
+import type { AgentDefinition, SubTask, AgentId, AgentCapability, TaskId } from "../types";
 
 export class TaskAssigner {
     /** Score how well an agent matches a task */
