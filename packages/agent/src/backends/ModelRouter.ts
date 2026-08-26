@@ -1,0 +1,56 @@
+import { ProviderFactory } from "./ProviderFactory";
+import { logger } from "../utils/Logger";
+
+export class ModelRouter {
+    private providerRegistry: ProviderRegistry;
+    private healthChecker: HealthChecker;
+    private latencyOptimizer: LatencyOptimizer;
+
+    constructor() {
+        this.providerRegistry = new ProviderRegistry();
+        this.healthChecker = new HealthChecker();
+        this.latencyOptimizer = new LatencyOptimizer();
+    }
+
+    async route(agentConfig: AgentConfig): Promise<Provider> {
+        -    const provider = this.providerRegistry.getProvider(agentConfig.provider);
+        -    return provider;
+        // BUG FIX: Implement intelligent routing with health checks
+        const providers = this.providerRegistry.getProvidersForModel(agentConfig.model);
+
+        if (!providers.length) {
+            throw new Error(`No providers available for model: ${agentConfig.model}`);
+        }
+
+        // PERFORMANCE FIX: Optimize for latency and cost
+        const optimizedProvider = await this.latencyOptimizer.selectOptimalProvider(
+            providers,
+            {
+                preferredProvider: agentConfig.provider,
+                costPreference: agentConfig.costPreference || 'balanced',
+                latencyThreshold: agentConfig.latencyThreshold || 2000
+            }
+        );
+
+        // RELIABILITY FIX: Check provider health before routing
+        const healthStatus = await this.healthChecker.checkProviderHealth(optimizedProvider);
+
+        if (!healthStatus.isHealthy) {
+            logger.warn(`Provider ${optimizedProvider.name} is unhealthy, attempting fallback...`);
+
+            // Try fallback providers
+            const fallbackProviders = providers.filter(p => p !== optimizedProvider);
+            for (const fallback of fallbackProviders) {
+                const fallbackHealth = await this.healthChecker.checkProviderHealth(fallback);
+                if (fallbackHealth.isHealthy) {
+                    logger.info(`Using fallback provider: ${fallback.name}`);
+                    return fallback;
+                }
+            }
+
+            throw new Error(`All providers for model ${agentConfig.model} are unhealthy`);
+        }
+
+        return optimizedProvider;
+    }
+}

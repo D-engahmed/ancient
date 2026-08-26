@@ -1,119 +1,59 @@
---- a/packages/agent/src/runtime/ExecutionEngine.ts
-+++ b/packages/agent/src/runtime/ExecutionEngine.ts
-@@ -1,5 +1,6 @@
- import { Team } from "../team/Team";
- import { Task } from "../tasks/Task";
+--- a/packages/agent/src/backends/ModelRouter.ts
++++ b/packages/agent/src/backends/ModelRouter.ts
+@@ -1,4 +1,5 @@
+ import { ProviderFactory } from "./ProviderFactory";
 +import { logger } from "../utils/Logger";
-+import { CostTracker } from "../backends/CostTracker";
  
- export class ExecutionEngine {
-   private activeExecutions: Map<string, Execution>;
-+  private costTracker: CostTracker;
-+  private rateLimiter: RateLimiter;
-+  private errorRecovery: ErrorRecoveryManager;
+ export class ModelRouter {
+   private providerRegistry: ProviderRegistry;
++  private healthChecker: HealthChecker;
++  private latencyOptimizer: LatencyOptimizer;
  
    constructor() {
-     this.activeExecutions = new Map();
-+    this.costTracker = new CostTracker();
-+    this.rateLimiter = new RateLimiter();
-+    this.errorRecovery = new ErrorRecoveryManager();
+     this.providerRegistry = new ProviderRegistry();
++    this.healthChecker = new HealthChecker();
++    this.latencyOptimizer = new LatencyOptimizer();
    }
  
-   async execute(team: Team, task: Task): Promise<ExecutionResult> {
--    const executionId = this.generateExecutionId();
--    this.activeExecutions.set(executionId, { team, task, status: 'running' });
-+    // CRITICAL FIX: Implement proper resource management and error handling
-+    if (!this.rateLimiter.canExecute(team.id)) {
-+      throw new Error('Rate limit exceeded. Please try again later.');
+   async route(agentConfig: AgentConfig): Promise<Provider> {
+-    const provider = this.providerRegistry.getProvider(agentConfig.provider);
+-    return provider;
++    // BUG FIX: Implement intelligent routing with health checks
++    const providers = this.providerRegistry.getProvidersForModel(agentConfig.model);
++    
++    if (!providers.length) {
++      throw new Error(`No providers available for model: ${agentConfig.model}`);
 +    }
 +    
-+    const executionId = this.generateExecutionId();
-+    const execution = new Execution(team, task, {
-+      costTracker: this.costTracker,
-+      errorRecovery: this.errorRecovery
-+    });
++    // PERFORMANCE FIX: Optimize for latency and cost
++    const optimizedProvider = await this.latencyOptimizer.selectOptimalProvider(
++      providers, 
++      {
++        preferredProvider: agentConfig.provider,
++        costPreference: agentConfig.costPreference || 'balanced',
++        latencyThreshold: agentConfig.latencyThreshold || 2000
++      }
++    );
 +    
-+    this.activeExecutions.set(executionId, execution);
-     
-     try {
--      const result = await this.runAgents(team, task);
--      this.activeExecutions.delete(executionId);
--      return result;
-+      // SECURITY FIX: Validate all inputs before execution
-+      this.validateTask(task);
-+      this.validateTeamConfiguration(team);
++    // RELIABILITY FIX: Check provider health before routing
++    const healthStatus = await this.healthChecker.checkProviderHealth(optimizedProvider);
++    
++    if (!healthStatus.isHealthy) {
++      logger.warn(`Provider ${optimizedProvider.name} is unhealthy, attempting fallback...`);
 +      
-+      // PERFORMANCE FIX: Implement parallel execution where possible
-+      const result = await execution.run();
-+      
-+      // RELIABILITY FIX: Add comprehensive logging
-+      logger.info(`Execution completed`, {
-+        executionId,
-+        team: team.name,
-+        task: task.description,
-+        cost: this.costTracker.getTotalCost(),
-+        duration: execution.getDuration()
-+      });
-+      
-+      return result;
-     } catch (error) {
--      this.activeExecutions.delete(executionId);
--      throw error;
-+      // BUG FIX: Implement proper error recovery and cleanup
-+      logger.error(`Execution failed`, {
-+        executionId,
-+        team: team.name,
-+        task: task.description,
-+        error: error.message,
-+        stack: error.stack
-+      });
-+      
-+      // Try to recover from common errors
-+      if (this.errorRecovery.canRecover(error)) {
-+        logger.info(`Attempting error recovery...`);
-+        const recoveredResult = await this.errorRecovery.attemptRecovery(execution, error);
-+        if (recoveredResult) {
-+          return recoveredResult;
++      // Try fallback providers
++      const fallbackProviders = providers.filter(p => p !== optimizedProvider);
++      for (const fallback of fallbackProviders) {
++        const fallbackHealth = await this.healthChecker.checkProviderHealth(fallback);
++        if (fallbackHealth.isHealthy) {
++          logger.info(`Using fallback provider: ${fallback.name}`);
++          return fallback;
 +        }
 +      }
 +      
-+      throw new ExecutionError(`Execution failed: ${error.message}`, {
-+        executionId,
-+        team: team.name,
-+        originalError: error
-+      });
-+    } finally {
-+      // RESOURCE FIX: Ensure cleanup happens regardless of success/failure
-+      this.activeExecutions.delete(executionId);
-+      this.rateLimiter.releaseSlot(team.id);
-     }
++      throw new Error(`All providers for model ${agentConfig.model} are unhealthy`);
++    }
++    
++    return optimizedProvider;
    }
- 
--  private async runAgents(team: Team, task: Task): Promise<ExecutionResult> {
--    // Implementation of agent execution logic
-+  // NEW: Add comprehensive validation
-+  private validateTask(task: Task): void {
-+    if (!task.description || task.description.trim().length === 0) {
-+      throw new ValidationError('Task description is required');
-+    }
-+    
-+    if (task.description.length > 10000) {
-+      throw new ValidationError('Task description too long (max 10000 characters)');
-+    }
-+    
-+    // Add more validation rules as needed
-   }
-+
-+  private validateTeamConfiguration(team: Team): void {
-+    if (!team.agents || team.agents.length === 0) {
-+      throw new ValidationError('Team must have at least one agent');
-+    }
-+    
-+    // Validate agent configurations
-+    team.agents.forEach(agent => {
-+      if (!agent.model || !agent.provider) {
-+        throw new ValidationError(`Agent ${agent.name} missing model or provider`);
-+      }
-+    });
-+  }
  }
