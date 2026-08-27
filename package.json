@@ -8,7 +8,9 @@
   "scripts": {
     "dev:cli": "bun run --watch packages/cli/src/index.tsx",
     "dev:server": "bun --hot run packages/server/src/index.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "bunx tsc -p packages/shared/tsconfig.json --noEmit && bunx tsc -p packages/agent/tsconfig.json --noEmit && bunx tsc -p packages/server/tsconfig.json --noEmit && bunx tsc -p packages/cli/tsconfig.json --noEmit && bunx tsc -p packages/database/tsconfig.json --noEmit",
+    "build:cli": "bun run --cwd packages/cli build"
   },
   "devDependencies": {
     "@types/bun": "latest"

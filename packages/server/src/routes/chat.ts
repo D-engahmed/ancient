@@ -274,7 +274,7 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
     } else {
       msg = String(err);
     }
-    if (upstreamDetail) {
+    if (upstreamDetail && !msg.includes(upstreamDetail)) {
       msg = `${msg} — ${upstreamDetail}`;
     }
     if (apiKey && typeof msg === "string") {

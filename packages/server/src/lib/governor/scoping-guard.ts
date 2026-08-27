@@ -28,11 +28,11 @@ function classify(filePath: string): ScopeTag {
     }
     const routeMatch = filePath.match(/\/routes\/([^/]+)$/);
     if (routeMatch) {
-        return { kind: "route-handler", file: routeMatch[1] };
+        return { kind: "route-handler", file: routeMatch[1]! };
     }
     const toolMatch = filePath.match(/\/tools\/([^/]+)$/);
     if (toolMatch) {
-        return { kind: "tool-definition", file: toolMatch[1] };
+        return { kind: "tool-definition", file: toolMatch[1]! };
     }
     if (/^packages\/server\//.test(filePath)) {
         return { kind: "server-other" };
@@ -52,14 +52,16 @@ function describeViolation(
     aPath: string,
     bPath: string
 ): string | null {
+    // Rule: schema changes + unrelated feature work (proxy: schema + UI in one step).
+    // Checked BEFORE the generic CLI/server rule because a schema change is also
+    // classified as server-side; this gives callers the more specific message.
+    if ((a.kind === "schema" && b.kind === "cli-ui") || (b.kind === "schema" && a.kind === "cli-ui")) {
+        return scopeMessage(aPath, bPath, "mixes a schema change with UI work");
+    }
+
     // Rule: CLI UI changes + server-side orchestration changes
     if ((a.kind === "cli-ui" && isServerSide(b)) || (b.kind === "cli-ui" && isServerSide(a))) {
         return scopeMessage(aPath, bPath, "mixes CLI UI changes with server-side orchestration changes");
-    }
-
-    // Rule: schema changes + unrelated feature work (proxy: schema + UI in one step)
-    if ((a.kind === "schema" && b.kind === "cli-ui") || (b.kind === "schema" && a.kind === "cli-ui")) {
-        return scopeMessage(aPath, bPath, "mixes a schema change with UI work");
     }
 
     // Rule: multiple unrelated route handlers

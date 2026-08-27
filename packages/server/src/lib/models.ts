@@ -40,7 +40,7 @@ function parseFallbackModels(): string[] {
 }
 
 function openRouterModelFallbackFetch(primaryModelId: string, fallbackModels: string[]): typeof fetch {
-    return async (input, init) => {
+    return (async (input, init) => {
         if (init?.body && typeof init.body === "string") {
             try {
                 const body = JSON.parse(init.body);
@@ -53,7 +53,7 @@ function openRouterModelFallbackFetch(primaryModelId: string, fallbackModels: st
             }
         }
         return fetch(input, init);
-    };
+    }) as typeof fetch;
 }
 
 function isOpenRouterBaseUrl(baseUrl: string): boolean {
@@ -91,9 +91,10 @@ const OPENAI_COMPATIBLE_PROVIDERS = {
 type OpenAICompatibleProvider = keyof typeof OPENAI_COMPATIBLE_PROVIDERS;
 
 function resolveOpenAICompatibleModel(provider: OpenAICompatibleProvider, modelId: string): ResolvedModel {
-    const { envVar, baseURL } = OPENAI_COMPATIBLE_PROVIDERS[provider];
-    const apiKey = process.env[envVar];
-    if (!apiKey) throw new Error(`${envVar} is not set`);
+    const entry = OPENAI_COMPATIBLE_PROVIDERS[provider];
+    const apiKey = process.env[entry.envVar];
+    if (!apiKey) throw new Error(`${entry.envVar} is not set`);
+    const baseURL: string | undefined = "baseURL" in entry ? entry.baseURL : undefined;
     return {
         model: createOpenAI({ apiKey, baseURL }).chat(modelId) as unknown as LanguageModel,
         provider,

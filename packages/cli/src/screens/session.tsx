@@ -17,6 +17,17 @@ import type { Message } from "../hooks/use-chat";
 import { apiClient } from "../lib/api-client";
 import { getErrorMessage } from "../lib/http-errors";
 import { useKeyboardLayer } from "../providers/Keyboard-layer";
+import { copyToClipboard } from "../lib/clipboard";
+
+function messageText(msg: Message): string {
+    const parts = Array.isArray(msg.parts) ? msg.parts : [];
+    const partText = parts
+        .filter((p) => p.type === "text")
+        .map((p) => (p as { text?: string }).text ?? "")
+        .join("");
+    if (partText) return partText;
+    return (msg as unknown as { content?: string }).content ?? "";
+}
 
 type SessionData = {
     id: string;
@@ -83,11 +94,13 @@ function SessionChat({
     const [initialMessages] = useState(() => session.messages as unknown as Message[]);
     const { mode, modelSelection } = usePromptConfig();
     const { isTopLayer } = useKeyboardLayer();
+    const toast = useToast();
     const { messages, status, submit, abort, interrupt, error } = useChat(
         session.id,
         initialMessages
     );
     const hasSubmittedInitialPromptRef = useRef(false);
+    const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
 
     useEffect(() => {
         return () => void abort();
@@ -97,6 +110,44 @@ function SessionChat({
         if (key.name === "escape" && isTopLayer("base") && status === "streaming") {
             key.preventDefault();
             interrupt();
+        }
+    });
+
+    useKeyboard((key) => {
+        if (!isTopLayer("base")) return;
+        if (key.name !== "y" && key.name !== "r") return;
+
+        if (key.name === "y") {
+            const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+            if (!lastAssistant) {
+                toast.show({ variant: "info", message: "No assistant output to copy yet" });
+                return;
+            }
+            const text = messageText(lastAssistant);
+            key.preventDefault();
+            void copyToClipboard(text).then((ok) => {
+                toast.show({
+                    variant: ok ? "success" : "error",
+                    message: ok
+                        ? "Copied last assistant output to clipboard"
+                        : "Clipboard unavailable on this platform",
+                });
+            });
+            return;
+        }
+
+        if (key.name === "r") {
+            const lastUser = [...messages].reverse().find((m) => m.role === "user");
+            if (!lastUser) {
+                toast.show({ variant: "info", message: "No prompt to re-send yet" });
+                return;
+            }
+            key.preventDefault();
+            setPrefill((prev) => ({
+                text: messageText(lastUser),
+                nonce: (prev?.nonce ?? 0) + 1,
+            }));
+            return;
         }
     });
 
@@ -115,6 +166,7 @@ function SessionChat({
             onSubmit={(text) => submit({ userText: text, mode, modelSelection })}
             loading={status === "submitted" || status === "streaming"}
             interruptible={status === "submitted" || status === "streaming"}
+            prefill={prefill}
         >
             {messages.map((msg) => (
                 <ChatMessage key={msg.id} msg={msg} />

@@ -138,6 +138,7 @@ export const ModelsDialogContent = () => {
     setSelectedModelId(provider.defaultModelId || "");
     setBaseUrl(provider.defaultBaseUrl || "");
     setApiKey("");
+    setView("form");
   };
 
   // Opens the same form used for "add", pre-filled from the connection.
@@ -385,7 +386,7 @@ export const ModelsDialogContent = () => {
             handleSelectCustom(item.id);
           }}
         >
-          <box flexShrink={0} overflow="hidden">
+          <box flexShrink={1} flexGrow={0} overflow="hidden">
             <text selectable={false} fg={isSelected ? "black" : "white"}>
               {item.label}
             </text>
@@ -565,7 +566,7 @@ export const ModelsDialogContent = () => {
                       onMouseMove={() => setModelSuggestIndex(index)}
                       onMouseDown={() => selectModelSuggestion(m)}
                     >
-                      <box flexShrink={0} overflow="hidden">
+                      <box flexShrink={1} flexGrow={0} overflow="hidden">
                         <text selectable={false} fg={isSelected ? "black" : "white"}>
                           {m.label}
                         </text>
@@ -651,7 +652,18 @@ export const ModelsDialogContent = () => {
     <box flexDirection="column" gap={1}>
       <DialogSearchList
         items={listItems}
-        onSelect={() => { }}
+        onSelect={(item: any) => {
+          if (item.kind === "builtin") {
+            handleSelectBuiltin();
+          } else if (item.kind === "custom") {
+            // Mirror the mousedown guard on the row: don't select out from
+            // under an in-progress delete confirmation.
+            if (deleteConfirmId === item.id) return;
+            handleSelectCustom(item.id);
+          } else if (item.kind === "provider") {
+            handleSelectProvider(item.provider);
+          }
+        }}
         onHighlight={(item: any) => {
           // Don't let a stale "delete this?" prompt linger on a row the
           // user has since navigated away from.

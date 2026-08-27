@@ -34,9 +34,15 @@ export function Home() {
       <Header />
       <box width="100%" maxWidth={78} paddingX={2} flexDirection="column" gap={1}>
         <InputBar onSubmit={handleSubmit} />
-        <box flexDirection="row" gap={1} flexShrink={0} marginLeft="auto">
-          <text>tab</text>
-          <text attributes={TextAttributes.DIM}>agents</text>
+        <box flexDirection="row" gap={2} flexShrink={0} marginLeft="auto">
+          <box flexDirection="row" gap={1}>
+            <text>tab</text>
+            <text attributes={TextAttributes.DIM}>mode</text>
+          </box>
+          <box flexDirection="row" gap={1}>
+            <text>/</text>
+            <text attributes={TextAttributes.DIM}>commands</text>
+          </box>
         </box>
       </box>
     </box>

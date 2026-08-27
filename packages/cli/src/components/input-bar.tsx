@@ -266,6 +266,8 @@ function FileMentionMenu({
 type Props = {
   onSubmit: (text: string) => void;
   disabled?: boolean;
+  /** When set, loads the given text into the input for the caller (e.g. re-send). */
+  prefill?: { text: string; nonce: number } | null;
 };
 
 export const TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
@@ -275,7 +277,7 @@ export const TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
   { name: "enter", shift: true, action: "newline" },
 ];
 
-export function InputBar({ onSubmit, disabled = false }: Props) {
+export function InputBar({ onSubmit, disabled = false, prefill = null }: Props) {
   const { mode, toggleMode, setMode, setModel } = usePromptConfig();
   const textareaRef = useRef<TextareaRenderable>(null);
   const onSubmitRef = useRef<() => void>(() => { });
@@ -457,6 +459,16 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
       onSubmitRef.current();
     };
   }, []);
+
+  const prefillNonceRef = useRef<number>(0);
+  useEffect(() => {
+    if (!prefill || disabled) return;
+    if (prefill.nonce === prefillNonceRef.current) return;
+
+    prefillNonceRef.current = prefill.nonce;
+    textareaRef.current?.setText(prefill.text);
+    textareaRef.current?.focus();
+  }, [prefill, disabled]);
 
   onSubmitRef.current = () => {
     if (disabled) return;
