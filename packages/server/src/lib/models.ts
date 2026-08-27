@@ -9,7 +9,7 @@ import { db } from "@ANCIENT/database/client";
 import { decryptApiKey } from "./connection-crypto";
 import { assertSafeBaseUrl } from "./safe-url";
 import type { ChatModelSelection, SupportedChatModel, SupportedProvider } from "@ANCIENT/shared";
-import { findSupportedChatModel } from "@ANCIENT/shared";
+import { findSupportedChatModel, DEFAULT_CHAT_MODEL_ID } from "@ANCIENT/shared";
 
 export type ResolvedModel = {
     model: LanguageModel;
@@ -145,6 +145,20 @@ function resolveSupportedChatModel(model: SupportedChatModel): ResolvedModel {
             throw new Error(`${model.provider} models require a BYOK connection. Add one via the model picker.`);
         default:
             throw new Error("Unsupported provider");
+    }
+}
+
+// ---- Fallback helper (after a rate limit) ----
+// Cheap, dependency-free fallback target: the builtin default model. Never
+// throws — returns null when the builtin can't be resolved (e.g. its backing
+// env var is unset), so the caller can move on to the next candidate.
+export function resolveBuiltinFallbackModel(): ResolvedModel | null {
+    const model = findSupportedChatModel(DEFAULT_CHAT_MODEL_ID);
+    if (!model) return null;
+    try {
+        return resolveSupportedChatModel(model);
+    } catch {
+        return null;
     }
 }
 
