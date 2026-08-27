@@ -15,6 +15,7 @@ type Props = {
   inputDisabled?: boolean;
   loading?: boolean;
   interruptible?: boolean;
+  prefill?: { text: string; nonce: number } | null;
 };
 
 export function SessionShell({
@@ -23,6 +24,7 @@ export function SessionShell({
   inputDisabled = false,
   loading = false,
   interruptible = false,
+  prefill = null,
 }: Props) {
   const { mode } = usePromptConfig();
 
@@ -40,7 +42,7 @@ export function SessionShell({
         <box>{children}</box>
       </scrollbox>
       <box flexShrink={0}>
-        <InputBar onSubmit={onSubmit} disabled={inputDisabled} />
+        <InputBar onSubmit={onSubmit} disabled={inputDisabled} prefill={prefill} />
       </box>
       <box
         flexShrink={0}
@@ -55,9 +57,11 @@ export function SessionShell({
           {loading ? (
             <>
               <Spinner mode={mode} />
-              {interruptible ? <text>esc to interrupt</text> : null}
+              {interruptible ? <text attributes={TextAttributes.DIM}>esc to interrupt</text> : null}
             </>
-          ) : null}
+          ) : (
+            <text attributes={TextAttributes.DIM}>y copy · r re-send</text>
+          )}
         </box>
 
         <box flexDirection="row" gap={1} flexShrink={0} marginLeft="auto">
