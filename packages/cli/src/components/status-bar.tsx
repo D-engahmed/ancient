@@ -5,10 +5,12 @@ import { usePromptConfig } from "../providers/prompt-config";
 import { Mode, SUPPORTED_CHAT_MODELS } from "@ANCIENT/shared";
 import { useEffect, useState } from "react";
 import { apiClient } from "../lib/api-client";
+import { useWorkspace } from "../hooks/use-workspace";
 
 export function StatusBar() {
   const { mode, modelSelection } = usePromptConfig();
   const { colors } = useTheme();
+  const { workspace, latency } = useWorkspace();
   const [customLabel, setCustomLabel] = useState<string | null>(null);
   const [customModelId, setCustomModelId] = useState<string | null>(null);
 
@@ -48,8 +50,13 @@ export function StatusBar() {
     else displayModel = modelSelection.connectionId.slice(0, 8);
   }
 
+  const pm = workspace?.packageManager?.name;
+  const branch = workspace?.git?.branch;
+  const dirty = workspace?.git?.dirty;
+  const serverStats = latency.stats("server");
+
   return (
-    <box flexDirection="row" gap={1}>
+    <box flexDirection="row" gap={1} alignItems="center">
       <text fg={mode === Mode.PLAN ? colors.planMode : colors.primary}>
         {mode === Mode.PLAN ? "Plan" : "Build"}
       </text>
@@ -57,6 +64,25 @@ export function StatusBar() {
         ›
       </text>
       <text>{displayModel}</text>
+      {pm ? (
+        <>
+          <text attributes={TextAttributes.DIM} fg={colors.dimSeparator}>
+            ›
+          </text>
+          <text fg={colors.info}>{pm}</text>
+        </>
+      ) : null}
+      {branch ? (
+        <text attributes={TextAttributes.DIM}>
+          {branch}
+          {dirty ? ` ${colors.error}●` : ""}
+        </text>
+      ) : null}
+      {serverStats.samples > 0 ? (
+        <text attributes={TextAttributes.DIM} fg={serverStats.meetsTarget ? colors.success : colors.error}>
+          {Math.round(serverStats.p95Ms)}ms
+        </text>
+      ) : null}
     </box>
   );
 }

@@ -13,6 +13,7 @@ import providerConnections from "./routes/provider-connections";
 import extensions from "./routes/extensions";
 import usage from "./routes/usage";
 import agent from "./routes/agent";
+import pipeline from "./routes/pipeline";
 
 const app = new Hono();
 
@@ -42,6 +43,7 @@ app.use("/provider-connections/*", requireAuth);
 app.use("/extensions/*", requireAuth);
 app.use("/usage/*", requireAuth);
 app.use("/agent/*", requireAuth);
+app.use("/pipeline/*", requireAuth);
 
 const routes = app
   .route("/auth", auth)
@@ -50,7 +52,8 @@ const routes = app
   .route("/provider-connections", providerConnections)
   .route("/extensions", extensions)
   .route("/usage", usage)
-  .route("/agent", agent);
+  .route("/agent", agent)
+  .route("/pipeline", pipeline);
 
 export type AppType = typeof routes;
 export default { port: 3000, fetch: app.fetch, idleTimeout: 255 };

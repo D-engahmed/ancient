@@ -101,4 +101,15 @@ export const apiClient = {
     list: () => request<any[]>("/usage"),
     get: (connectionId: string) => request(`/usage/${connectionId}`),
   },
+  pipeline: {
+    start: (cwd: string, stages?: string[]) =>
+      request<{ id: string }>("/pipeline", {
+        method: "POST",
+        body: stages ? { cwd, stages } : { cwd },
+      }),
+    status: (id: string) =>
+      request<{ id: string; status: string; result?: any; error?: string }>(
+        `/pipeline/status/${id}`
+      ),
+  },
 };
