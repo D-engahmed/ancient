@@ -18,6 +18,13 @@ import { apiClient } from "../lib/api-client";
 import { getErrorMessage } from "../lib/http-errors";
 import { useKeyboardLayer } from "../providers/Keyboard-layer";
 import { copyToClipboard } from "../lib/clipboard";
+import {
+  openLearningStore,
+  saveObservations,
+  defaultLearningFile,
+  LearningStore,
+  cliLatency,
+} from "../lib/experience";
 
 function messageText(msg: Message): string {
     const parts = Array.isArray(msg.parts) ? msg.parts : [];
@@ -27,6 +34,21 @@ function messageText(msg: Message): string {
         .join("");
     if (partText) return partText;
     return (msg as unknown as { content?: string }).content ?? "";
+}
+
+function extractErrorCode(message: string): string | null {
+    const match = message.match(/([A-Z][A-Z0-9]{1,9}\d{2,4})/);
+    return match ? match[1]! : null;
+}
+
+function makeRecorder(cwd: string) {
+    const file = defaultLearningFile(cwd);
+    // Synchronous best-effort open; persistence happens on meaningful events.
+    const learning = new LearningStore();
+    void openLearningStore(file).then((store) => {
+        learning.recordMany(store.all);
+    });
+    return { learning, file };
 }
 
 type SessionData = {
@@ -115,6 +137,11 @@ function SessionChat({
 
     useKeyboard((key) => {
         if (!isTopLayer("base")) return;
+        // Require ctrl+shift so these chords never hijack ordinary typing:
+        // bare `y`/`r` must keep inserting text into the input. On terminals
+        // that don't report the shift modifier, the chord still arrives as
+        // `name === "y"`/`"r"` (see opentui's KeyHandler / modifyOtherKeys).
+        if (!key.ctrl || !key.shift) return;
         if (key.name !== "y" && key.name !== "r") return;
 
         if (key.name === "y") {
@@ -160,6 +187,46 @@ function SessionChat({
             modelSelection: initialPrompt.model,
         });
     }, [initialPrompt, submit]);
+
+    // Learning: record preference and error-pattern observations.
+    const recorderRef = useRef<ReturnType<typeof makeRecorder> | null>(null);
+    if (!recorderRef.current) {
+        recorderRef.current = makeRecorder(process.cwd());
+    }
+    const recorder = recorderRef.current;
+
+    useEffect(() => {
+        recorder.learning.record({ kind: "mode", value: mode, at: Date.now() });
+        recorder.learning.record({
+            kind: "model",
+            value: modelSelection.modelKind === "builtin" ? modelSelection.modelId : "custom",
+            at: Date.now(),
+        });
+    }, [recorder, mode, modelSelection]);
+
+    useEffect(() => {
+        if (!error) return;
+        const code = extractErrorCode(error.message);
+        if (code) {
+            recorder.learning.record({ kind: "error", code, at: Date.now() });
+            void saveObservations(recorder.file, recorder.learning.all);
+        }
+    }, [recorder, error]);
+
+    // Performance: record server round-trip latency when a submit leaves the
+    // streaming/submitted state (i.e. a chat request completed).
+    const runStartRef = useRef<number | null>(null);
+    const wasRunningRef = useRef(false);
+    useEffect(() => {
+        const isRunning = status === "submitted" || status === "streaming";
+        if (isRunning && !wasRunningRef.current) {
+            runStartRef.current = performance.now();
+        } else if (!isRunning && wasRunningRef.current && runStartRef.current != null) {
+            cliLatency.record("server", performance.now() - runStartRef.current);
+            runStartRef.current = null;
+        }
+        wasRunningRef.current = isRunning;
+    }, [status]);
 
     return (
         <SessionShell

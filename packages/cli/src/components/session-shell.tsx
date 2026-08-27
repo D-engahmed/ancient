@@ -60,7 +60,7 @@ export function SessionShell({
               {interruptible ? <text attributes={TextAttributes.DIM}>esc to interrupt</text> : null}
             </>
           ) : (
-            <text attributes={TextAttributes.DIM}>y copy · r re-send</text>
+            <text attributes={TextAttributes.DIM}>ctrl+shift+y copy · ctrl+shift+r re-send</text>
           )}
         </box>
 

@@ -17,6 +17,7 @@ import {
 import { API_URL, apiClient } from "../lib/api-client";
 import { getAuth } from "../lib/auth";
 import { executeLocalTool } from "../lib/local-tools";
+import { cliLatency } from "../lib/experience";
 
 export type ChatMessageMetadata = {
   mode?: ModeType;
@@ -82,21 +83,23 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
       // behavior.
       const toolIdentifier = (toolCall as any).tool ?? (toolCall as any).name ?? (toolCall as any).toolName;
 
-      void executeLocalTool(toolIdentifier, toolCall.input as Record<string, unknown>, mode)
-        .then((output) =>
-          chat.addToolResult({
-            toolCallId: toolCall.toolCallId,
-            tool: toolIdentifier,
-            output: output as unknown,
-          }),
-        )
-        .catch((error) =>
-          chat.addToolResult({
-            toolCallId: toolCall.toolCallId,
-            tool: toolIdentifier,
-            output: `Error: ${error instanceof Error ? error.message : String(error)}` as unknown,
-          }),
-        );
+      void cliLatency.trace("tools", () =>
+        executeLocalTool(toolIdentifier, toolCall.input as Record<string, unknown>, mode)
+          .then((output) =>
+            chat.addToolResult({
+              toolCallId: toolCall.toolCallId,
+              tool: toolIdentifier,
+              output: output as unknown,
+            }),
+          )
+          .catch((error) =>
+            chat.addToolResult({
+              toolCallId: toolCall.toolCallId,
+              tool: toolIdentifier,
+              output: `Error: ${error instanceof Error ? error.message : String(error)}` as unknown,
+            }),
+          ),
+      );
     },
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
   });

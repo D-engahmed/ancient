@@ -17,8 +17,9 @@ import {
 
 import { createToolsAsync } from "../tools";
 import { buildSystemPrompt } from "../system-prompt";
-import { resolveChatModel, resolveFreeModel, type ResolvedModel } from "../lib/models";
+import { resolveChatModel, resolveFreeModel, resolveBuiltinFallbackModel, type ResolvedModel } from "../lib/models";
 import { modelKey, checkCooldown, recordRateLimitFailure, isRateLimitError, RateLimitCooldownError } from "../lib/rate-limit-breaker";
+import { pickHealthyFallback, asFallbackCandidate } from "../lib/fallback";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 import { loadSettings, type AncientSettings } from "../hooks/settings";
 import { runHooks, type HookContext } from "../hooks/runner";
@@ -45,6 +46,34 @@ function toolCallParts(parts: MessagePart[]) {
   return parts.filter(
     (p): p is Extract<MessagePart, { type: "tool-call" }> => p.type === "tool-call",
   );
+}
+
+/**
+ * Bounded graceful fallback when the user-selected model is rate-limited.
+ * Returns a healthy alternative (never the primary itself, never one currently
+ * on cooldown) in priority order: the configured freeModel, then the builtin
+ * default. Returns null when no candidate is resolvable/healthy — in that case
+ * the caller throws the normal cooldown error so the user's explicit model
+ * choice is still respected (and never silently replaced by a model we know
+ * is also rate-limited, which would just produce a second confusing failure).
+ */
+function selectHealthyFallbackModel(
+  settings: AncientSettings,
+  primaryRlKey: string,
+): { resolved: ResolvedModel; isFree: boolean } | null {
+  const candidates: Array<{ resolved: ResolvedModel; isFree: boolean }> = [];
+
+  const free = resolveFreeModel(settings.modelRouting?.freeModel);
+  if (free) candidates.push({ resolved: free, isFree: true });
+
+  const builtin = resolveBuiltinFallbackModel();
+  if (builtin) candidates.push({ resolved: builtin, isFree: false });
+
+  const picked = pickHealthyFallback(
+    candidates.map((c) => asFallbackCandidate(c.resolved, c.isFree)),
+    primaryRlKey,
+  );
+  return picked ? { resolved: picked.resolved, isFree: picked.isFree } : null;
 }
 
 /**
@@ -154,26 +183,67 @@ type StreamParams = {
 
 async function streamAIResponse(params: StreamParams): Promise<Response> {
   const {
-    sessionId, userId, selection, preResolved, routeReason,
+    sessionId, userId, selection, preResolved, routeReason: initialRouteReason,
     cwd, history, mode, settings, hookContext, abortController,
   } = params;
   const startTime = Date.now();
   const parts: MessagePart[] = [];
 
-  const resolved = preResolved ?? await resolveChatModel(selection, userId);
-  const model = resolved.model;
-  const apiKey = resolved.apiKey;
+  // Mutable — a rate-limit fallback (below) replaces the effective model and
+  // rewrites the human-facing routing note for this turn.
+  let routeReason = initialRouteReason;
+
+  let resolved = preResolved ?? await resolveChatModel(selection, userId);
+  // True when this turn is run on the free lane (either pre-routed by the
+  // model router, or adopted as a rate-limit fallback). Drives how the turn's
+  // model is reported/persisted (free:... ref) below.
+  let usedFreeLane = Boolean(preResolved);
+  // True when a rate-limit fallback replaced this turn's model. Drives the
+  // persisted/meta model ref so it reflects what actually ran, not the
+  // user's (unavailable) original selection.
+  let fellBack = false;
 
   // Fail fast if this exact model tripped a rate limit recently, instead of
   // spending another ~3-attempt retry cycle (each with backoff) against a
   // limit that hasn't reset yet — that multi-attempt round trip is why the
-  // error in the screenshot/log took a while to surface and then repeated on
-  // every retry. See rate-limit-breaker.ts.
-  const rlKey = modelKey(resolved.provider, resolved.modelId);
+  // error took a while to surface and then repeated on every retry. See
+  // rate-limit-breaker.ts. BUT: for a weak/free BYOK model (the core
+  // assumption is that these must degrade gracefully, not take the whole turn
+  // down), we don't just throw — we first try a healthy fallback model for
+  // this reply. Only if no healthy alternative exists do we surface the
+  // cooldown error. Note this deliberately skips the fallback for a router
+  // pre-resolved free lane (we never replace what the router already picked).
+  let rlKey = modelKey(resolved.provider, resolved.modelId);
   const cooldown = checkCooldown(rlKey);
-  if (cooldown.onCooldown) {
-    throw new RateLimitCooldownError(resolved.modelId, cooldown.retryAfterSeconds);
+  if (cooldown.onCooldown && !preResolved) {
+    const fallback = selectHealthyFallbackModel(settings, rlKey);
+    if (fallback) {
+      usedFreeLane = fallback.isFree || usedFreeLane;
+      fellBack = true;
+      log.info("selected model on cooldown — falling back for this turn", {
+        sessionId,
+        blocked: resolved.modelId,
+        retryAfterSeconds: cooldown.retryAfterSeconds,
+        fallback: fallback.resolved.modelId,
+      });
+      const primaryWas = resolved.modelId;
+      resolved = fallback.resolved;
+      rlKey = modelKey(resolved.provider, resolved.modelId);
+      routeReason = `your selected model (\`${primaryWas}\`) is rate-limited (~${cooldown.retryAfterSeconds}s) — using \`${resolved.modelId}\` for this reply instead`;
+    } else {
+      throw new RateLimitCooldownError(resolved.modelId, cooldown.retryAfterSeconds);
+    }
   }
+
+  const model = resolved.model;
+  const apiKey = resolved.apiKey;
+  // The model ref this turn actually ran on — surfaced in persisted messages
+  // and stream metadata (see messageMetadata below).
+  const usedModelRef = usedFreeLane
+    ? `free:${resolved.modelId}`
+    : fellBack
+      ? `fallback:${resolved.modelId}`
+      : selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
 
   // ---- Assemble the layered system prompt (each block self-budgets) ----
   let memoryBlock = "";
@@ -374,9 +444,7 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
         parts.length > 0 ? (messagePartsSchema.parse(parts) as Prisma.InputJsonValue) : undefined;
 
       const modelKind = selection.modelKind;
-      const modelRef = preResolved
-        ? `free:${resolved.modelId}`
-        : selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
+      const modelRef = usedModelRef;
 
       await db.message.create({
         data: {
@@ -407,9 +475,7 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
     onError: async ({ error }) => {
       const errMsg = sanitizeError(error);
       const modelKind = selection.modelKind;
-      const modelRef = preResolved
-        ? `free:${resolved.modelId}`
-        : selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
+      const modelRef = usedModelRef;
       const cause = (error as { cause?: unknown })?.cause;
       const unwrapped = RetryError.isInstance(error) ? error.lastError : error;
 
@@ -470,7 +536,7 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
       const elapsedMs = Date.now() - startTime;
       const validatedParts = parts.length ? (messagePartsSchema.parse(parts) as Prisma.InputJsonValue) : undefined;
       const modelKind = selection.modelKind;
-      const modelRef = selection.modelKind === "builtin" ? selection.modelId : selection.connectionId;
+      const modelRef = usedModelRef;
       await db.message.create({
         data: {
           sessionId,
@@ -494,14 +560,12 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
     onError: (error) => sanitizeError(error),
 
     messageMetadata: ({ part }) => {
+      const turnModel = usedModelRef;
+
       if (part.type === "start") {
         return {
           mode,
-          model: preResolved
-            ? `free:${resolved.modelId}`
-            : selection.modelKind === "builtin"
-              ? selection.modelId
-              : selection.connectionId,
+          model: turnModel,
           routed: routeReason,
         };
       }
@@ -509,11 +573,7 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
       if (part.type === "finish") {
         return {
           mode,
-          model: preResolved
-            ? `free:${resolved.modelId}`
-            : selection.modelKind === "builtin"
-              ? selection.modelId
-              : selection.connectionId,
+          model: turnModel,
           routed: routeReason,
           durationMs: Date.now() - startTime,
           usage: part.totalUsage,
