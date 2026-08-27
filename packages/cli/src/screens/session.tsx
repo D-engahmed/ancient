@@ -137,6 +137,11 @@ function SessionChat({
 
     useKeyboard((key) => {
         if (!isTopLayer("base")) return;
+        // Require ctrl+shift so these chords never hijack ordinary typing:
+        // bare `y`/`r` must keep inserting text into the input. On terminals
+        // that don't report the shift modifier, the chord still arrives as
+        // `name === "y"`/`"r"` (see opentui's KeyHandler / modifyOtherKeys).
+        if (!key.ctrl || !key.shift) return;
         if (key.name !== "y" && key.name !== "r") return;
 
         if (key.name === "y") {
