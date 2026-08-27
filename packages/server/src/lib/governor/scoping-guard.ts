@@ -28,11 +28,11 @@ function classify(filePath: string): ScopeTag {
     }
     const routeMatch = filePath.match(/\/routes\/([^/]+)$/);
     if (routeMatch) {
-        return { kind: "route-handler", file: routeMatch[1] };
+        return { kind: "route-handler", file: routeMatch[1]! };
     }
     const toolMatch = filePath.match(/\/tools\/([^/]+)$/);
     if (toolMatch) {
-        return { kind: "tool-definition", file: toolMatch[1] };
+        return { kind: "tool-definition", file: toolMatch[1]! };
     }
     if (/^packages\/server\//.test(filePath)) {
         return { kind: "server-other" };

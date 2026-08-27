@@ -25,7 +25,7 @@ async function getMasterKey(): Promise<CryptoKey> {
     return masterKeyPromise;
 }
 
-export async function encryptApiKey(plaintext: string): Promise<Uint8Array> {
+export async function encryptApiKey(plaintext: string): Promise<Uint8Array<ArrayBuffer>> {
     const key = await getMasterKey();
     const iv = crypto.getRandomValues(new Uint8Array(12)) as CryptoIv;
     const encoder = new TextEncoder();
