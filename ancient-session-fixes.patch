@@ -1,0 +1,1028 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+new file mode 100644
+index 0000000..21216fa
+--- /dev/null
++++ b/.github/workflows/ci.yml
+@@ -0,0 +1,49 @@
++name: CI
++
++on:
++  push:
++    branches: [main, master, agent]
++  pull_request:
++
++jobs:
++  typecheck:
++    name: Typecheck
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: oven-sh/setup-bun@v2
++        with:
++          bun-version: latest
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 22
++      - run: bun install --frozen-lockfile
++      - run: bun run typecheck
++
++  test:
++    name: Test
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: oven-sh/setup-bun@v2
++        with:
++          bun-version: latest
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 22
++      - run: bun install --frozen-lockfile
++      - run: bun test
++
++  build:
++    name: Build
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: oven-sh/setup-bun@v2
++        with:
++          bun-version: latest
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 22
++      - run: bun install --frozen-lockfile
++      - run: bun run build:cli
+diff --git a/package.json b/package.json
+index 73dc1c6..9e7cf3e 100644
+--- a/package.json
++++ b/package.json
+@@ -8,7 +8,9 @@
+   "scripts": {
+     "dev:cli": "bun run --watch packages/cli/src/index.tsx",
+     "dev:server": "bun --hot run packages/server/src/index.ts",
+-    "test": "bun test"
++    "test": "bun test",
++    "typecheck": "bunx tsc -p packages/shared/tsconfig.json --noEmit && bunx tsc -p packages/agent/tsconfig.json --noEmit && bunx tsc -p packages/server/tsconfig.json --noEmit && bunx tsc -p packages/cli/tsconfig.json --noEmit && bunx tsc -p packages/database/tsconfig.json --noEmit",
++    "build:cli": "bun run --cwd packages/cli build"
+   },
+   "devDependencies": {
+     "@types/bun": "latest"
+diff --git a/packages/agent/src/backends/ModelRouter.ts b/packages/agent/src/backends/ModelRouter.ts
+deleted file mode 100644
+index fd4ef75..0000000
+--- a/packages/agent/src/backends/ModelRouter.ts
++++ /dev/null
+@@ -1,56 +0,0 @@
+-import { ProviderFactory } from "./ProviderFactory";
+-import { logger } from "../utils/Logger";
+-
+-export class ModelRouter {
+-    private providerRegistry: ProviderRegistry;
+-    private healthChecker: HealthChecker;
+-    private latencyOptimizer: LatencyOptimizer;
+-
+-    constructor() {
+-        this.providerRegistry = new ProviderRegistry();
+-        this.healthChecker = new HealthChecker();
+-        this.latencyOptimizer = new LatencyOptimizer();
+-    }
+-
+-    async route(agentConfig: AgentConfig): Promise<Provider> {
+-        -    const provider = this.providerRegistry.getProvider(agentConfig.provider);
+-        -    return provider;
+-        // BUG FIX: Implement intelligent routing with health checks
+-        const providers = this.providerRegistry.getProvidersForModel(agentConfig.model);
+-
+-        if (!providers.length) {
+-            throw new Error(`No providers available for model: ${agentConfig.model}`);
+-        }
+-
+-        // PERFORMANCE FIX: Optimize for latency and cost
+-        const optimizedProvider = await this.latencyOptimizer.selectOptimalProvider(
+-            providers,
+-            {
+-                preferredProvider: agentConfig.provider,
+-                costPreference: agentConfig.costPreference || 'balanced',
+-                latencyThreshold: agentConfig.latencyThreshold || 2000
+-            }
+-        );
+-
+-        // RELIABILITY FIX: Check provider health before routing
+-        const healthStatus = await this.healthChecker.checkProviderHealth(optimizedProvider);
+-
+-        if (!healthStatus.isHealthy) {
+-            logger.warn(`Provider ${optimizedProvider.name} is unhealthy, attempting fallback...`);
+-
+-            // Try fallback providers
+-            const fallbackProviders = providers.filter(p => p !== optimizedProvider);
+-            for (const fallback of fallbackProviders) {
+-                const fallbackHealth = await this.healthChecker.checkProviderHealth(fallback);
+-                if (fallbackHealth.isHealthy) {
+-                    logger.info(`Using fallback provider: ${fallback.name}`);
+-                    return fallback;
+-                }
+-            }
+-
+-            throw new Error(`All providers for model ${agentConfig.model} are unhealthy`);
+-        }
+-
+-        return optimizedProvider;
+-    }
+-}
+\ No newline at end of file
+diff --git a/packages/agent/src/backends/registry.ts b/packages/agent/src/backends/registry.ts
+deleted file mode 100644
+index 3dc8d60..0000000
+--- a/packages/agent/src/backends/registry.ts
++++ /dev/null
+@@ -1,99 +0,0 @@
+-/**
+- * Backend Registry
+- * 
+- * Maintains a catalog of available models and their capabilities.
+- */
+-
+-import type { ModelInfo, BackendConfig } from "../types";
+-
+-export class BackendRegistry {
+-    private models = new Map<string, ModelInfo>();
+-
+-    constructor() {
+-        this.registerDefaults();
+-    }
+-
+-    register(model: ModelInfo): void {
+-        this.models.set(model.id, model);
+-    }
+-
+-    get(modelId: string): ModelInfo | undefined {
+-        return this.models.get(modelId);
+-    }
+-
+-    list(provider?: string): ModelInfo[] {
+-        const all = Array.from(this.models.values());
+-        return provider ? all.filter(m => m.provider === provider) : all;
+-    }
+-
+-    findByCapability(capability: string): ModelInfo[] {
+-        return Array.from(this.models.values()).filter(m =>
+-            m.capabilities.includes(capability)
+-        );
+-    }
+-
+-    getCheapestModel(minTier: ModelInfo["tier"] = "free"): ModelInfo | undefined {
+-        const tiers = { free: 0, cheap: 1, standard: 2, premium: 3 };
+-        const minTierValue = tiers[minTier];
+-
+-        return Array.from(this.models.values())
+-            .filter(m => tiers[m.tier] >= minTierValue)
+-            .sort((a, b) => a.pricing.inputPer1k - b.pricing.inputPer1k)[0];
+-    }
+-
+-    private registerDefaults(): void {
+-        this.register({
+-            id: "gpt-4o",
+-            provider: "openai",
+-            contextWindow: 128000,
+-            maxOutputTokens: 4096,
+-            supportsTools: true,
+-            supportsVision: true,
+-            supportsStreaming: true,
+-            pricing: { inputPer1k: 0.005, outputPer1k: 0.015 },
+-            capabilities: ["code", "vision", "tools", "reasoning"],
+-            tier: "premium",
+-        });
+-
+-        this.register({
+-            id: "gpt-4o-mini",
+-            provider: "openai",
+-            contextWindow: 128000,
+-            maxOutputTokens: 4096,
+-            supportsTools: true,
+-            supportsVision: true,
+-            supportsStreaming: true,
+-            pricing: { inputPer1k: 0.00015, outputPer1k: 0.0006 },
+-            capabilities: ["code", "vision", "tools"],
+-            tier: "cheap",
+-        });
+-
+-        this.register({
+-            id: "claude-3-5-sonnet-20241022",
+-            provider: "anthropic",
+-            contextWindow: 200000,
+-            maxOutputTokens: 8192,
+-            supportsTools: true,
+-            supportsVision: true,
+-            supportsStreaming: true,
+-            pricing: { inputPer1k: 0.003, outputPer1k: 0.015 },
+-            capabilities: ["code", "vision", "tools", "reasoning"],
+-            tier: "premium",
+-        });
+-
+-        this.register({
+-            id: "mistralai/devstral-2512:free",
+-            provider: "openrouter",
+-            contextWindow: 128000,
+-            maxOutputTokens: 4096,
+-            supportsTools: true,
+-            supportsVision: false,
+-            supportsStreaming: true,
+-            pricing: { inputPer1k: 0, outputPer1k: 0 },
+-            capabilities: ["code", "tools"],
+-            tier: "free",
+-        });
+-    }
+-}
+-
+-export const defaultRegistry = new BackendRegistry();
+\ No newline at end of file
+diff --git a/packages/cli/src/components/header.tsx b/packages/cli/src/components/header.tsx
+index 1abfe22..528eca2 100644
+--- a/packages/cli/src/components/header.tsx
++++ b/packages/cli/src/components/header.tsx
+@@ -1,13 +1,18 @@
+ // copyright (c) Microsoft Corporation. All rights reserved.
+ // Licensed under the MIT License. 
+ // file: packages/cli/src/components/header.tsx
++import { TextAttributes } from "@opentui/core";
++
+ export function Header() {
+   return (
+-    <box justifyContent="center" alignItems="center">
++    <box justifyContent="center" alignItems="center" flexDirection="column" gap={1}>
+       <box flexDirection="row" justifyContent="center" gap={0.5} alignItems="center">
+         <ascii-font font="tiny" text="ANCIENT " color="#959b8f" />
+         <ascii-font font="tiny" text="Coder" color="#7eb0aa" />
+       </box>
++      <text attributes={TextAttributes.DIM} fg="#5b5f66">
++        a lightweight coding agent for your repository
++      </text>
+     </box>
+   );
+ };
+diff --git a/packages/cli/src/components/input-bar.tsx b/packages/cli/src/components/input-bar.tsx
+index e6f7956..5375dc2 100644
+--- a/packages/cli/src/components/input-bar.tsx
++++ b/packages/cli/src/components/input-bar.tsx
+@@ -266,6 +266,8 @@ function FileMentionMenu({
+ type Props = {
+   onSubmit: (text: string) => void;
+   disabled?: boolean;
++  /** When set, loads the given text into the input for the caller (e.g. re-send). */
++  prefill?: { text: string; nonce: number } | null;
+ };
+ 
+ export const TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
+@@ -275,7 +277,7 @@ export const TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
+   { name: "enter", shift: true, action: "newline" },
+ ];
+ 
+-export function InputBar({ onSubmit, disabled = false }: Props) {
++export function InputBar({ onSubmit, disabled = false, prefill = null }: Props) {
+   const { mode, toggleMode, setMode, setModel } = usePromptConfig();
+   const textareaRef = useRef<TextareaRenderable>(null);
+   const onSubmitRef = useRef<() => void>(() => { });
+@@ -458,6 +460,16 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
+     };
+   }, []);
+ 
++  const prefillNonceRef = useRef<number>(0);
++  useEffect(() => {
++    if (!prefill || disabled) return;
++    if (prefill.nonce === prefillNonceRef.current) return;
++
++    prefillNonceRef.current = prefill.nonce;
++    textareaRef.current?.setText(prefill.text);
++    textareaRef.current?.focus();
++  }, [prefill, disabled]);
++
+   onSubmitRef.current = () => {
+     if (disabled) return;
+ 
+diff --git a/packages/cli/src/components/session-shell.tsx b/packages/cli/src/components/session-shell.tsx
+index 045cbb0..fce8fa4 100644
+--- a/packages/cli/src/components/session-shell.tsx
++++ b/packages/cli/src/components/session-shell.tsx
+@@ -15,6 +15,7 @@ type Props = {
+   inputDisabled?: boolean;
+   loading?: boolean;
+   interruptible?: boolean;
++  prefill?: { text: string; nonce: number } | null;
+ };
+ 
+ export function SessionShell({
+@@ -23,6 +24,7 @@ export function SessionShell({
+   inputDisabled = false,
+   loading = false,
+   interruptible = false,
++  prefill = null,
+ }: Props) {
+   const { mode } = usePromptConfig();
+ 
+@@ -40,7 +42,7 @@ export function SessionShell({
+         <box>{children}</box>
+       </scrollbox>
+       <box flexShrink={0}>
+-        <InputBar onSubmit={onSubmit} disabled={inputDisabled} />
++        <InputBar onSubmit={onSubmit} disabled={inputDisabled} prefill={prefill} />
+       </box>
+       <box
+         flexShrink={0}
+@@ -55,9 +57,11 @@ export function SessionShell({
+           {loading ? (
+             <>
+               <Spinner mode={mode} />
+-              {interruptible ? <text>esc to interrupt</text> : null}
++              {interruptible ? <text attributes={TextAttributes.DIM}>esc to interrupt</text> : null}
+             </>
+-          ) : null}
++          ) : (
++            <text attributes={TextAttributes.DIM}>y copy · r re-send</text>
++          )}
+         </box>
+ 
+         <box flexDirection="row" gap={1} flexShrink={0} marginLeft="auto">
+diff --git a/packages/cli/src/lib/clipboard.ts b/packages/cli/src/lib/clipboard.ts
+new file mode 100644
+index 0000000..23988f1
+--- /dev/null
++++ b/packages/cli/src/lib/clipboard.ts
+@@ -0,0 +1,32 @@
++import { execFileSync } from "node:child_process";
++
++function platformClipCommand(): string[] | null {
++  switch (process.platform) {
++    case "win32":
++      return ["clip"];
++    case "darwin":
++      return ["pbcopy"];
++    case "linux":
++      return process.env.WAYLAND_DISPLAY ? ["wl-copy"] : ["xclip", "-selection", "clipboard"];
++    default:
++      return null;
++  }
++}
++
++export async function copyToClipboard(text: string): Promise<boolean> {
++  const command = platformClipCommand();
++  if (!command) return false;
++
++  const cmd = command[0]!;
++  const args = command.slice(1);
++  try {
++    execFileSync(cmd, args, {
++      input: text,
++      stdio: ["pipe", "ignore", "ignore"],
++      windowsHide: true,
++    });
++    return true;
++  } catch {
++    return false;
++  }
++}
+diff --git a/packages/cli/src/screens/home.tsx b/packages/cli/src/screens/home.tsx
+index 512740b..6a19cf0 100644
+--- a/packages/cli/src/screens/home.tsx
++++ b/packages/cli/src/screens/home.tsx
+@@ -34,9 +34,15 @@ export function Home() {
+       <Header />
+       <box width="100%" maxWidth={78} paddingX={2} flexDirection="column" gap={1}>
+         <InputBar onSubmit={handleSubmit} />
+-        <box flexDirection="row" gap={1} flexShrink={0} marginLeft="auto">
+-          <text>tab</text>
+-          <text attributes={TextAttributes.DIM}>agents</text>
++        <box flexDirection="row" gap={2} flexShrink={0} marginLeft="auto">
++          <box flexDirection="row" gap={1}>
++            <text>tab</text>
++            <text attributes={TextAttributes.DIM}>mode</text>
++          </box>
++          <box flexDirection="row" gap={1}>
++            <text>/</text>
++            <text attributes={TextAttributes.DIM}>commands</text>
++          </box>
+         </box>
+       </box>
+     </box>
+diff --git a/packages/cli/src/screens/session.tsx b/packages/cli/src/screens/session.tsx
+index f50345d..d65461b 100644
+--- a/packages/cli/src/screens/session.tsx
++++ b/packages/cli/src/screens/session.tsx
+@@ -17,6 +17,17 @@ import type { Message } from "../hooks/use-chat";
+ import { apiClient } from "../lib/api-client";
+ import { getErrorMessage } from "../lib/http-errors";
+ import { useKeyboardLayer } from "../providers/Keyboard-layer";
++import { copyToClipboard } from "../lib/clipboard";
++
++function messageText(msg: Message): string {
++    const parts = Array.isArray(msg.parts) ? msg.parts : [];
++    const partText = parts
++        .filter((p) => p.type === "text")
++        .map((p) => (p as { text?: string }).text ?? "")
++        .join("");
++    if (partText) return partText;
++    return (msg as unknown as { content?: string }).content ?? "";
++}
+ 
+ type SessionData = {
+     id: string;
+@@ -83,11 +94,13 @@ function SessionChat({
+     const [initialMessages] = useState(() => session.messages as unknown as Message[]);
+     const { mode, modelSelection } = usePromptConfig();
+     const { isTopLayer } = useKeyboardLayer();
++    const toast = useToast();
+     const { messages, status, submit, abort, interrupt, error } = useChat(
+         session.id,
+         initialMessages
+     );
+     const hasSubmittedInitialPromptRef = useRef(false);
++    const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
+ 
+     useEffect(() => {
+         return () => void abort();
+@@ -100,6 +113,44 @@ function SessionChat({
+         }
+     });
+ 
++    useKeyboard((key) => {
++        if (!isTopLayer("base")) return;
++        if (key.name !== "y" && key.name !== "r") return;
++
++        if (key.name === "y") {
++            const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
++            if (!lastAssistant) {
++                toast.show({ variant: "info", message: "No assistant output to copy yet" });
++                return;
++            }
++            const text = messageText(lastAssistant);
++            key.preventDefault();
++            void copyToClipboard(text).then((ok) => {
++                toast.show({
++                    variant: ok ? "success" : "error",
++                    message: ok
++                        ? "Copied last assistant output to clipboard"
++                        : "Clipboard unavailable on this platform",
++                });
++            });
++            return;
++        }
++
++        if (key.name === "r") {
++            const lastUser = [...messages].reverse().find((m) => m.role === "user");
++            if (!lastUser) {
++                toast.show({ variant: "info", message: "No prompt to re-send yet" });
++                return;
++            }
++            key.preventDefault();
++            setPrefill((prev) => ({
++                text: messageText(lastUser),
++                nonce: (prev?.nonce ?? 0) + 1,
++            }));
++            return;
++        }
++    });
++
+     useEffect(() => {
+         if (!initialPrompt || hasSubmittedInitialPromptRef.current) return;
+         hasSubmittedInitialPromptRef.current = true;
+@@ -115,6 +166,7 @@ function SessionChat({
+             onSubmit={(text) => submit({ userText: text, mode, modelSelection })}
+             loading={status === "submitted" || status === "streaming"}
+             interruptible={status === "submitted" || status === "streaming"}
++            prefill={prefill}
+         >
+             {messages.map((msg) => (
+                 <ChatMessage key={msg.id} msg={msg} />
+diff --git a/packages/server/src/agents/index.ts b/packages/server/src/agents/index.ts
+deleted file mode 100644
+index 9aed175..0000000
+--- a/packages/server/src/agents/index.ts
++++ /dev/null
+@@ -1,191 +0,0 @@
+-/**
+- * Agent System API Routes
+- * 
+- * REST API for team management, execution, and monitoring.
+- */
+-
+-import { Hono } from "hono";
+-import { zValidator } from "@hono/zod-validator";
+-import { z } from "zod";
+-import { ExecutionEngine } from "@ANCIENT/agent";
+-import { TeamBuilder, defaultRegistry } from "@ANCIENT/agent/team";
+-import { requireAuth } from "../../middleware/require-auth";
+-
+-const app = new Hono();
+-const engine = new ExecutionEngine();
+-
+-// Middleware
+-app.use("*", requireAuth);
+-
+-// ============================================================================
+-// Team Management
+-// ============================================================================
+-
+-app.get("/teams", async (c) => {
+-    // Return all teams from database
+-    const teams = await c.env.prisma.agentTeam.findMany({
+-        include: { agents: true },
+-    });
+-    return c.json({ teams });
+-});
+-
+-app.post("/teams", zValidator("json", z.object({
+-    name: z.string(),
+-    description: z.string().optional(),
+-    templateId: z.string().optional(),
+-    config: z.any().optional(), // TeamBuilder config
+-})), async (c) => {
+-    const body = c.req.valid("json");
+-
+-    let team;
+-    if (body.templateId) {
+-        team = defaultRegistry.instantiate(body.templateId);
+-        if (!team) return c.json({ error: "Template not found" }, 404);
+-    } else if (body.config) {
+-        // Build from config
+-        team = body.config; // Would validate with TeamSchema
+-    } else {
+-        return c.json({ error: "Must provide templateId or config" }, 400);
+-    }
+-
+-    // Persist to database
+-    const saved = await c.env.prisma.agentTeam.create({
+-        data: {
+-            name: team.name,
+-            description: team.description,
+-            coordinatorId: team.coordinatorId,
+-            protocol: JSON.stringify(team.protocol),
+-            maxParallelAgents: team.maxParallelAgents,
+-            sharedContext: team.sharedContext,
+-            checkpointEnabled: team.checkpointEnabled,
+-            fallbackStrategy: JSON.stringify(team.fallbackStrategy),
+-            agents: {
+-                create: team.agents.map(a => ({
+-                    name: a.name,
+-                    role: a.role,
+-                    description: a.description,
+-                    systemPrompt: a.systemPrompt,
+-                    capabilities: a.capabilities,
+-                    tools: a.tools,
+-                    backend: JSON.stringify(a.backend),
+-                    fallbackBackends: a.fallbackBackends.map(fb => JSON.stringify(fb)),
+-                    maxDelegationDepth: a.maxDelegationDepth,
+-                    canDelegateTo: a.canDelegateTo || [],
+-                    parentId: a.parentId,
+-                })),
+-            },
+-        },
+-        include: { agents: true },
+-    });
+-
+-    return c.json({ team: saved }, 201);
+-});
+-
+-app.get("/teams/:id", async (c) => {
+-    const team = await c.env.prisma.agentTeam.findUnique({
+-        where: { id: c.req.param("id") },
+-        include: { agents: true, executions: { take: 10, orderBy: { startedAt: "desc" } } },
+-    });
+-    if (!team) return c.json({ error: "Not found" }, 404);
+-    return c.json({ team });
+-});
+-
+-// ============================================================================
+-// Execution
+-// ============================================================================
+-
+-app.post("/execute", zValidator("json", z.object({
+-    teamId: z.string().uuid(),
+-    task: z.string().min(1),
+-    stream: z.boolean().default(false),
+-})), async (c) => {
+-    const { teamId, task, stream } = c.req.valid("json");
+-
+-    const team = await c.env.prisma.agentTeam.findUnique({
+-        where: { id: teamId },
+-        include: { agents: true },
+-    });
+-
+-    if (!team) return c.json({ error: "Team not found" }, 404);
+-
+-    // Reconstruct TeamConfig from DB
+-    const teamConfig: any = {
+-        id: team.id,
+-        name: team.name,
+-        description: team.description,
+-        coordinatorId: team.coordinatorId,
+-        protocol: JSON.parse(team.protocol),
+-        maxParallelAgents: team.maxParallelAgents,
+-        sharedContext: team.sharedContext,
+-        checkpointEnabled: team.checkpointEnabled,
+-        fallbackStrategy: JSON.parse(team.fallbackStrategy),
+-        agents: team.agents.map((a: any) => ({
+-            id: a.id,
+-            name: a.name,
+-            role: a.role,
+-            description: a.description,
+-            systemPrompt: a.systemPrompt,
+-            capabilities: a.capabilities,
+-            tools: a.tools,
+-            backend: JSON.parse(a.backend),
+-            fallbackBackends: a.fallbackBackends.map((fb: string) => JSON.parse(fb)),
+-            maxDelegationDepth: a.maxDelegationDepth,
+-            canDelegateTo: a.canDelegateTo,
+-            parentId: a.parentId,
+-        })),
+-    };
+-
+-    if (stream) {
+-        // SSE streaming
+-        c.header("Content-Type", "text/event-stream");
+-        c.header("Cache-Control", "no-cache");
+-        c.header("Connection", "keep-alive");
+-
+-        const stream = new ReadableStream({
+-            async start(controller) {
+-                const result = await engine.executeWithStreaming(
+-                    teamConfig,
+-                    task,
+-                    (chunk) => {
+-                        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ chunk })}\\n\\n`));
+-                    }
+-                );
+-                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, result })}\\n\\n`));
+-                controller.close();
+-            },
+-        });
+-
+-        return c.body(stream);
+-    }
+-
+-    const result = await engine.execute(teamConfig, task);
+-    return c.json({ result });
+-});
+-
+-app.get("/execute/:id/status", async (c) => {
+-    const status = engine.getExecutionStatus(c.req.param("id"));
+-    if (!status) return c.json({ error: "Execution not found" }, 404);
+-    return c.json({ status });
+-});
+-
+-app.post("/execute/:id/cancel", async (c) => {
+-    const success = engine.cancelExecution(c.req.param("id"));
+-    return c.json({ success });
+-});
+-
+-// ============================================================================
+-// Templates
+-// ============================================================================
+-
+-app.get("/templates", async (c) => {
+-    const templates = defaultRegistry.list();
+-    return c.json({ templates: templates.map(t => ({ id: t.id, name: t.name, description: t.description, category: t.category })) });
+-});
+-
+-app.get("/templates/:id", async (c) => {
+-    const template = defaultRegistry.get(c.req.param("id"));
+-    if (!template) return c.json({ error: "Not found" }, 404);
+-    return c.json({ template: { id: template.id, name: template.name, description: template.description, category: template.category } });
+-});
+-
+-export default app;
+\ No newline at end of file
+diff --git a/packages/server/src/lib/connection-crypto.test.ts b/packages/server/src/lib/connection-crypto.test.ts
+new file mode 100644
+index 0000000..e03ae89
+--- /dev/null
++++ b/packages/server/src/lib/connection-crypto.test.ts
+@@ -0,0 +1,40 @@
++import { test, expect, beforeAll } from "bun:test";
++import { encryptApiKey, decryptApiKey } from "./connection-crypto";
++
++const TEST_SECRET = Buffer.alloc(32, 0x42).toString("base64");
++
++beforeAll(() => {
++    process.env.ANCIENT_CONNECTION_KEY_SECRET = TEST_SECRET;
++});
++
++test("round-trips a secret through encrypt/decrypt", async () => {
++    const secret = "sk-super-secret-abc123";
++    const encrypted = await encryptApiKey(secret);
++    expect(encrypted).toBeInstanceOf(Uint8Array);
++    const decrypted = await decryptApiKey(encrypted);
++    expect(decrypted).toBe(secret);
++});
++
++test("round-trips special characters and unicode", async () => {
++    const secret = "sk-λ-🗑️-😀-line\nbreak\t\0";
++    const encrypted = await encryptApiKey(secret);
++    const decrypted = await decryptApiKey(encrypted);
++    expect(decrypted).toBe(secret);
++});
++
++test("produces a 12-byte IV prefix plus ciphertext and does not leak the plaintext", async () => {
++    const secret = "openai-sk-test";
++    const encrypted = await encryptApiKey(secret);
++    expect(encrypted.length).toBeGreaterThan(12);
++    // A single run of encryption should be self-consistent (12-byte IV header).
++    const decrypted = await decryptApiKey(encrypted);
++    expect(decrypted).toBe(secret);
++});
++
++test("each encryption produces a distinct ciphertext for the same plaintext", async () => {
++    const secret = "same-input";
++    const a = await encryptApiKey(secret);
++    const b = await encryptApiKey(secret);
++    // Random IV per call guarantees different ciphertexts.
++    expect(Buffer.from(a).equals(Buffer.from(b))).toBe(false);
++});
+diff --git a/packages/server/src/lib/connection-crypto.ts b/packages/server/src/lib/connection-crypto.ts
+index 2790ff6..0d9a585 100644
+--- a/packages/server/src/lib/connection-crypto.ts
++++ b/packages/server/src/lib/connection-crypto.ts
+@@ -25,7 +25,7 @@ async function getMasterKey(): Promise<CryptoKey> {
+     return masterKeyPromise;
+ }
+ 
+-export async function encryptApiKey(plaintext: string): Promise<Uint8Array> {
++export async function encryptApiKey(plaintext: string): Promise<Uint8Array<ArrayBuffer>> {
+     const key = await getMasterKey();
+     const iv = crypto.getRandomValues(new Uint8Array(12)) as CryptoIv;
+     const encoder = new TextEncoder();
+diff --git a/packages/server/src/lib/governor/scoping-guard.test.ts b/packages/server/src/lib/governor/scoping-guard.test.ts
+new file mode 100644
+index 0000000..6a07f2a
+--- /dev/null
++++ b/packages/server/src/lib/governor/scoping-guard.test.ts
+@@ -0,0 +1,65 @@
++import { test, expect } from "bun:test";
++import { createScopingGuard } from "./scoping-guard";
++
++test("allows CLI UI files alongside config files", () => {
++    const guard = createScopingGuard();
++    expect(guard.checkScope("packages/cli/src/screens/home.tsx")).toBeNull();
++    expect(guard.checkScope("package.json")).toBeNull();
++    expect(guard.checkScope("packages/cli/src/components/input-bar.tsx")).toBeNull();
++});
++
++test("blocks CLI UI + server-side orchestration change in one step", () => {
++    const guard = createScopingGuard();
++    expect(guard.checkScope("packages/cli/src/screens/home.tsx")).toBeNull();
++    const violation = guard.checkScope("packages/server/src/routes/chat.ts");
++    expect(violation).not.toBeNull();
++    expect(violation).toContain("Write File blocked");
++    expect(violation).toContain("mixes CLI UI changes with server-side orchestration");
++});
++
++test("blocks schema change + UI work in one step", () => {
++    const guard = createScopingGuard();
++    expect(guard.checkScope("packages/database/prisma/schema.prisma")).toBeNull();
++    const violation = guard.checkScope("packages/cli/src/screens/home.tsx");
++    expect(violation).not.toBeNull();
++    expect(violation).toContain("mixes a schema change with UI work");
++});
++
++test("blocks two unrelated route handlers in one step", () => {
++    const guard = createScopingGuard();
++    expect(guard.checkScope("packages/server/src/routes/chat.ts")).toBeNull();
++    const violation = guard.checkScope("packages/server/src/routes/agent.ts");
++    expect(violation).not.toBeNull();
++    expect(violation).toContain("touches two unrelated route handlers");
++});
++
++test("allows two writes to the same route handler", () => {
++    const guard = createScopingGuard();
++    expect(guard.checkScope("packages/server/src/routes/chat.ts")).toBeNull();
++    expect(guard.checkScope("packages/server/src/routes/chat.ts")).toBeNull();
++});
++
++test("blocks two unrelated tool definitions in one step", () => {
++    const guard = createScopingGuard();
++    expect(guard.checkScope("packages/server/src/tools/DiffEngine.ts")).toBeNull();
++    const violation = guard.checkScope("packages/server/src/tools/other.ts");
++    expect(violation).not.toBeNull();
++    expect(violation).toContain("touches two unrelated tool definitions");
++});
++
++test("exposes the list of touched paths", () => {
++    const guard = createScopingGuard();
++    guard.checkScope("packages/cli/src/screens/home.tsx");
++    guard.checkScope("package.json");
++    expect(guard.touchedPaths()).toEqual([
++        "packages/cli/src/screens/home.tsx",
++        "package.json",
++    ]);
++});
++
++test("a blocked write is not recorded as touched", () => {
++    const guard = createScopingGuard();
++    guard.checkScope("packages/cli/src/screens/home.tsx");
++    guard.checkScope("packages/server/src/routes/chat.ts");
++    expect(guard.touchedPaths()).toEqual(["packages/cli/src/screens/home.tsx"]);
++});
+diff --git a/packages/server/src/lib/governor/scoping-guard.ts b/packages/server/src/lib/governor/scoping-guard.ts
+index dcb5a8a..367684f 100644
+--- a/packages/server/src/lib/governor/scoping-guard.ts
++++ b/packages/server/src/lib/governor/scoping-guard.ts
+@@ -28,11 +28,11 @@ function classify(filePath: string): ScopeTag {
+     }
+     const routeMatch = filePath.match(/\/routes\/([^/]+)$/);
+     if (routeMatch) {
+-        return { kind: "route-handler", file: routeMatch[1] };
++        return { kind: "route-handler", file: routeMatch[1]! };
+     }
+     const toolMatch = filePath.match(/\/tools\/([^/]+)$/);
+     if (toolMatch) {
+-        return { kind: "tool-definition", file: toolMatch[1] };
++        return { kind: "tool-definition", file: toolMatch[1]! };
+     }
+     if (/^packages\/server\//.test(filePath)) {
+         return { kind: "server-other" };
+@@ -52,16 +52,18 @@ function describeViolation(
+     aPath: string,
+     bPath: string
+ ): string | null {
++    // Rule: schema changes + unrelated feature work (proxy: schema + UI in one step).
++    // Checked BEFORE the generic CLI/server rule because a schema change is also
++    // classified as server-side; this gives callers the more specific message.
++    if ((a.kind === "schema" && b.kind === "cli-ui") || (b.kind === "schema" && a.kind === "cli-ui")) {
++        return scopeMessage(aPath, bPath, "mixes a schema change with UI work");
++    }
++
+     // Rule: CLI UI changes + server-side orchestration changes
+     if ((a.kind === "cli-ui" && isServerSide(b)) || (b.kind === "cli-ui" && isServerSide(a))) {
+         return scopeMessage(aPath, bPath, "mixes CLI UI changes with server-side orchestration changes");
+     }
+ 
+-    // Rule: schema changes + unrelated feature work (proxy: schema + UI in one step)
+-    if ((a.kind === "schema" && b.kind === "cli-ui") || (b.kind === "schema" && a.kind === "cli-ui")) {
+-        return scopeMessage(aPath, bPath, "mixes a schema change with UI work");
+-    }
+-
+     // Rule: multiple unrelated route handlers
+     if (a.kind === "route-handler" && b.kind === "route-handler" && a.file !== b.file) {
+         return scopeMessage(aPath, bPath, `touches two unrelated route handlers (${a.file} and ${b.file})`);
+diff --git a/packages/server/src/lib/models.ts b/packages/server/src/lib/models.ts
+index fd5f641..b86a474 100644
+--- a/packages/server/src/lib/models.ts
++++ b/packages/server/src/lib/models.ts
+@@ -40,7 +40,7 @@ function parseFallbackModels(): string[] {
+ }
+ 
+ function openRouterModelFallbackFetch(primaryModelId: string, fallbackModels: string[]): typeof fetch {
+-    return async (input, init) => {
++    return (async (input, init) => {
+         if (init?.body && typeof init.body === "string") {
+             try {
+                 const body = JSON.parse(init.body);
+@@ -53,7 +53,7 @@ function openRouterModelFallbackFetch(primaryModelId: string, fallbackModels: st
+             }
+         }
+         return fetch(input, init);
+-    };
++    }) as typeof fetch;
+ }
+ 
+ function isOpenRouterBaseUrl(baseUrl: string): boolean {
+@@ -91,9 +91,10 @@ const OPENAI_COMPATIBLE_PROVIDERS = {
+ type OpenAICompatibleProvider = keyof typeof OPENAI_COMPATIBLE_PROVIDERS;
+ 
+ function resolveOpenAICompatibleModel(provider: OpenAICompatibleProvider, modelId: string): ResolvedModel {
+-    const { envVar, baseURL } = OPENAI_COMPATIBLE_PROVIDERS[provider];
+-    const apiKey = process.env[envVar];
+-    if (!apiKey) throw new Error(`${envVar} is not set`);
++    const entry = OPENAI_COMPATIBLE_PROVIDERS[provider];
++    const apiKey = process.env[entry.envVar];
++    if (!apiKey) throw new Error(`${entry.envVar} is not set`);
++    const baseURL: string | undefined = "baseURL" in entry ? entry.baseURL : undefined;
+     return {
+         model: createOpenAI({ apiKey, baseURL }).chat(modelId) as unknown as LanguageModel,
+         provider,
+diff --git a/packages/server/src/tools/DiffEngine.test.ts b/packages/server/src/tools/DiffEngine.test.ts
+new file mode 100644
+index 0000000..f42c4b3
+--- /dev/null
++++ b/packages/server/src/tools/DiffEngine.test.ts
+@@ -0,0 +1,76 @@
++import { test, expect } from "bun:test";
++import { parseDiffBlocks } from "./DiffEngine";
++
++test("parseDiffBlocks extracts a single SEARCH/REPLACE block", () => {
++    const aiOutput = `Fix the typo below.
++
++<<<<<<< SEARCH
++const x = 1;
++=======
++const x = 2;
++>>>>>>> REPLACE
++`;
++
++    const blocks = parseDiffBlocks(aiOutput);
++    expect(blocks).toHaveLength(1);
++    expect(blocks[0]!.search).toBe("const x = 1;");
++    expect(blocks[0]!.replace).toBe("const x = 2;");
++});
++
++test("parseDiffBlocks extracts multiple blocks in order", () => {
++    const aiOutput = `
++<<<<<<< SEARCH
++foo
++=======
++bar
++>>>>>>> REPLACE
++
++<<<<<<< SEARCH
++baz
++=======
++qux
++>>>>>>> REPLACE
++`;
++
++    const blocks = parseDiffBlocks(aiOutput);
++    expect(blocks).toHaveLength(2);
++    expect(blocks[0]!.replace).toBe("bar");
++    expect(blocks[1]!.search).toBe("baz");
++});
++
++test("parseDiffBlocks ignores surrounding conversational text", () => {
++    const aiOutput = `I fixed the issue for you. Here is the patch:
++
++<<<<<<< SEARCH
++old
++=======
++new
++>>>>>>> REPLACE
++
++Let me know if it works!`;
++
++    const blocks = parseDiffBlocks(aiOutput);
++    expect(blocks).toHaveLength(1);
++    expect(blocks[0]!.search).toBe("old");
++    expect(blocks[0]!.replace).toBe("new");
++});
++
++test("parseDiffBlocks supports multi-line search/replace bodies", () => {
++    const aiOutput = `<<<<<<< SEARCH
++line one
++line two
++=======
++line A
++line B
++>>>>>>> REPLACE`;
++
++    const blocks = parseDiffBlocks(aiOutput);
++    expect(blocks).toHaveLength(1);
++    expect(blocks[0]!.search).toBe("line one\nline two");
++    expect(blocks[0]!.replace).toBe("line A\nline B");
++});
++
++test("parseDiffBlocks returns empty array when no blocks present", () => {
++    expect(parseDiffBlocks("no diff markers here")).toHaveLength(0);
++    expect(parseDiffBlocks("")).toHaveLength(0);
++});
+diff --git a/packages/server/src/tools/DiffEngine.ts b/packages/server/src/tools/DiffEngine.ts
+index 097fc99..7664130 100644
+--- a/packages/server/src/tools/DiffEngine.ts
++++ b/packages/server/src/tools/DiffEngine.ts
+@@ -42,8 +42,8 @@ export function parseDiffBlocks(aiOutput: string): DiffBlock[] {
+     let match;
+     while ((match = regex.exec(aiOutput)) !== null) {
+         blocks.push({
+-            search: match[1],
+-            replace: match[2]
++            search: match[1] ?? "",
++            replace: match[2] ?? ""
+         });
+     }
+ 
+@@ -61,21 +61,23 @@ export function parseDiffBlocks(aiOutput: string): DiffBlock[] {
+  *      This algorithm finds the "closest" match to prevent expensive retries.
+  */
+ function getLevenshteinDistance(a: string, b: string): number {
+-    const matrix = Array.from({ length: a.length + 1 }, (_, i) =>
++    const matrix: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+         Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+     );
+ 
+     for (let i = 1; i <= a.length; i++) {
+         for (let j = 1; j <= b.length; j++) {
+             const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+-            matrix[i][j] = Math.min(
+-                matrix[i - 1][j] + 1,       // deletion
+-                matrix[i][j - 1] + 1,       // insertion
+-                matrix[i - 1][j - 1] + cost // substitution
++            const above = matrix[i - 1]!;
++            const current = matrix[i]!;
++            current[j] = Math.min(
++                above[j]! + 1,       // deletion
++                current[j - 1]! + 1,       // insertion
++                above[j - 1]! + cost // substitution
+             );
+         }
+     }
+-    return matrix[a.length][b.length];
++    return matrix[a.length]![b.length]!;
+ }
+ 
+ /**
