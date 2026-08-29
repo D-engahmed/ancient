@@ -34,7 +34,7 @@ flowchart TB
 
     style PROV fill:#0f3460,stroke:#7FC4BE,color:#fff
     style MEM fill:#0f3460,stroke:#7FC4BE,color:#fff
-    style STO fill:#16213e,stroke:#ff6b6b,color:#fff
+    style STO fill:#0f3460,stroke:#7FC4BE,color:#fff
     style EVT fill:#16213e,stroke:#ff6b6b,color:#fff
     style SEC fill:#16213e,stroke:#ff6b6b,color:#fff
 ```
@@ -101,6 +101,32 @@ flowchart LR
 
 Files: `types.ts`, `loader.ts` (`loadMemory`, `buildMemoryPromptBlock`), `memory.test.ts` (6 tests).
 
+### storage — done (commit `0af8197`)
+
+Durable **execution store** (closes assumption A-EXEC-003 — the agent package's in-memory `Map`).
+The event stream is the source of truth (`EXECUTION-STATE.md`).
+
+```mermaid
+flowchart TB
+    subgraph STORE["storage/"]
+        direction TB
+        EVT["ExecutionEvent<br/>(append-only durable truth)"]
+        APPLY["applyEvent()<br/>(projection/reducer)"]
+        REC["ExecutionRecord<br/>(current projection)"]
+        CKPT["CheckpointRecord"]
+        EVT --> APPLY --> REC
+        REC -. periodic .-> CKPT
+    end
+    subgraph CLIENT["Callers"]
+        ENGINE["engine / strategies / gateway / server"]
+    end
+    CLIENT -->|"implements ExecutionStore<br/>interface (swapable)"| STORE
+```
+
+Files: `types.ts`, `store.ts` (`ExecutionStore` + `EventSourcedExecutionStore` sort replay),
+`checkpoints.ts` (`shouldCheckpoint` policy), `storage.test.ts` (9 tests). A Postgres
+implementation later implements the same interface without touching callers.
+
 ---
 
 ## Roadmap
@@ -109,7 +135,7 @@ Files: `types.ts`, `loader.ts` (`loadMemory`, `buildMemoryPromptBlock`), `memory
 |-----------|--------|--------|
 | `providers` | done | `sub/07/01-providers` |
 | `memory` | done | `sub/07/02-memory` |
-| `storage` | in progress | `sub/07/03-storage` |
+| `storage` | done | `sub/07/03-storage` |
 | `events` | pending | `sub/07/04-events` |
 | `security` | pending | `sub/07/05-security` |
 

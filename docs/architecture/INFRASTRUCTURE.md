@@ -24,7 +24,8 @@ flowchart LR
 ```
 
 Sub-layers are added one per sub-branch under `sub/07/*`, then merged here. `providers`
-(commit `8efd708`) and `memory` (commit `06604d7`) are wired so far.
+(commit `8efd708`), `memory` (commit `06604d7`), and `storage` (commit `0af8197`) are wired so
+far.
 
 ---
 
@@ -71,6 +72,23 @@ Canonical **memory** module for the `ANCIENT.md` project/user-memory convention,
 
 Design: injectable `homedir`/`budget` for tests; depends only on node builtins — same
 dependency-light rule as providers.
+
+---
+
+## Sub-03 — Storage (done)
+
+Durable **execution store** that closes assumption A-EXEC-003 (the agent package's in-memory
+`Map`). Implements the `EXECUTION-STATE.md` "event stream is the source of truth" model.
+
+| File | Owning responsibility |
+|------|------------------------|
+| `src/storage/types.ts` | `ExecutionRecord` (projection), `LifecycleEventType`/`ExecutionEvent` (append-only durable truth), `CheckpointRecord`. |
+| `src/storage/store.ts` | `ExecutionStore` interface + `EventSourcedExecutionStore` reference implementation — append-only, replayable via `applyEvent()`. |
+| `src/storage/checkpoints.ts` | pure `shouldCheckpoint()` policy (every-N-seqs, always-on types, min interval) so callers never block on I/O unless a checkpoint is due. |
+| `src/storage/storage.test.ts` | 9 tests (replay, completion, cost rollup, ordering, checkpoints, policy). |
+
+A Postgres/Prisma implementation later implements the same `ExecutionStore` interface without
+touching callers.
 
 ## Verification
 
