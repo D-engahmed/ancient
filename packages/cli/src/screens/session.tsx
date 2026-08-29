@@ -1,4 +1,4 @@
-// session.tsx — CLI-V2 Phase 6 execution console layout.
+// session.tsx — CLI-V2 Phase 6/11 execution console layout.
 // During execution: header + timeline + live output + input + footer.
 // After completion: header + full conversation + input + footer.
 
@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useLocation, useNavigate } from "react-router";
 import { z } from "zod";
 import { useKeyboard } from "@opentui/react";
+import { TextAttributes } from "@opentui/core";
 import {
     type ModeType,
     type ChatModelSelection,
@@ -23,6 +24,31 @@ import { useExecution } from "../hooks/use-execution";
 import { usePromptConfig } from "../providers/prompt-config";
 import { useKeyboardLayer } from "../providers/Keyboard-layer";
 import type { Message } from "../hooks/use-execution";
+import { API_URL } from "../lib/api-client";
+
+/** Track online/offline status via navigator.onLine + event listeners. */
+function useOnline(): boolean {
+    const [online, setOnline] = useState<boolean>(() => {
+        try {
+            return typeof navigator !== "undefined" && "onLine" in navigator ? (navigator as { onLine: boolean }).onLine : true;
+        } catch {
+            return true;
+        }
+    });
+
+    useEffect(() => {
+        const on = () => setOnline(true);
+        const off = () => setOnline(false);
+        globalThis.addEventListener?.("online", on);
+        globalThis.addEventListener?.("offline", off);
+        return () => {
+            globalThis.removeEventListener?.("online", on);
+            globalThis.removeEventListener?.("offline", off);
+        };
+    }, []);
+
+    return online;
+}
 import { apiClient } from "../lib/api-client";
 import { copyToClipboard } from "../lib/clipboard";
 import {
@@ -136,6 +162,7 @@ function SessionChat({
         respondToConsent,
     } = useExecution(initialMessages);
     const hasSubmittedInitialPromptRef = useRef(false);
+    const online = useOnline();
     const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
     const [inspectorVisible, setInspectorVisible] = useState(false);
     const [selectedEntryIdx, setSelectedEntryIdx] = useState(-1);
@@ -284,6 +311,16 @@ function SessionChat({
         <box flexDirection="column" flexGrow={1} width="100%" height="100%">
             {/* Header */}
             <ExecutionHeader status={status} durationMs={durationMs} />
+
+            {/* Offline banner (Phase 11) */}
+            {!online && (
+                <box flexShrink={0} paddingX={2} paddingY={0}>
+                    <text>
+                        <text fg="yellow" attributes={TextAttributes.BOLD}>Offline</text>
+                        <text attributes={TextAttributes.DIM}> — commands will be queued until connection is restored</text>
+                    </text>
+                </box>
+            )}
 
             {/* Content area */}
             <box flexGrow={1} flexDirection="column" paddingX={2} gap={1} overflow="hidden">
