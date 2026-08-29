@@ -1,30 +1,31 @@
 // Copyright (c) 2026 NXG AI Solutions. All rights reserved.
 // Proprietary and confidential. Unauthorized copying or distribution prohibited.
 //
-// CLI-V2 Phase 8 — Execution inspector panel.
+// CLI-V2 Phase 8/10 — Execution inspector panel.
 // Shows detailed information about a selected timeline entry (tool call):
-// capability name, arguments, result or error, and status.
+// capability name, arguments, rendered result (with type-aware views), and errors.
 // Displayed when the user presses TAB during execution.
 
 import { TextAttributes } from "@opentui/core";
 import { useTheme } from "../providers/theme";
 import type { TimelineEntry } from "../lib/execution-stream";
+import { ResultView } from "./result-view";
 
 type Props = {
   entry: TimelineEntry | null;
 };
 
-function formatValue(value: unknown, maxLen = 200): string {
-  if (value === undefined) return "(undefined)";
-  if (value === null) return "(null)";
-  if (typeof value === "string") {
-    return value.length > maxLen ? value.slice(0, maxLen) + "…" : value;
-  }
+function formatArgs(args: Record<string, unknown>): string {
+  // Filter out internal keys
+  const filtered = Object.fromEntries(
+    Object.entries(args).filter(([k]) => !k.startsWith("__"))
+  );
+  if (Object.keys(filtered).length === 0) return "";
   try {
-    const json = JSON.stringify(value, null, 2);
-    return json.length > maxLen ? json.slice(0, maxLen) + "…" : json;
+    const json = JSON.stringify(filtered, null, 2);
+    return json.length > 400 ? json.slice(0, 400) + "…" : json;
   } catch {
-    return String(value);
+    return String(filtered);
   }
 }
 
@@ -49,10 +50,7 @@ export function ExecutionInspector({ entry }: Props) {
     entry.status === "running" ? colors.primary :
     entry.status === "error" ? colors.error : colors.dimSeparator;
 
-  // Filter out internal keys from args display
-  const displayArgs = Object.fromEntries(
-    Object.entries(entry.args ?? {}).filter(([k]) => !k.startsWith("__"))
-  );
+  const argsStr = formatArgs(entry.args ?? {});
 
   return (
     <box flexDirection="column" gap={1} paddingX={2} paddingTop={1}>
@@ -64,21 +62,21 @@ export function ExecutionInspector({ entry }: Props) {
       </box>
 
       {/* Arguments */}
-      {Object.keys(displayArgs).length > 0 && (
+      {argsStr && (
         <box flexDirection="column" gap={0}>
           <text attributes={TextAttributes.DIM}>Arguments:</text>
           <box paddingLeft={2}>
-            <text>{formatValue(displayArgs, 300)}</text>
+            <text>{argsStr}</text>
           </box>
         </box>
       )}
 
-      {/* Result */}
+      {/* Result — type-aware rendering */}
       {entry.result !== undefined && (
         <box flexDirection="column" gap={0}>
           <text attributes={TextAttributes.DIM}>Result:</text>
           <box paddingLeft={2}>
-            <text fg={colors.success}>{formatValue(entry.result, 300)}</text>
+            <ResultView result={entry.result} toolName={entry.label} />
           </box>
         </box>
       )}
@@ -88,7 +86,13 @@ export function ExecutionInspector({ entry }: Props) {
         <box flexDirection="column" gap={0}>
           <text attributes={TextAttributes.DIM}>Error:</text>
           <box paddingLeft={2}>
-            <text fg={colors.error}>{formatValue(entry.error, 300)}</text>
+            <text fg={colors.error}>
+              {typeof entry.error === "string"
+                ? entry.error
+                : typeof entry.error === "object" && entry.error !== null
+                  ? JSON.stringify(entry.error)
+                  : String(entry.error)}
+            </text>
           </box>
         </box>
       )}
