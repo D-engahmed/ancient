@@ -36,7 +36,7 @@ flowchart TB
     style CORE fill:#0f3460,stroke:#7FC4BE,color:#fff
     style FILES fill:#0f3460,stroke:#7FC4BE,color:#fff
     style SHELL fill:#0f3460,stroke:#7FC4BE,color:#fff
-    style SKILLS fill:#16213e,stroke:#ff6b6b,color:#fff
+    style SKILLS fill:#0f3460,stroke:#7FC4BE,color:#fff
     style MCP fill:#16213e,stroke:#ff6b6b,color:#fff
     style BROWSER fill:#16213e,stroke:#ff6b6b,color:#fff
 ```
@@ -110,6 +110,19 @@ One tool (`bash`) at category `exec` — **denied by default**, approval-gated, 
 
 Files: `dangerous-commands.ts`, `tools.ts`, `index.ts`, `shell.test.ts` (10 tests).
 
+### skills — done (commit `99a02cc`)
+
+SKILL.md progressive disclosure: a token-lean catalog + on-demand body loader.
+
+- `listSkills` (catalog of `name` + one-line `description`) and `useSkill` (load the full
+  body only when a task matches) — both category `read`, PLAN-safe under the default policy.
+- Roots: `~/.ancient/skills` (global) + `<cwd>/.ancient/skills` (project shadows global);
+  `ANCIENT_USER_DIR` overrides the global root (portable, hermetic tests).
+- Minimal YAML frontmatter parser (ported from `packages/server`, MIT attribution) for
+  `name` / `description` / `allowed-tools`.
+
+Files: `frontmatter.ts`, `loader.ts`, `tools.ts`, `index.ts`, `skills.test.ts` (11 tests).
+
 ---
 
 ## Roadmap
@@ -119,6 +132,7 @@ Files: `dangerous-commands.ts`, `tools.ts`, `index.ts`, `shell.test.ts` (10 test
 | `core` | done | `sub/06/01-core` |
 | `files` | done | `sub/06/02-files` |
 | `shell` | done | `sub/06/03-shell` |
+| `skills` | done | `sub/06/04-skills` |
 | `skills` | pending | `sub/06/04-skills` |
 | `mcp` | pending | `sub/06/05-mcp` |
 | `browser` | pending | `sub/06/06-browser` |

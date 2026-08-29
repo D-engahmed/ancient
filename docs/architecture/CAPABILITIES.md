@@ -1,6 +1,6 @@
 # Capability runtime layer — as-built
 
-**Branch:** `layer/06-capabilities` · **Status:** in progress (subs 01–03 wired) ·
+**Branch:** `layer/06-capabilities` · **Status:** in progress (subs 01–04 wired) ·
 **Register:** [A-CAP-001](ASSUMPTIONS.md), [A-LAYER-001](ASSUMPTIONS.md), [A-LAYER-002](ASSUMPTIONS.md)
 
 The **Capability Runtime** (ARCHITECTURE.md §4, audit item #5): owns tools, skills, MCP,
@@ -14,7 +14,7 @@ flowchart LR
         CORE["core — registry · contract · policy edge"]
         F["files — read/list/glob/grep + write/edit"]
         S["shell — bash w/ denylist + timeout"]
-        SK["skills — (pending sub-branch)"]
+        SK["skills — SKILL.md catalog + on-demand load"]
         M["mcp — (pending sub-branch)"]
         B["browser — (pending sub-branch)"]
     end
@@ -27,8 +27,8 @@ flowchart LR
 ```
 
 Sub-layers are added one per sub-branch under `sub/06/*`, then merged here. `core`
-(commit `a24c3a1`), `files` (commit `509e26f`), and `shell` (commit `da57e75`) are wired so
-far; `skills`, `mcp`, `browser` are next in build order. `commands`, `computer-use`,
+(commit `a24c3a1`), `files` (`509e26f`), `shell` (`da57e75`), and `skills` (`99a02cc`) are
+wired so far; `mcp`, `browser` are next in build order. `commands`, `computer-use`,
 `design` stay a README roadmap until the engine exists (per A-EXEC-004 test).
 
 ---
@@ -94,7 +94,26 @@ One contributing tool (`bash`, category `exec`), approval-gated with a denylist 
   binary, so the same `@ANCIENT/capabilities` package behaves identically on Windows and
   POSIX hosts. Timeout is enforced by killing the shell process; best-effort portability.
 
+## Sub-04 — Skills (done)
+
+Two read-category tools — progressive disclosure for SKILL.md instruction packages.
+
+| File | Owning responsibility |
+|------|------------------------|
+| `src/skills/frontmatter.ts` | `parseFrontmatter`/`parseList` — minimal YAML-frontmatter parser ported from `packages/server` (MIT attribution); flat `key: value` + comma lists, no YAML dependency. |
+| `src/skills/loader.ts` | `skillRoots(cwd)` (global `~/.ancient/skills` + project `<cwd>/.ancient/skills`, `ANCIENT_USER_DIR` override), `listSkills` (project shadows global; malformed skills skipped), `loadSkill` (20k body cap + resource listing), `buildSkillsPromptBlock` (token-lean system-prompt index). |
+| `src/skills/tools.ts` | `listSkillsTool` (catalog: name/source/description) + `useSkillTool` (full body + bundled resources + note) — both `read`/PLAN-safe. |
+| `src/skills/skills.test.ts` | 11 hermetic tests (ANCIENT_USER_DIR temp fixture): root shadowing, frontmatter parsing, body load, unknown-name error, arg validation, edge + registry wiring, PLAN gating. |
+
+**Design decisions:**
+- **Progressive disclosure, cost near zero** — only `listSkills`'s name+description ever
+  enters a prompt; the full body loads only through `useSkill`, capped at 20k per skill.
+- **Self-contained, no server imports (A-LAYER-002)** — the parser and root discovery are
+  ported into the package; the capability layer never imports upward.
+- **Portable global root** — `ANCIENT_USER_DIR` lets deployments relocate `~/.ancient`
+  without code changes and makes tests hermetic (never touches the real home).
+
 ## Verification
 
 - `npm run typecheck` — exit 0 (all 7 packages incl. `capabilities`).
-- Full suite — **145 pass** (135 + 10 shell) as of `sub/06/03-shell`, 0 fail.
+- Full suite — **156 pass** (145 + 11 skills) as of `sub/06/04-skills`, 0 fail.
