@@ -134,6 +134,22 @@ TEST          — How do we prove the decision?
 
 ---
 
+## A-STRAT-001 — Execution strategies are leaves behind a pure selector
+
+| Field | Value |
+|-------|-------|
+| **ASSUMPTION** | Execution = a strategy chosen from a ladder of leaves — `Direct`(0) → `Agent Loop`(1) → `Subagents`(2) → `Teams`(3) → `Arena`(4) (ARCHITECTURE.md §5). The **strategy selector** is a deterministic, pure decision function the engine calls; strategies never import the engine, receiving model access + tool execution through a `StrategyRuntime` port. |
+| **EVIDENCE** | ARCHITECTURE.md §4 draws RUNTIMES → STRATEGIES → CAP and §3.1/§3.2 (A-EXEC-001/002) reject execution=multi-agent; `packages/agent/src/runtime/engine.ts` is the forced-arena monolith being replaced; A-EXEC-004 TEST needs new behaviors without chat-handler churn. |
+| **FAILURE MODE** | Strategies couple to engine internals (cycles, can't be tested in isolation); or complexity is UI-chosen instead of cost-earned (A-EXEC-002 fails). |
+| **BLAST RADIUS** | Every strategy implementation; the engine's execution API; all future task classes. |
+| **ALTERNATIVES** | (a) House each strategy inside the engine — rejected: violates A-LAYER-001 package-per-layer and the leaf principle; (b) strategies receive runtime deps via port/DI — accepted. |
+| **DECISION** | **Change** — `@ANCIENT/strategies` owns the contract + wired leaves (direct, agent-loop, subagents) + selector; teams/arena stay catalogued-but-unwired until the engine runtime exists; selector never selects an unwired strategy. |
+| **TEST** | Unit tests drive the selector with scripted TaskProfiles (ladder order, preferred override, unwired exclusion) and run all wired strategies against a fake `StrategyRuntime` with scripted model turns. |
+
+**Status:** decided → building (this branch).
+
+---
+
 ## Register policy (Phase 1 — freeze)
 
 While the review is open, gate **major** new features: a feature may proceed only after its
