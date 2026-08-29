@@ -1,6 +1,6 @@
 # Capability runtime layer — as-built
 
-**Branch:** `layer/06-capabilities` · **Status:** in progress (sub-01 core wired) ·
+**Branch:** `layer/06-capabilities` · **Status:** in progress (subs 01–02 wired) ·
 **Register:** [A-CAP-001](ASSUMPTIONS.md), [A-LAYER-001](ASSUMPTIONS.md), [A-LAYER-002](ASSUMPTIONS.md)
 
 The **Capability Runtime** (ARCHITECTURE.md §4, audit item #5): owns tools, skills, MCP,
@@ -12,7 +12,7 @@ stack (A-EXEC-004). Depends only on `@ANCIENT/shared` + `@ANCIENT/infrastructure
 flowchart LR
     subgraph CAP["@ANCIENT/capabilities"]
         CORE["core — registry · contract · policy edge"]
-        F["files — (pending sub-branch)"]
+        F["files — read/list/glob/grep + write/edit"]
         S["shell — (pending sub-branch)"]
         SK["skills — (pending sub-branch)"]
         M["mcp — (pending sub-branch)"]
@@ -27,9 +27,9 @@ flowchart LR
 ```
 
 Sub-layers are added one per sub-branch under `sub/06/*`, then merged here. `core`
-(commit `a24c3a1`) is wired so far; `files`, `shell`, `skills`, `mcp`, `browser` are next
-in build order. `commands`, `computer-use`, `design` stay a README roadmap until the engine
-exists (per A-EXEC-004 test).
+(commit `a24c3a1`) and `files` (commit `509e26f`) are wired so far; `shell`, `skills`,
+`mcp`, `browser` are next in build order. `commands`, `computer-use`, `design` stay a
+README roadmap until the engine exists (per A-EXEC-004 test).
 
 ---
 
@@ -54,7 +54,29 @@ The registry + the **central policy edge** every tool runs through (A-CAP-001).
 - **Safe PLAN default** — non-read tools are excluded from PLAN mode unless a module opts in,
   preserving the shipped read-only plan behavior.
 
+## Sub-02 — Files (done)
+
+Six contributing tools, hierarchy-safe and PLAN-gated, on the same central edge.
+
+| File | Owning responsibility |
+|------|------------------------|
+| `src/files/path-safety.ts` | `resolveWithinCwd(cwd, path)` — ported from `packages/server` (MIT attribution); returns `null` on escape (incl. prefix masquerade like `cwd-evil`). The containment floor for every file tool. |
+| `src/files/glob.ts` | `globToRegExp`/`globMatches` — `**` crosses `/`, single `*` does not; `walkFiles(dir)` async recursive `fs/promises` walk returning `/`-joined relative paths. |
+| `src/files/tools.ts` | Six `ToolDefinition`s: `readFile`/`listDirectory`/`glob`/`grep` (read) + `writeFile`/`editFile` (write). Schemas from `@ANCIENT/shared` `toolInputSchemas`. `target()` exposes the path for approval display. `grep` truncates at 100 matches (`truncated` flag), honors an `include` filename glob. `editFile` requires a unique `oldString` (0 → not found, >1 → reject). |
+| `src/files/index.ts` | Files-capability barrel; re-exported from package root. |
+| `src/files/files.test.ts` | 14 tests over real `mkdtemp` trees: containment rejection (`../../x`, prefix masquerade), read/list/glob/grep + include filtering, parent-dir creation, unique-edit enforcement, registry wiring, PLAN exclusion of write tools. |
+
+**Design decisions:**
+- **Containment is a runtime property, not a policy** — `ApprovalPolicy` decides *who* may
+  write; `resolveWithinCwd` decides *what path* is ever reachable. Both apply to every
+  invocation inside the central edge.
+- **Write tools ship excluded from PLAN** by the registry's safe default (category-driven):
+  BUILD may write, PLAN may only read.
+- **Good CLI UX on denial** — the write-tool tests run under `ApprovalPolicy().allow("write")`;
+  under the default policy they are denied before touching the filesystem (asserted by the
+  core approval tests).
+
 ## Verification
 
 - `npm run typecheck` — exit 0 (all 7 packages incl. `capabilities`).
-- Full suite — **121 pass** (104 + 17 core) as of `sub/06/01-core`, 0 fail.
+- Full suite — **135 pass** (121 + 14 files) as of `sub/06/02-files`, 0 fail.

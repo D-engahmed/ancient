@@ -34,7 +34,7 @@ flowchart TB
     CAP --> SHARED
 
     style CORE fill:#0f3460,stroke:#7FC4BE,color:#fff
-    style FILES fill:#16213e,stroke:#ff6b6b,color:#fff
+    style FILES fill:#0f3460,stroke:#7FC4BE,color:#fff
     style SHELL fill:#16213e,stroke:#ff6b6b,color:#fff
     style SKILLS fill:#16213e,stroke:#ff6b6b,color:#fff
     style MCP fill:#16213e,stroke:#ff6b6b,color:#fff
@@ -82,6 +82,20 @@ Files: `types.ts` (`ToolDefinition`, `ExecutionScope`, `ExecutionResult`), `regi
 edge — approval/consent/budget/redaction, never throws), `adapters.ts` (`toToolSet`), `core.test.ts`
 (17 tests).
 
+### files — done (commit `509e26f`)
+
+Six atomic tools contributing to the registry, hierarchy-safe and PLAN-gated.
+
+- `readFile` · `listDirectory` · `glob` · `grep` (category `read`) and `writeFile` ·
+  `editFile` (category `write`, auto-excluded from PLAN by the registry default).
+- **Path containment** — `resolveWithinCwd` (ported from `packages/server`, MIT attribution)
+  is the floor: every path resolves inside `scope.cwd`; escapes return an error result.
+- `glob` — `globToRegExp`/`globMatches` (`**` crosses `/`, single `*` does not) over a an
+  async recursive `walkFiles`. `grep` searches file contents, honors an `include` filename
+  glob, and truncates at 100 matches.
+
+Files: `path-safety.ts`, `glob.ts`, `tools.ts`, `index.ts`, `files.test.ts` (14 tests).
+
 ---
 
 ## Roadmap
@@ -89,7 +103,7 @@ edge — approval/consent/budget/redaction, never throws), `adapters.ts` (`toToo
 | Sub-layer | Status | Branch |
 |-----------|--------|--------|
 | `core` | done | `sub/06/01-core` |
-| `files` | pending | `sub/06/02-files` |
+| `files` | done | `sub/06/02-files` |
 | `shell` | pending | `sub/06/03-shell` |
 | `skills` | pending | `sub/06/04-skills` |
 | `mcp` | pending | `sub/06/05-mcp` |
