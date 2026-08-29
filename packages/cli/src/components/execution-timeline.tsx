@@ -49,9 +49,9 @@ export function ExecutionTimeline({ entries, text }: Props) {
                 {entry.status === "done" ? "✓" : entry.status === "running" ? "●" : entry.status === "error" ? "✕" : "○"}
               </text>
               <text>
-                <text attributes={TextAttributes.DIM}>{formatToolName(entry.label)}</text>
+                <span attributes={TextAttributes.DIM}>{formatToolName(entry.label)}</span>
                 {entry.status === "running" && (
-                  <text attributes={TextAttributes.DIM}>...</text>
+                  <span attributes={TextAttributes.DIM}>...</span>
                 )}
               </text>
             </box>

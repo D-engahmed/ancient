@@ -35,13 +35,11 @@ export class ErrorBoundary extends Component<Props, State> {
       if (this.props.fallback) return this.props.fallback;
       return (
         <box flexDirection="column" gap={1} padding={2}>
-          <text>
-            <text attributes={TextAttributes.BOLD}>Something went wrong.</text>
-          </text>
+          <text attributes={TextAttributes.BOLD}>Something went wrong.</text>
           <text>{this.state.error.message}</text>
           <text>
-            Press <text attributes={TextAttributes.BOLD}>Enter</text> to restart or{" "}
-            <text attributes={TextAttributes.BOLD}>Esc</text> to quit.
+            Press <span attributes={TextAttributes.BOLD}>Enter</span> to restart or{" "}
+            <span attributes={TextAttributes.BOLD}>Esc</span> to quit.
           </text>
         </box>
       );

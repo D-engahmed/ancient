@@ -57,14 +57,12 @@ export function ExecutionHeader({ status, durationMs }: Props) {
       paddingRight={2}
       height={1}
     >
-      <text>
-        <text attributes={TextAttributes.BOLD}>ANCIENT</text>
-      </text>
+      <text attributes={TextAttributes.BOLD}>ANCIENT</text>
       <box flexDirection="row" alignItems="center" gap={2}>
         {indicator.label && (
           <text>
-            <text fg={indicator.color}>{indicator.symbol}</text>{" "}
-            <text attributes={TextAttributes.DIM} fg={indicator.color}>{indicator.label}</text>
+            <span fg={indicator.color}>{indicator.symbol}</span>{" "}
+            <span attributes={TextAttributes.DIM} fg={indicator.color}>{indicator.label}</span>
           </text>
         )}
         {showDuration && duration && (

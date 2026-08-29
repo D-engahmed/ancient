@@ -5,6 +5,7 @@
 // Shown when the engine requests approval for a tool call. Displays the
 // capability name, reason, and approve/deny buttons (y/n keyboard shortcuts).
 
+import { useEffect } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useTheme } from "../providers/theme";
 import { useKeyboard } from "@opentui/react";
@@ -21,6 +22,18 @@ export function ConsentPrompt({ capability, prompt, onApprove, onDeny }: Props) 
   const { colors } = useTheme();
   const { isTopLayer, push, pop } = useKeyboardLayer();
 
+  // Push consent layer on mount, pop on unmount.
+  useEffect(() => {
+    push("consent", () => {
+      pop("consent");
+      onDeny();
+      return true;
+    });
+    return () => {
+      pop("consent");
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // y = approve, n = deny, Escape = deny
   useKeyboard((key) => {
     if (!isTopLayer("consent")) return;
@@ -33,13 +46,6 @@ export function ConsentPrompt({ capability, prompt, onApprove, onDeny }: Props) 
       pop("consent");
       onDeny();
     }
-  });
-
-  // Push consent layer so keyboard shortcuts don't conflict.
-  push("consent", () => {
-    pop("consent");
-    onDeny();
-    return true;
   });
 
   return (
@@ -59,26 +65,26 @@ export function ConsentPrompt({ capability, prompt, onApprove, onDeny }: Props) 
       </box>
       <box flexDirection="row" gap={1} paddingTop={0}>
         <text>
-          <text attributes={TextAttributes.DIM}>Tool: </text>
-          <text>{capability}</text>
+          <span attributes={TextAttributes.DIM}>Tool: </span>
+          <span>{capability}</span>
         </text>
       </box>
       {prompt && (
         <box flexDirection="row" gap={1} paddingTop={0}>
           <text>
-            <text attributes={TextAttributes.DIM}>Reason: </text>
-            <text>{prompt}</text>
+            <span attributes={TextAttributes.DIM}>Reason: </span>
+            <span>{prompt}</span>
           </text>
         </box>
       )}
       <box flexDirection="row" gap={2} paddingTop={1}>
         <text>
-          <text fg={colors.success} attributes={TextAttributes.BOLD}>y</text>
-          <text attributes={TextAttributes.DIM}> approve</text>
+          <span fg={colors.success} attributes={TextAttributes.BOLD}>y</span>
+          <span attributes={TextAttributes.DIM}> approve</span>
         </text>
         <text>
-          <text fg={colors.error} attributes={TextAttributes.BOLD}>n</text>
-          <text attributes={TextAttributes.DIM}> deny</text>
+          <span fg={colors.error} attributes={TextAttributes.BOLD}>n</span>
+          <span attributes={TextAttributes.DIM}> deny</span>
         </text>
       </box>
     </box>

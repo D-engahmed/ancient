@@ -316,8 +316,8 @@ function SessionChat({
             {!online && (
                 <box flexShrink={0} paddingX={2} paddingY={0}>
                     <text>
-                        <text fg="yellow" attributes={TextAttributes.BOLD}>Offline</text>
-                        <text attributes={TextAttributes.DIM}> — commands will be queued until connection is restored</text>
+                        <span fg="yellow" attributes={TextAttributes.BOLD}>Offline</span>
+                        <span attributes={TextAttributes.DIM}> — commands will be queued until connection is restored</span>
                     </text>
                 </box>
             )}
