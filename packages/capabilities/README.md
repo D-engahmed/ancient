@@ -1,0 +1,177 @@
+# @ANCIENT/capabilities
+
+The **Capability Runtime** layer of ANCIENT (see `docs/ARCHITECTURE.md` §4). Owns tools,
+skills, MCP, and browser/file/shell behaviors so the engine and gateway never grow a
+monolithic tool stack (assumption `A-EXEC-004`, audit item #5). All six sub-layers are
+wired (commit `b3b3d1c`); the layer is ready for engine consumption.
+
+```mermaid
+flowchart TB
+    subgraph LAYERS["ANCIENT (top → bottom)"]
+        direction TB
+        EXP["EXPERIENCES (cli)"]
+        GW["INTERFACE GATEWAY"]
+        ENG["UNIFIED EXECUTION ENGINE"]
+        STRAT["EXECUTION STRATEGIES"]
+    end
+
+    subgraph CAP["@ANCIENT/capabilities (this package)"]
+        direction TB
+        CORE["core — registry · contract · permission"]
+        FILES["files"]
+        SHELL["shell"]
+        SKILLS["skills"]
+        MCP["mcp"]
+        BROWSER["browser"]
+    end
+
+    subgraph LOWER["Lean on"]
+        INFRA["@ANCIENT/infrastructure"]
+        SHARED["@ANCIENT/shared"]
+    end
+
+    LAYERS --> CAP
+    CAP --> INFRA
+    CAP --> SHARED
+
+    style CORE fill:#0f3460,stroke:#7FC4BE,color:#fff
+    style FILES fill:#0f3460,stroke:#7FC4BE,color:#fff
+    style SHELL fill:#0f3460,stroke:#7FC4BE,color:#fff
+    style SKILLS fill:#0f3460,stroke:#7FC4BE,color:#fff
+    style MCP fill:#0f3460,stroke:#7FC4BE,color:#fff
+    style BROWSER fill:#0f3460,stroke:#7FC4BE,color:#fff
+```
+
+Legend: green-bordered = wired; red-bordered = pending (each built in its own sub-branch under
+`sub/06/*`, then merged into `layer/06-capabilities`).
+
+---
+
+## Engineering design
+
+1. **Registry of atomic tools** — a capability (files, shell, skills, MCP, browser) is a
+   module that *contributes `ToolDefinition`s* to the `CapabilityRegistry`. All shared
+   concerns — mode gating, allow-lists, approval (`infrastructure/security`), result
+   budgeting, secret redaction — are applied centrally at execute time, not per module.
+2. **Framework-adjacent, not framework-bound** — the core contract is a plain object
+   (`name`, `description`, zod `inputSchema`, `RiskCategory`, `execute(scope, args)`); an
+   adapter emits AI-SDK `ToolSet`s for consumers like the engine/`ai`. MCP tools (which are
+   not AI-SDK native) fit the same contract.
+3. **Dependencies** — `@ANCIENT/shared` (schemas/models) + `@ANCIENT/infrastructure`
+   (security/approval, events) only (A-LAYER-002). No upward imports.
+
+---
+
+## Sub-modules
+
+### core — done (commit `a24c3a1`)
+
+The registry + the central policy edge every tool runs through (A-CAP-001).
+
+```mermaid
+flowchart LR
+    MOD["files / shell / skills / mcp / browser<br/>(contributing modules)"]
+    REG["CapabilityRegistry<br/>register · listFor(mode, allow)"]
+    EDGE["executeTool()<br/>parse → approve → consent → run → redact → budget"]
+    SDK["toToolSet()<br/>AI-SDK adapter"]
+    MOD --> REG --> EDGE
+    EDGE --> SDK
+```
+
+Files: `types.ts` (`ToolDefinition`, `ExecutionScope`, `ExecutionResult`), `registry.ts`
+(`CapabilityRegistry` — mode gating defaults non-read tools out of PLAN), `execute.ts` (central
+edge — approval/consent/budget/redaction, never throws), `adapters.ts` (`toToolSet`), `core.test.ts`
+(17 tests).
+
+### files — done (commit `509e26f`)
+
+Six atomic tools contributing to the registry, hierarchy-safe and PLAN-gated.
+
+- `readFile` · `listDirectory` · `glob` · `grep` (category `read`) and `writeFile` ·
+  `editFile` (category `write`, auto-excluded from PLAN by the registry default).
+- **Path containment** — `resolveWithinCwd` (ported from `packages/server`, MIT attribution)
+  is the floor: every path resolves inside `scope.cwd`; escapes return an error result.
+- `glob` — `globToRegExp`/`globMatches` (`**` crosses `/`, single `*` does not) over a an
+  async recursive `walkFiles`. `grep` searches file contents, honors an `include` filename
+  glob, and truncates at 100 matches.
+
+Files: `path-safety.ts`, `glob.ts`, `tools.ts`, `index.ts`, `files.test.ts` (14 tests).
+
+### shell — done (commit `da57e75`)
+
+One tool (`bash`) at category `exec` — **denied by default**, approval-gated, denylist-floored.
+
+- The real boundary is `ApprovalPolicy` (exec → deny by default); inside the tool, a
+  denylist ported from `packages/server` (MIT attribution) catches irreversible
+  one-liners (`rm -rf /`, force-push, `curl|sh`, `mkfs`, `dd`, fork bombs, `chmod -R 777 /`
+  …) before anything spawns.
+- `spawn` with `shell:true` (cross-platform), `cwd`, per-stream 20k output cap with a
+  truncation marker, timeout kill (default 30s; overridable via the shared `bash` schema),
+  `timedOut` flag, never-throwing error mapping.
+
+Files: `dangerous-commands.ts`, `tools.ts`, `index.ts`, `shell.test.ts` (10 tests).
+
+### skills — done (commit `99a02cc`)
+
+SKILL.md progressive disclosure: a token-lean catalog + on-demand body loader.
+
+- `listSkills` (catalog of `name` + one-line `description`) and `useSkill` (load the full
+  body only when a task matches) — both category `read`, PLAN-safe under the default policy.
+- Roots: `~/.ancient/skills` (global) + `<cwd>/.ancient/skills` (project shadows global);
+  `ANCIENT_USER_DIR` overrides the global root (portable, hermetic tests).
+- Minimal YAML frontmatter parser (ported from `packages/server`, MIT attribution) for
+  `name` / `description` / `allowed-tools`.
+
+Files: `frontmatter.ts`, `loader.ts`, `tools.ts`, `index.ts`, `skills.test.ts` (11 tests).
+
+### mcp — done (commit `c8aa691`)
+
+MCP server discovery + client, remote tools folded into the registry.
+
+- Config: `~/.ancient/.mcp.json` + `<cwd>/.mcp.json` (`mcpServers`), project wins on name;
+  `ANCIENT_USER_DIR` relocates the global root. stdio (`command`/`args`) and HTTP (`url`)
+  transports via `@modelcontextprotocol/sdk`.
+- Remote tools register as `mcp__<server>__<tool>` — category `exec`, **denied by default**
+  (operators opt in via `ApprovalPolicy`); JSON-Schema `inputSchema`s are translated to zod
+  (unknown shapes degrade to `z.unknown()`); results capped at 10k.
+- Lazy per-cwd connection cache (5-min TTL) via `mcpConnections`; `listMcpServers` is a
+  read (PLAN-safe) status tool.
+
+Files: `config.ts`, `json-schema.ts`, `client.ts`, `tools.ts`, `index.ts`, `fixtures/mock-server.ts`,
+`mcp.test.ts` (11 tests, incl. a real stdio e2e).
+
+### browser — done (commit `b3b3d1c`)
+
+Web-read tooling — the honest "browser" for a terminal-first agent.
+
+- `fetchUrl` (category `network`, **denied by default**): global-fetch with AbortController
+  timeout, redirect follow, 2MB raw-byte guard, structured errors (never throws), `maxChars`
+  cap; HTML is stripped to readable text by a dependency-free `htmlToText`.
+- No browser-automation dependency: `computer-use`/Playwright stays on the roadmap.
+
+Files: `fetch.ts`, `tools.ts`, `index.ts`, `browser.test.ts` (12 tests against a local HTTP
+server).
+
+---
+
+## Roadmap — layer complete
+
+| Sub-layer | Status | Branch |
+|-----------|--------|--------|
+| `core` | done | `sub/06/01-core` |
+| `files` | done | `sub/06/02-files` |
+| `shell` | done | `sub/06/03-shell` |
+| `skills` | done | `sub/06/04-skills` |
+| `mcp` | done | `sub/06/05-mcp` |
+| `browser` | done | `sub/06/06-browser` |
+| `skills` | pending | `sub/06/04-skills` |
+| `mcp` | pending | `sub/06/05-mcp` |
+| `browser` | pending | `sub/06/06-browser` |
+
+Deferred to later feature branches (roadmap only, per ARCHITECTURE.md §4): `commands`,
+`computer-use`, `design`, and other product-specific tool families once the engine exists.
+
+## Verification
+
+- `npm run typecheck` exit 0.
+- Full suite green (52 baseline + per-sub additions).

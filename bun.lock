@@ -34,6 +34,21 @@
         "typescript": "^5.4.0",
       },
     },
+    "packages/capabilities": {
+      "name": "@ANCIENT/capabilities",
+      "version": "1.0.0",
+      "dependencies": {
+        "@ANCIENT/infrastructure": "workspace:*",
+        "@ANCIENT/shared": "workspace:*",
+        "@modelcontextprotocol/sdk": "^1.18.0",
+        "ai": "^7.0.55",
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.4.0",
+      },
+    },
     "packages/cli": {
       "name": "@ANCIENT/cli",
       "bin": {
@@ -113,12 +128,27 @@
         "zod": "^4.3.6",
       },
     },
+    "packages/strategies": {
+      "name": "@ANCIENT/strategies",
+      "version": "1.0.0",
+      "dependencies": {
+        "@ANCIENT/infrastructure": "workspace:*",
+        "@ANCIENT/shared": "workspace:*",
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.4.0",
+      },
+    },
   },
   "overrides": {
     "scheduler": "0.25.0",
   },
   "packages": {
     "@ANCIENT/agent": ["@ANCIENT/agent@workspace:packages/agent"],
+
+    "@ANCIENT/capabilities": ["@ANCIENT/capabilities@workspace:packages/capabilities"],
 
     "@ANCIENT/cli": ["@ANCIENT/cli@workspace:packages/cli"],
 
@@ -129,6 +159,8 @@
     "@ANCIENT/server": ["@ANCIENT/server@workspace:packages/server"],
 
     "@ANCIENT/shared": ["@ANCIENT/shared@workspace:packages/shared"],
+
+    "@ANCIENT/strategies": ["@ANCIENT/strategies@workspace:packages/strategies"],
 
     "@ai-sdk/anthropic": ["@ai-sdk/anthropic@4.0.41", "", { "dependencies": { "@ai-sdk/provider": "4.0.7", "@ai-sdk/provider-utils": "5.0.29" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-So62as8fexWMmXMIxvrWVaDLjLRe6EG2+5mmRc1KCPBoyyyFx6zbTcCvxJkViSUHhsGMBDryAm+mfs91n7Jl8g=="],
 
