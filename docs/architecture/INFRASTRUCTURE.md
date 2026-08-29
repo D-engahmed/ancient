@@ -23,8 +23,8 @@ flowchart LR
     INFRA --> DB
 ```
 
-Sub-layers are added one per sub-branch under `sub/07/*`, then merged here. Only `providers` is
-wired so far (commit `8efd708`).
+Sub-layers are added one per sub-branch under `sub/07/*`, then merged here. `providers`
+(commit `8efd708`) and `memory` (commit `06604d7`) are wired so far.
 
 ---
 
@@ -55,6 +55,22 @@ plus NEW cost accounting:
 **Why promoted here:** provider/model architecture (BYOK, fallback, routing, cost) is audit order
 #6 and the natural base; sharing one implementation across engine, strategies, and gateway avoids
 each keeping its own router/breaker/crypto copies.
+
+---
+
+## Sub-02 — Memory (done)
+
+Canonical **memory** module for the `ANCIENT.md` project/user-memory convention, ported from
+`server/src/memory` and made portable:
+
+| File | Owning responsibility |
+|------|------------------------|
+| `src/memory/types.ts` | `MemoryFile` / `MemoryScope` / `MemoryBudget` / `MemoryOptions`; `DEFAULT_MEMORY_BUDGET` (6k/file, 16k total). |
+| `src/memory/loader.ts` | `loadMemory` (user-global → ancestor → project, highest precedence last), one-level `@import` expansion, per-file truncation, global-budget dropping; `buildMemoryPromptBlock`. |
+| `src/memory/memory.test.ts` | 6 tests over temp dirs. |
+
+Design: injectable `homedir`/`budget` for tests; depends only on node builtins — same
+dependency-light rule as providers.
 
 ## Verification
 
