@@ -86,6 +86,38 @@ TEST          — How do we prove the decision?
 
 ---
 
+## A-LAYER-001 — One physical package per target layer
+
+| Field | Value |
+|-------|-------|
+| **ASSUMPTION** | Each of the 7 target layers is its own workspace package, mirroring the layered diagram, so dependency direction is explicit and enforceable. |
+| **EVIDENCE** | Target architecture (ARCHITECTURE.md §4) draws 7 distinct layers; current repo packs engine+arena+teams+tasks+backends into one `@ANCIENT/agent` package (engine.ts:28-33), blurring the execution-strategy boundary. |
+| **FAILURE MODE** | Layer-crossing imports slip through (engine importing capability details, etc.); boundaries erode silently. |
+| **BLAST RADIUS** | Import graph, ownership, testing, packaging, and every future layer addition. |
+| **ALTERNATIVES** | (a) Layered folders inside a shared package — rejected: boundaries stay soft; (b) rename existing packages to layer names — rejected: keeps the arena-engine coupling. One-package-per-layer chosen. |
+| **DECISION** | **Change** — target package map: `cli`(EXPERIENCES only) · `gateway` · `engine`(+runtimes) · `strategies` · `capabilities` · `infrastructure` · with `shared`/`database` as cross-cutting base. |
+| **TEST** | `npm run typecheck` stays green after each package is created; a `capabilities`→`engine` upward import is rejected (types don't exist / lint-unwired). |
+
+**Status:** decided → in progress (build order bottom-up: infrastructure → capabilities → strategies → engine → gateway; cli stays the only EXPERIENCE).
+
+---
+
+## A-LAYER-002 — Dependency direction is top-down, never upward
+
+| Field | Value |
+|-------|-------|
+| **ASSUMPTION** | Experiences → Gateway → Engine → Strategies → Capabilities → Infrastructure. No layer imports a layer above it. |
+| **EVIDENCE** | Target diagram (ARCHITECTURE.md §4) shows a unidirectional funnel; A-LAYER-001's package-per-layer setup is only meaningful if the arrows point one way. |
+| **FAILURE MODE** | A capability reaching into the engine to force behavior creates cycles and couples a leaf to the trunk. |
+| **BLAST RADIUS** | Every cross-package import; build/typecheck health. |
+| **ALTERNATIVES** | Bidirectional imports (rejected: coupling); event-sourced upward communication via the infra event bus (accepted for capability→engine needs). |
+| **DECISION** | **Change** — enforce one-directional deps; make cross-layer communication event-driven via `infrastructure` when a lower layer must react upstream. |
+| **TEST** | Typecheck + an import-graph lint pass; spot-check no `capabilities → engine` import path exists. |
+
+**Status:** decided → applied during each layer's build.
+
+---
+
 ## Register policy (Phase 1 — freeze)
 
 While the review is open, gate **major** new features: a feature may proceed only after its
