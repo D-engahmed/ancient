@@ -5,7 +5,8 @@
 //
 // Per A-LAYER-001 each target layer is its own workspace package. This package
 // owns: providers, memory, storage, events, security. Sub-modules are added in
-// their own sub-branches; only `providers` is wired here so far.
+// their own sub-branches; providers, memory, and storage are wired so far.
 
 export * as providers from "./providers";
 export * as memory from "./memory";
+export * as storage from "./storage";
