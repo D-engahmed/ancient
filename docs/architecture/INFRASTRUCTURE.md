@@ -1,6 +1,6 @@
 # Infrastructure layer — as-built
 
-**Branch:** `layer/07-infrastructure` · **Status:** in progress (sub-01 providers wired) ·
+**Branch:** `layer/07-infrastructure` · **Status:** done (all five sub-layers wired) ·
 **Register:** [A-LAYER-001](ASSUMPTIONS.md), [A-LAYER-002](ASSUMPTIONS.md)
 
 The **bottom base** of the layered architecture (ARCHITECTURE.md §4). Everything else leans on
@@ -10,10 +10,10 @@ infrastructure; it never imports a layer above it (A-LAYER-002).
 flowchart LR
     subgraph INFRA["@ANCIENT/infrastructure (Bottom base)"]
         P["providers — BYOK, routing, fallback, breaker, cost"]
-        M["memory — (pending sub-branch)"]
-        S["storage — (pending sub-branch)"]
-        E["events — (pending sub-branch)"]
-        SEC["security — (pending sub-branch)"]
+        M["memory — ANCIENT.md project/user memory"]
+        S["storage — durable execution store"]
+        E["events — live lifecycle bus"]
+        SEC["security — redaction + approval gating"]
     end
     subgraph BASE["Cross-cutting"]
         SHARED["@ANCIENT/shared"]
@@ -23,9 +23,9 @@ flowchart LR
     INFRA --> DB
 ```
 
-Sub-layers are added one per sub-branch under `sub/07/*`, then merged here. `providers`
-(commit `8efd708`), `memory` (commit `06604d7`), `storage` (commit `0af8197`), and `events`
-(commit `cdbfb83`) are wired so far — `security` is next.
+Sub-layers are added one per sub-branch under `sub/07/*`, then merged here. All five are wired:
+`providers` (`8efd708`), `memory` (`06604d7`), `storage` (`0af8197`), `events` (`cdbfb83`),
+`security` (`8e2035a`).
 
 ---
 
@@ -107,7 +107,24 @@ A-LAYER-002, cross-layer communication flows through this infra-owned bus.
 Design: sync in-order delivery by design (async listeners supported, not awaited); error
 isolation keeps one throwing listener from blocking peers or the publisher.
 
+---
+
+## Sub-05 — Security (done)
+
+Secret containment for text streams + the **consent boundary** for risky tool calls
+(ARCHITECTURE review target #8).
+
+| File | Owning responsibility |
+|------|------------------------|
+| `src/security/redaction.ts` | `Redactor` — masks secrets in logs/prompts/tool output. Two pattern classes: prefixed secrets (`sk-*`, `ghp_*`, `AKIA*`, `Bearer`) and labeled `key=value` pairs (`api_key`/`token`/`password`/`secret`). Full-match `$1`-group replacements keep output readable and never re-match. Returns hit pattern names + `changed` flag. |
+| `src/security/approval.ts` | `ApprovalPolicy` — `allow`/`deny`/`require-consent` across `read`/`write`/`exec`/`network`/`scope`; glob-ish target patterns (`npm run *`); one-shot `allow()` override. Pure, no I/O. |
+| `src/security/security.test.ts` | 11 tests (6 redaction, 5 approval). |
+
+Design: policy recognition is pure and deterministic; enforcement lives with the capability
+runtime (layer 06). Redaction is cheap regex — usable on every emitted text stream.
+
 ## Verification
 
 - `npm run typecheck` — exit 0 (all 6 packages incl. `infrastructure`).
-- Full suite — **68 pass** (52 baseline + 16 new), 0 fail.
+- Full suite — **104 pass** (52 baseline + 52 infrastructure) as of `layer/07-infrastructure`
+  (52 = 16 providers + 6 memory + 9 storage + 10 events + 11 security), 0 fail.
