@@ -1,0 +1,28 @@
+{
+  "name": "@ANCIENT/infrastructure",
+  "version": "1.0.0",
+  "description": "ANCIENT infrastructure layer — providers, memory, storage, events, security",
+  "type": "module",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./providers": "./src/providers/index.ts",
+    "./memory": "./src/memory/index.ts",
+    "./storage": "./src/storage/index.ts",
+    "./events": "./src/events/index.ts",
+    "./security": "./src/security/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@ANCIENT/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  }
+}
