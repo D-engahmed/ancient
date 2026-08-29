@@ -77,6 +77,17 @@
         "prisma": "^7.7.0",
       },
     },
+    "packages/infrastructure": {
+      "name": "@ANCIENT/infrastructure",
+      "version": "1.0.0",
+      "dependencies": {
+        "@ANCIENT/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.4.0",
+      },
+    },
     "packages/server": {
       "name": "@ANCIENT/server",
       "dependencies": {
@@ -112,6 +123,8 @@
     "@ANCIENT/cli": ["@ANCIENT/cli@workspace:packages/cli"],
 
     "@ANCIENT/database": ["@ANCIENT/database@workspace:packages/database"],
+
+    "@ANCIENT/infrastructure": ["@ANCIENT/infrastructure@workspace:packages/infrastructure"],
 
     "@ANCIENT/server": ["@ANCIENT/server@workspace:packages/server"],
 
