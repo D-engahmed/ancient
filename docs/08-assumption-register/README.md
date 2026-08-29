@@ -201,3 +201,66 @@ SSE server + CLI transport in Phase 5.
 ## Revisit trigger
 - A new event type cannot be expressed as an additive payload field (→ v:2).
 - A non-CLI experience needs a wire shape the CLI contract can't carry.
+
+---
+
+## ASSUMPTION-020 — One gateway execution = one engine run; CLI renders the wire stream (CLI-V2 Phase 5)
+
+## Statement
+The Phase-5 gateway surface treats **one execution as one engine run**:
+`POST /executions` resolves a model and runs the unified `ExecutionEngine`
+from `packages/execution` with server-authoritative tools (F3); the CLI then
+streams the typed wire envelopes and renders them (text deltas, tool parts,
+terminal) without any client-side execution or history invention. Approval is a
+placeholder: the CLI auto-allows all five risk categories so tools work
+end-to-end, pending the Phase-9 approval UX.
+
+## Why do we believe it?
+- The audit (`cli-v2-audit.md` §7 step 2) sequenced exactly this boundary:
+  execution surface + SSE, CLI transport moved to it, `apiClient.chat` deleted
+  (F4), one executor per tool on the server (F3).
+- Phase-4 delivered the wire contract (ASSUMPTION-019); the Phase-5
+  bridge/hub/routes consume and validate that contract, and the CLI's
+  `ExecutionMessageAssembler` is unit-tested against it.
+- In-memory executions match A-003 ("state begins in memory"); the durable
+  event-sourced store already exists in `infrastructure/storage`.
+- The legacy CLI executed every tool client-side with no approval — the
+  auto-allow keeps feature parity while moving the boundary server-side.
+
+## What fails if it is wrong?
+- Auto-allow of exec/network bypasses the consent boundary the engine's
+  `ApprovalPolicy` defaults enforce until Phase 9 (security regression if
+  shipped without the approval UX).
+- In-memory state means a server restart loses every execution (no replay) —
+  the reconnect/append-only-log guarantee (Layer 2) is not met yet.
+- One-execution-per-prompt with no persistence gives no cross-run continuity
+  (sub-timeline, rewind) until Phase 6/7.
+
+## Blast radius
+- `packages/server` (executions hub/bridge/routes), `packages/cli`
+  (transport hook, api-client, bot-message), engine additions (`observe`,
+  `sessionId`) in `packages/execution`.
+- `/chat` and `/sessions` remain for compatibility; not re-routed here.
+
+## Alternatives
+- CLI runs its own consent round-trip in this phase: rejected — requires the
+  `approval.requested` input-answer verb (`POST /executions/:id/inputs/:requestId`)
+  that belongs with the durable store; the boundary prototype keeps tools
+  working via auto-allow and defers consent UX wholesale.
+- CLI executes tools locally (status quo): rejected — F3 documented the two
+  parallel executors and bypassable hooks; server-authoritative is the point.
+
+## Decision
+Keep. Ship the Phase-5 surface with server-authoritative tools; auto-allow
+categories client-side as an explicit placeholder; wire consent UX in Phase 9.
+
+## Validation
+- Typecheck exit 0; full suite green (295 pass / 0 fail, incl. 12 bridge +
+  16 CLI-stream tests); CLI build exit 0.
+- SSE replay slice (`snapshot(afterSeq)`), gapless seq, exactly-one-terminal,
+  callId pairing, unknown-event isolation all covered by tests.
+
+## Revisit trigger
+- Phase 9 approval UX lands (replace `CLI_ALLOW` with real consent events).
+- Durable execution store wired (replace in-memory hub state; pause/resume;
+  restart-safe replay via `Last-Event-ID`).
