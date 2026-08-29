@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@ANCIENT/shared": "workspace:*",
+    "@ANCIENT/infrastructure": "workspace:*",
     "@opentui/core": "^0.1.97",
     "@opentui/react": "^0.1.97",
     "ai": "^7.0.55",

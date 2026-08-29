@@ -11,9 +11,9 @@ import {
 import { SessionShell } from "../components/session-shell";
 import { UserMessage, BotMessage, ErrorMessage } from "../components/messages";
 import { useToast } from "../providers/toast";
-import { useChat } from "../hooks/use-chat";
+import { useExecution } from "../hooks/use-execution";
 import { usePromptConfig } from "../providers/prompt-config";
-import type { Message } from "../hooks/use-chat";
+import type { Message } from "../hooks/use-execution";
 import { apiClient } from "../lib/api-client";
 import { getErrorMessage } from "../lib/http-errors";
 import { useKeyboardLayer } from "../providers/Keyboard-layer";
@@ -117,16 +117,13 @@ function SessionChat({
     const { mode, modelSelection } = usePromptConfig();
     const { isTopLayer } = useKeyboardLayer();
     const toast = useToast();
-    const { messages, status, submit, abort, interrupt, error } = useChat(
-        session.id,
-        initialMessages
-    );
+    const { messages, status, submit, interrupt, error } = useExecution(initialMessages);
     const hasSubmittedInitialPromptRef = useRef(false);
     const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
 
     useEffect(() => {
-        return () => void abort();
-    }, [abort]);
+        return () => void interrupt();
+    }, [interrupt]);
 
     useKeyboard((key) => {
         if (key.name === "escape" && isTopLayer("base") && status === "streaming") {
