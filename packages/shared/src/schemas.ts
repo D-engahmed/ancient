@@ -33,6 +33,7 @@ export const toolInputSchemas = {
   bash: z.object({ command: z.string(), description: z.string().optional(), timeout: z.number().optional() }),
   listSkills: z.object({}),
   useSkill: z.object({ name: z.string() }),
+  listMcpServers: z.object({}),
 } as const;
 
 export const readOnlyToolContracts = {
