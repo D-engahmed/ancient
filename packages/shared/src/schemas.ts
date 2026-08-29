@@ -31,6 +31,8 @@ export const toolInputSchemas = {
   writeFile: z.object({ path: z.string(), content: z.string() }),
   editFile: z.object({ path: z.string(), oldString: z.string(), newString: z.string() }),
   bash: z.object({ command: z.string(), description: z.string().optional(), timeout: z.number().optional() }),
+  listSkills: z.object({}),
+  useSkill: z.object({ name: z.string() }),
 } as const;
 
 export const readOnlyToolContracts = {

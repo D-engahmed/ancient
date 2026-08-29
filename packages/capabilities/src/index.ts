@@ -12,3 +12,4 @@
 export * as core from "./core";
 export * as files from "./files";
 export * as shell from "./shell";
+export * as skills from "./skills";
