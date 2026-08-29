@@ -133,6 +133,6 @@ describe("ConsentBridge", () => {
     bridge.subscribe((e) => events.push(e));
 
     // The promise is still pending (we're not waiting 120s)
-    expect(typeof resultPromise.then).toBe("function");
+    expect(typeof (resultPromise as unknown as { then?: unknown }).then).toBe("function");
   });
 });

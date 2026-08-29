@@ -39,11 +39,20 @@ function formatCost(usage: Props["usage"]): string {
   return "Cost unavailable";
 }
 
+function formatTokens(usage: Props["usage"]): string {
+  if (usage == null) return "";
+  const parts: string[] = [];
+  if (usage.inputTokens != null) parts.push(`${usage.inputTokens} in`);
+  if (usage.outputTokens != null) parts.push(`${usage.outputTokens} out`);
+  return parts.join(" / ");
+}
+
 export function ExecutionFooter({ status, durationMs, usage }: Props) {
   const { colors } = useTheme();
   const { mode, modelSelection } = usePromptConfig();
   const isActive = status === "submitted" || status === "streaming";
   const duration = durationMs != null ? formatDuration(durationMs) : null;
+  const tokenStr = formatTokens(usage);
 
   return (
     <box
@@ -67,7 +76,13 @@ export function ExecutionFooter({ status, durationMs, usage }: Props) {
             <text attributes={TextAttributes.DIM}>{duration}</text>
           </>
         )}
-        {(status === "ready" || status === "error") && usage && (
+        {tokenStr && (
+          <>
+            <text attributes={TextAttributes.DIM} fg={colors.dimSeparator}>│</text>
+            <text attributes={TextAttributes.DIM}>{tokenStr}</text>
+          </>
+        )}
+        {(status === "ready" || status === "error") && usage?.costUsd != null && (
           <>
             <text attributes={TextAttributes.DIM} fg={colors.dimSeparator}>│</text>
             <text attributes={TextAttributes.DIM}>{formatCost(usage)}</text>
