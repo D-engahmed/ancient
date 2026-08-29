@@ -14,6 +14,7 @@ import extensions from "./routes/extensions";
 import usage from "./routes/usage";
 import agent from "./routes/agent";
 import pipeline from "./routes/pipeline";
+import executions from "./routes/executions";
 
 const app = new Hono();
 
@@ -44,6 +45,7 @@ app.use("/extensions/*", requireAuth);
 app.use("/usage/*", requireAuth);
 app.use("/agent/*", requireAuth);
 app.use("/pipeline/*", requireAuth);
+app.use("/executions/*", requireAuth);
 
 const routes = app
   .route("/auth", auth)
@@ -53,7 +55,8 @@ const routes = app
   .route("/extensions", extensions)
   .route("/usage", usage)
   .route("/agent", agent)
-  .route("/pipeline", pipeline);
+  .route("/pipeline", pipeline)
+  .route("/executions", executions);
 
 export type AppType = typeof routes;
 export default { port: 3000, fetch: app.fetch, idleTimeout: 255 };
