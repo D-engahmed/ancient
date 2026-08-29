@@ -8,3 +8,4 @@
 // their own sub-branches; only `providers` is wired here so far.
 
 export * as providers from "./providers";
+export * as memory from "./memory";
