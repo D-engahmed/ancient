@@ -280,6 +280,8 @@ type Props = {
   timeline?: import("../lib/execution-stream").TimelineEntry[];
   /** Full message list (wired to /clear command). */
   messages?: import("../hooks/use-execution").Message[];
+  /** When true, TAB is handled externally (inspector toggle) and should not toggle mode. */
+  tabHandledExternally?: boolean;
 };
 
 export const TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
@@ -289,7 +291,7 @@ export const TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
   { name: "enter", shift: true, action: "newline" },
 ];
 
-export function InputBar({ onSubmit, disabled = false, prefill = null, interrupt, executionStatus, durationMs, usage, timeline, messages }: Props) {
+export function InputBar({ onSubmit, disabled = false, prefill = null, interrupt, executionStatus, durationMs, usage, timeline, messages, tabHandledExternally }: Props) {
   const { mode, toggleMode, setMode, setModel } = usePromptConfig();
   const textareaRef = useRef<TextareaRenderable>(null);
   const onSubmitRef = useRef<() => void>(() => { });
@@ -512,6 +514,7 @@ export function InputBar({ onSubmit, disabled = false, prefill = null, interrupt
     if (disabled) return;
     if (!isTopLayer("base")) return;
     if (key.name === "tab") {
+      if (tabHandledExternally) return;
       key.preventDefault();
       toggleMode();
     }

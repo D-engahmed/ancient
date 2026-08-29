@@ -130,6 +130,9 @@ export type TimelineEntry = {
   id: string;
   label: string;
   status: "done" | "running" | "pending" | "error";
+  args?: Record<string, unknown>;
+  result?: unknown;
+  error?: unknown;
 };
 
 /**
@@ -260,6 +263,9 @@ export class ExecutionMessageAssembler {
         id: callId,
         label: tool.name,
         status: tool.state === "running" ? "running" : tool.state === "ok" ? "done" : "error",
+        args: tool.args,
+        result: tool.args.__result,
+        error: tool.args.__error,
       });
     }
     return entries;

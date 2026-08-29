@@ -15,6 +15,7 @@ import { UserMessage, BotMessage, ErrorMessage } from "../components/messages";
 import { ExecutionHeader } from "../components/execution-header";
 import { ExecutionFooter } from "../components/execution-footer";
 import { ExecutionTimeline } from "../components/execution-timeline";
+import { ExecutionInspector } from "../components/execution-inspector";
 import { InputBar } from "../components/input-bar";
 import { useToast } from "../providers/toast";
 import { useExecution } from "../hooks/use-execution";
@@ -133,6 +134,13 @@ function SessionChat({
     } = useExecution(initialMessages);
     const hasSubmittedInitialPromptRef = useRef(false);
     const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
+    const [inspectorVisible, setInspectorVisible] = useState(false);
+    const [selectedEntryIdx, setSelectedEntryIdx] = useState(-1);
+
+    // The currently inspected timeline entry (defaults to the last one).
+    const inspectedEntry = inspectorVisible
+        ? timeline[selectedEntryIdx >= 0 ? selectedEntryIdx : timeline.length - 1] ?? null
+        : null;
 
     useEffect(() => {
         return () => void interrupt();
@@ -143,6 +151,31 @@ function SessionChat({
         if (key.name === "escape" && isTopLayer("base") && status === "streaming") {
             key.preventDefault();
             interrupt();
+        }
+    });
+
+    // TAB to toggle the inspector during execution; Up/Down to navigate entries.
+    useKeyboard((key) => {
+        if (!isTopLayer("base")) return;
+        if (key.name === "tab") {
+            if (isExecuting && timeline.length > 0) {
+                key.preventDefault();
+                setInspectorVisible((v) => !v);
+                setSelectedEntryIdx(-1);
+            }
+            // When not executing, let the default TAB mode-toggle in InputBar handle it.
+            return;
+        }
+        if (inspectorVisible && (key.name === "up" || key.name === "down")) {
+            key.preventDefault();
+            setSelectedEntryIdx((prev) => {
+                const max = timeline.length - 1;
+                if (max < 0) return -1;
+                const base = prev >= 0 ? prev : max;
+                return key.name === "up"
+                    ? Math.max(0, base - 1)
+                    : Math.min(max, base + 1);
+            });
         }
     });
 
@@ -261,6 +294,9 @@ function SessionChat({
                             />
                         )}
                         <ExecutionTimeline entries={timeline} text={liveText || undefined} />
+                        {inspectorVisible && (
+                            <ExecutionInspector entry={inspectedEntry} />
+                        )}
                     </box>
                 ) : (
                     /* Full conversation view when not executing */
@@ -285,6 +321,7 @@ function SessionChat({
                     usage={usage}
                     timeline={timeline}
                     messages={messages}
+                    tabHandledExternally={isExecuting && timeline.length > 0}
                 />
             </box>
 
