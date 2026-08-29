@@ -118,6 +118,22 @@ TEST          — How do we prove the decision?
 
 ---
 
+## A-CAP-001 — Capability runtime is a registry of atomic, centrally-policed tools
+
+| Field | Value |
+|-------|-------|
+| **ASSUMPTION** | The capability runtime is a `CapabilityRegistry` of atomic `ToolDefinition`s (name, description, zod `inputSchema`, `RiskCategory`, `execute(scope, args)`). "Capabilities" (files, shell, skills, MCP, browser, computer-use…) are thin modules that *contribute definitions*; mode gating, allow-lists, approval, result budgeting, and secret redaction are all applied centrally at execute time. |
+| **EVIDENCE** | `server/src/tools/index.ts` `createToolsAsync` is a per-turn assembler (registry-ish, no shared concerns); `shared/src/schemas.ts:26` carries `toolInputSchemas` as the single source of tool shapes; `infrastructure/security/approval.ts` is explicitly "reusable by the capability runtime and engine"; A-EXEC-004 wants new capabilities added without touching a chat handler. |
+| **FAILURE MODE** | Every module re-implements its own runtime/security/budgeting; the chat/dev loop keeps growing; a new capability requires copy-paste instead of one module. |
+| **BLAST RADIUS** | Tool/capability architecture (audit #5), every runtime module, the security boundary, engine/strategy consumption of tools. |
+| **ALTERNATIVES** | (a) Bespoke per-capability executors — rejected: duplicates permission/budget/redaction logic; (b) registry keyed by name with mode-gating + allow-lists and central execute-time policy — accepted. |
+| **DECISION** | **Change** — one registry; `ToolDefinition` is the unit; `ApprovalPolicy` (infra), result budget, and `Redactor` (infra) apply at the execute edge for every tool. |
+| **TEST** | A new module (e.g. browser) is registered with zero changes to chat handlers, and approval + budget + redaction apply to it automatically (unit tests assert each). |
+
+**Status:** decided → building (this branch, bottom-up per A-LAYER-001).
+
+---
+
 ## Register policy (Phase 1 — freeze)
 
 While the review is open, gate **major** new features: a feature may proceed only after its

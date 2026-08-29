@@ -34,6 +34,20 @@
         "typescript": "^5.4.0",
       },
     },
+    "packages/capabilities": {
+      "name": "@ANCIENT/capabilities",
+      "version": "1.0.0",
+      "dependencies": {
+        "@ANCIENT/infrastructure": "workspace:*",
+        "@ANCIENT/shared": "workspace:*",
+        "ai": "^7.0.55",
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.4.0",
+      },
+    },
     "packages/cli": {
       "name": "@ANCIENT/cli",
       "bin": {
@@ -119,6 +133,8 @@
   },
   "packages": {
     "@ANCIENT/agent": ["@ANCIENT/agent@workspace:packages/agent"],
+
+    "@ANCIENT/capabilities": ["@ANCIENT/capabilities@workspace:packages/capabilities"],
 
     "@ANCIENT/cli": ["@ANCIENT/cli@workspace:packages/cli"],
 
