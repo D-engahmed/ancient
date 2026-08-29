@@ -11,3 +11,4 @@ export * as providers from "./providers";
 export * as memory from "./memory";
 export * as storage from "./storage";
 export * as events from "./events";
+export * as security from "./security";
