@@ -61,11 +61,34 @@ Legend: green-bordered = wired; red-bordered = pending (each built in its own su
 
 ---
 
+## Sub-modules
+
+### core — done (commit `a24c3a1`)
+
+The registry + the central policy edge every tool runs through (A-CAP-001).
+
+```mermaid
+flowchart LR
+    MOD["files / shell / skills / mcp / browser<br/>(contributing modules)"]
+    REG["CapabilityRegistry<br/>register · listFor(mode, allow)"]
+    EDGE["executeTool()<br/>parse → approve → consent → run → redact → budget"]
+    SDK["toToolSet()<br/>AI-SDK adapter"]
+    MOD --> REG --> EDGE
+    EDGE --> SDK
+```
+
+Files: `types.ts` (`ToolDefinition`, `ExecutionScope`, `ExecutionResult`), `registry.ts`
+(`CapabilityRegistry` — mode gating defaults non-read tools out of PLAN), `execute.ts` (central
+edge — approval/consent/budget/redaction, never throws), `adapters.ts` (`toToolSet`), `core.test.ts`
+(17 tests).
+
+---
+
 ## Roadmap
 
 | Sub-layer | Status | Branch |
 |-----------|--------|--------|
-| `core` | pending | `sub/06/01-core` |
+| `core` | done | `sub/06/01-core` |
 | `files` | pending | `sub/06/02-files` |
 | `shell` | pending | `sub/06/03-shell` |
 | `skills` | pending | `sub/06/04-skills` |
