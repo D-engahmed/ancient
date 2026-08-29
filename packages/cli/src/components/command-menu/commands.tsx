@@ -7,6 +7,7 @@ import {
   AgentsDialogListContent,
   CheckpointsDialogContent,
   CommandsDialogContent,
+  InspectDialogContent,
   McpDialogContent,
   ModelsDialogContent,
   SessionsDialogContent,
@@ -106,8 +107,35 @@ export const COMMANDS: Command[] = [
     action: (ctx) => {
       ctx.toast.show({
         variant: "info",
-        message: "Commands: /cancel /status /models /theme /sessions /skills /exit",
+        message: "Commands: /clear /cancel /inspect /status /models /theme /sessions /skills /exit",
         duration: 5000,
+      });
+    },
+  },
+  {
+    name: "clear",
+    description: "Start a new conversation (clear history)",
+    value: "/clear",
+    action: (ctx) => {
+      ctx.navigate("/");
+      ctx.toast.show({ variant: "success", message: "Conversation cleared" });
+    },
+  },
+  {
+    name: "inspect",
+    description: "Show execution details (status, duration, tokens, tool calls)",
+    value: "/inspect",
+    action: (ctx) => {
+      ctx.dialog.open({
+        title: "Execution Inspector",
+        children: (
+          <InspectDialogContent
+            status={ctx.executionStatus ?? "idle"}
+            durationMs={ctx.durationMs}
+            usage={ctx.usage}
+            timeline={ctx.timeline ?? []}
+          />
+        ),
       });
     },
   },

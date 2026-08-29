@@ -281,6 +281,10 @@ function SessionChat({
                     prefill={prefill}
                     interrupt={interrupt}
                     executionStatus={status}
+                    durationMs={durationMs}
+                    usage={usage}
+                    timeline={timeline}
+                    messages={messages}
                 />
             </box>
 
