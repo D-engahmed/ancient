@@ -10,3 +10,4 @@
 // via own sub-branches; core, files, shell, skills, mcp, browser are wired.
 
 export * as core from "./core";
+export * as files from "./files";
