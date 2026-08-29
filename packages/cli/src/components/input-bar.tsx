@@ -268,6 +268,10 @@ type Props = {
   disabled?: boolean;
   /** When set, loads the given text into the input for the caller (e.g. re-send). */
   prefill?: { text: string; nonce: number } | null;
+  /** Cancel the active execution (wired to /cancel command). */
+  interrupt?: () => void;
+  /** Current execution status (wired to /status command). */
+  executionStatus?: import("../hooks/use-execution").ExecutionStatus;
 };
 
 export const TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
@@ -277,7 +281,7 @@ export const TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
   { name: "enter", shift: true, action: "newline" },
 ];
 
-export function InputBar({ onSubmit, disabled = false, prefill = null }: Props) {
+export function InputBar({ onSubmit, disabled = false, prefill = null, interrupt, executionStatus }: Props) {
   const { mode, toggleMode, setMode, setModel } = usePromptConfig();
   const textareaRef = useRef<TextareaRenderable>(null);
   const onSubmitRef = useRef<() => void>(() => { });
@@ -410,11 +414,13 @@ export function InputBar({ onSubmit, disabled = false, prefill = null }: Props) 
         setModel,
         sessionId: routeParams["id"],
         cwd: process.cwd(),
+        interrupt,
+        executionStatus,
       });
     } else {
       textarea.insertText(command.value + " ");
     }
-  }, [renderer, toast, dialog, navigate, mode, setMode, setModel, routeParams]);
+  }, [renderer, toast, dialog, navigate, mode, setMode, setModel, routeParams, interrupt, executionStatus]);
 
   const handleCommandExecute = useCallback(
     (index: number) => {

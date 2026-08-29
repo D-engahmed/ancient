@@ -68,6 +68,50 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "cancel",
+    description: "Cancel the active execution",
+    value: "/cancel",
+    action: (ctx) => {
+      if (ctx.executionStatus !== "submitted" && ctx.executionStatus !== "streaming") {
+        ctx.toast.show({ variant: "info", message: "No active execution to cancel" });
+        return;
+      }
+      ctx.interrupt?.();
+      ctx.toast.show({ variant: "success", message: "Execution cancelled" });
+    },
+  },
+  {
+    name: "status",
+    description: "Show current execution status",
+    value: "/status",
+    action: (ctx) => {
+      const status = ctx.executionStatus ?? "idle";
+      const labels: Record<string, string> = {
+        idle: "Idle — no execution running",
+        submitted: "Starting execution...",
+        streaming: "Executing — streaming events",
+        ready: "Execution completed",
+        error: "Execution failed",
+      };
+      ctx.toast.show({
+        variant: status === "error" ? "error" : status === "ready" ? "success" : "info",
+        message: labels[status] ?? status,
+      });
+    },
+  },
+  {
+    name: "help",
+    description: "Show available commands",
+    value: "/help",
+    action: (ctx) => {
+      ctx.toast.show({
+        variant: "info",
+        message: "Commands: /cancel /status /models /theme /sessions /skills /exit",
+        duration: 5000,
+      });
+    },
+  },
+  {
     name: "agents",
     description: "Switch agents",
     value: "/agents",

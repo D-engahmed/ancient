@@ -279,6 +279,8 @@ function SessionChat({
                     onSubmit={(text) => submit({ userText: text, mode, modelSelection })}
                     disabled={isExecuting}
                     prefill={prefill}
+                    interrupt={interrupt}
+                    executionStatus={status}
                 />
             </box>
 
