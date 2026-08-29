@@ -1,4 +1,7 @@
-// session.tsx
+// session.tsx — CLI-V2 Phase 6 execution console layout.
+// During execution: header + timeline + live output + input + footer.
+// After completion: header + full conversation + input + footer.
+
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useLocation, useNavigate } from "react-router";
 import { z } from "zod";
@@ -8,15 +11,17 @@ import {
     type ChatModelSelection,
     chatModelSelectionSchema,
 } from "@ANCIENT/shared";
-import { SessionShell } from "../components/session-shell";
 import { UserMessage, BotMessage, ErrorMessage } from "../components/messages";
+import { ExecutionHeader } from "../components/execution-header";
+import { ExecutionFooter } from "../components/execution-footer";
+import { ExecutionTimeline } from "../components/execution-timeline";
+import { InputBar } from "../components/input-bar";
 import { useToast } from "../providers/toast";
 import { useExecution } from "../hooks/use-execution";
 import { usePromptConfig } from "../providers/prompt-config";
+import { useKeyboardLayer } from "../providers/Keyboard-layer";
 import type { Message } from "../hooks/use-execution";
 import { apiClient } from "../lib/api-client";
-import { getErrorMessage } from "../lib/http-errors";
-import { useKeyboardLayer } from "../providers/Keyboard-layer";
 import { copyToClipboard } from "../lib/clipboard";
 import {
   openLearningStore,
@@ -43,7 +48,6 @@ function extractErrorCode(message: string): string | null {
 
 function makeRecorder(cwd: string) {
     const file = defaultLearningFile(cwd);
-    // Synchronous best-effort open; persistence happens on meaningful events.
     const learning = new LearningStore();
     void openLearningStore(file).then((store) => {
         learning.recordMany(store.all);
@@ -117,7 +121,16 @@ function SessionChat({
     const { mode, modelSelection } = usePromptConfig();
     const { isTopLayer } = useKeyboardLayer();
     const toast = useToast();
-    const { messages, status, submit, interrupt, error } = useExecution(initialMessages);
+    const {
+        messages,
+        status,
+        error,
+        timeline,
+        durationMs,
+        usage,
+        submit,
+        interrupt,
+    } = useExecution(initialMessages);
     const hasSubmittedInitialPromptRef = useRef(false);
     const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
 
@@ -125,6 +138,7 @@ function SessionChat({
         return () => void interrupt();
     }, [interrupt]);
 
+    // ESC to cancel during execution.
     useKeyboard((key) => {
         if (key.name === "escape" && isTopLayer("base") && status === "streaming") {
             key.preventDefault();
@@ -132,12 +146,9 @@ function SessionChat({
         }
     });
 
+    // Ctrl+Shift+Y to copy, Ctrl+Shift+R to re-send.
     useKeyboard((key) => {
         if (!isTopLayer("base")) return;
-        // Require ctrl+shift so these chords never hijack ordinary typing:
-        // bare `y`/`r` must keep inserting text into the input. On terminals
-        // that don't report the shift modifier, the chord still arrives as
-        // `name === "y"`/`"r"` (see opentui's KeyHandler / modifyOtherKeys).
         if (!key.ctrl || !key.shift) return;
         if (key.name !== "y" && key.name !== "r") return;
 
@@ -175,6 +186,7 @@ function SessionChat({
         }
     });
 
+    // Auto-submit the initial prompt.
     useEffect(() => {
         if (!initialPrompt || hasSubmittedInitialPromptRef.current) return;
         hasSubmittedInitialPromptRef.current = true;
@@ -210,8 +222,7 @@ function SessionChat({
         }
     }, [recorder, error]);
 
-    // Performance: record server round-trip latency when a submit leaves the
-    // streaming/submitted state (i.e. a chat request completed).
+    // Performance: record server round-trip latency.
     const runStartRef = useRef<number | null>(null);
     const wasRunningRef = useRef(false);
     useEffect(() => {
@@ -225,18 +236,59 @@ function SessionChat({
         wasRunningRef.current = isRunning;
     }, [status]);
 
+    // Derive the current user message and live text for the timeline view.
+    const isExecuting = status === "submitted" || status === "streaming";
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+    const lastAssistantMsg = [...messages].reverse().find((m) => m.role === "assistant");
+    const liveText = lastAssistantMsg
+        ? (lastAssistantMsg.parts.filter((p) => p.type === "text")[0] as { text?: string })?.text ?? ""
+        : "";
+
     return (
-        <SessionShell
-            onSubmit={(text) => submit({ userText: text, mode, modelSelection })}
-            loading={status === "submitted" || status === "streaming"}
-            interruptible={status === "submitted" || status === "streaming"}
-            prefill={prefill}
-        >
-            {messages.map((msg) => (
-                <ChatMessage key={msg.id} msg={msg} />
-            ))}
-            {error && <ErrorMessage message={error.message} />}
-        </SessionShell>
+        <box flexDirection="column" flexGrow={1} width="100%" height="100%">
+            {/* Header */}
+            <ExecutionHeader status={status} durationMs={durationMs} />
+
+            {/* Content area */}
+            <box flexGrow={1} flexDirection="column" paddingX={2} gap={1} overflow="hidden">
+                {isExecuting && timeline.length > 0 ? (
+                    /* Timeline view during execution */
+                    <box flexDirection="column" gap={1}>
+                        {lastUserMsg && (
+                            <UserMessage
+                                message={messageText(lastUserMsg)}
+                                mode={lastUserMsg.metadata?.mode ?? mode}
+                            />
+                        )}
+                        <ExecutionTimeline entries={timeline} text={liveText || undefined} />
+                    </box>
+                ) : (
+                    /* Full conversation view when not executing */
+                    <box flexGrow={1} overflow="hidden">
+                        {messages.map((msg) => (
+                            <ChatMessage key={msg.id} msg={msg} />
+                        ))}
+                        {error && <ErrorMessage message={error.message} />}
+                    </box>
+                )}
+            </box>
+
+            {/* Input */}
+            <box flexShrink={0} paddingX={2}>
+                <InputBar
+                    onSubmit={(text) => submit({ userText: text, mode, modelSelection })}
+                    disabled={isExecuting}
+                    prefill={prefill}
+                />
+            </box>
+
+            {/* Footer */}
+            <ExecutionFooter
+                status={status}
+                durationMs={durationMs}
+                usage={usage}
+            />
+        </box>
     );
 }
 
@@ -282,7 +334,14 @@ export function Session() {
     }, [id, prefetched, toast, navigate]);
 
     if (!session) {
-        return <SessionShell onSubmit={() => { }} inputDisabled loading />;
+        return (
+            <box flexDirection="column" flexGrow={1} width="100%" height="100%">
+                <ExecutionHeader status="idle" />
+                <box flexGrow={1} alignItems="center" justifyContent="center">
+                    <text>Loading...</text>
+                </box>
+            </box>
+        );
     }
 
     return <SessionChat key={session.id} session={session} initialPrompt={prefetched?.initialPrompt} />;

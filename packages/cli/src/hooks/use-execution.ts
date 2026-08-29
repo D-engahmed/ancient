@@ -1,17 +1,16 @@
 // Copyright (c) 2026 NXG AI Solutions. All rights reserved.
 // Proprietary and confidential. Unauthorized copying or distribution prohibited.
 //
-// CLI-V2 Phase 5 — the CLI's execution transport hook (replaces the legacy
+// CLI-V2 Phase 5/6 — the CLI's execution transport hook (replaces the legacy
 // /chat round-trip transport; tool execution now runs server-side, F3). Every
 // submit starts one execution via POST /executions and streams the typed wire
 // envelopes; the CLI renders what the server emits and never invents history
 // (audit F2). Session-chat history (persisted /sessions messages) is
 // display-only until Phase 6 wires the timeline.
 //
-// Status surface (kept compatible with the previous hook so session.tsx needs
-// no structural change): idle | submitted | streaming | ready | error.
+// Status surface: idle | submitted | streaming | ready | error.
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatModelSelection, ModeType } from "@ANCIENT/shared";
 import type { RiskCategory } from "@ANCIENT/infrastructure/security";
 import { apiClient, streamExecutionEvents } from "../lib/api-client";
@@ -20,9 +19,10 @@ import {
   type ChatMessageMetadata,
   type ExecutionMessage,
   type Message,
+  type TimelineEntry,
 } from "../lib/execution-stream";
 
-export type { ChatMessageMetadata, ExecutionMessage, Message };
+export type { ChatMessageMetadata, ExecutionMessage, Message, TimelineEntry };
 export type MessagePart = Message["parts"][number];
 
 export type ExecutionStatus = "idle" | "submitted" | "streaming" | "ready" | "error";
@@ -43,6 +43,9 @@ const CLI_ALLOW: readonly RiskCategory[] = ["read", "write", "exec", "network", 
 /** How long to wait for the server to honour a cancel before dropping the stream. */
 const CANCEL_WATCHDOG_MS = 5_000;
 
+/** How often to update the live duration display. */
+const DURATION_TICK_MS = 200;
+
 type ActiveRun = {
   executionId: string;
   assembler: ExecutionMessageAssembler;
@@ -54,8 +57,33 @@ export function useExecution(initialMessages: Message[] = []) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [status, setStatus] = useState<ExecutionStatus>("idle");
   const [error, setError] = useState<Error | null>(null);
+  const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
+  const [durationMs, setDurationMs] = useState<number | undefined>(undefined);
+  const [usage, setUsage] = useState<ChatMessageMetadata["usage"]>(undefined);
   const activeRef = useRef<ActiveRun | null>(null);
   const generationRef = useRef(0);
+  const durationRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Live duration ticker — updates every 200ms while execution is active.
+  useEffect(() => {
+    if (status === "submitted" || status === "streaming") {
+      const assembler = activeRef.current?.assembler;
+      if (assembler?.startedAt) {
+        const tick = () => {
+          const now = Date.now();
+          setDurationMs(now - assembler.startedAt!);
+        };
+        tick();
+        durationRef.current = setInterval(tick, DURATION_TICK_MS);
+      }
+    }
+    return () => {
+      if (durationRef.current) {
+        clearInterval(durationRef.current);
+        durationRef.current = null;
+      }
+    };
+  }, [status]);
 
   function upsertAssistant(message: ExecutionMessage) {
     setMessages((prev) => {
@@ -72,6 +100,9 @@ export function useExecution(initialMessages: Message[] = []) {
     const generation = ++generationRef.current;
 
     setError(null);
+    setTimeline([]);
+    setDurationMs(undefined);
+    setUsage(undefined);
     setMessages((prev) => [
       ...prev,
       {
@@ -96,6 +127,10 @@ export function useExecution(initialMessages: Message[] = []) {
       clearTimeout(active.watchdog);
       activeRef.current = null;
     }
+    if (durationRef.current) {
+      clearInterval(durationRef.current);
+      durationRef.current = null;
+    }
   }
 
   async function run(params: SubmitParams, generation: number, controller: AbortController) {
@@ -115,7 +150,6 @@ export function useExecution(initialMessages: Message[] = []) {
       });
       const watchdog = setTimeout(() => {
         if (activeRef.current?.controller !== controller) return;
-        // The server never sent a terminal after a cancel — stop waiting.
         controller.abort();
         teardown(controller);
         setStatus("ready");
@@ -131,11 +165,19 @@ export function useExecution(initialMessages: Message[] = []) {
         if (!isCurrent(generation, controller)) return;
         assembler.apply(event);
         upsertAssistant(assembler.message);
+        setTimeline(assembler.timeline);
         if (assembler.terminal) break;
       }
 
       if (!isCurrent(generation, controller)) return;
       teardown(controller);
+
+      // Final state update
+      setTimeline(assembler.timeline);
+      setUsage(assembler.usage);
+      if (assembler.startedAt && assembler.terminal) {
+        setDurationMs(Date.now() - assembler.startedAt);
+      }
 
       if (assembler.terminal === "failed") {
         const safe = assembler.error;
@@ -163,15 +205,13 @@ export function useExecution(initialMessages: Message[] = []) {
     }
   }
 
-  function interrupt(): void {
+  const interrupt = useCallback((): void => {
     const active = activeRef.current;
     if (!active) return;
 
-    // Request server-side cancellation (the engine honours it via the session
-    // cancel); the watchdog drops the stream if the terminal never arrives.
     setStatus("ready");
     void apiClient.executions.cancel(active.executionId, "cancelled by user").catch(() => undefined);
-  }
+  }, []);
 
-  return { messages, status, error, submit, interrupt };
+  return { messages, status, error, timeline, durationMs, usage, submit, interrupt };
 }

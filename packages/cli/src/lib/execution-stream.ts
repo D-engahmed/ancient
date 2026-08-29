@@ -126,6 +126,12 @@ export type Message =
 export const TERMINAL_STATES = ["completed", "failed", "cancelled"] as const;
 export type TerminalState = (typeof TERMINAL_STATES)[number];
 
+export type TimelineEntry = {
+  id: string;
+  label: string;
+  status: "done" | "running" | "pending" | "error";
+};
+
 /**
  * Incremental projection of an execution's envelopes into the assistant
  * message the CLI renders. `apply` is pure-ish (mutates internal drafts only)
@@ -244,5 +250,33 @@ export class ExecutionMessageAssembler {
         ...(this.#terminalPayload.usage ? { usage: this.#terminalPayload.usage } : {}),
       },
     };
+  }
+
+  /** Structured timeline entries for the ExecutionTimeline component. */
+  get timeline(): TimelineEntry[] {
+    const entries: TimelineEntry[] = [];
+    for (const [callId, tool] of this.#tools) {
+      entries.push({
+        id: callId,
+        label: tool.name,
+        status: tool.state === "running" ? "running" : tool.state === "ok" ? "done" : "error",
+      });
+    }
+    return entries;
+  }
+
+  /** Current usage metrics (available after terminal). */
+  get usage(): ChatMessageMetadata["usage"] {
+    return this.#terminalPayload.usage;
+  }
+
+  /** Timestamp when execution started (for live duration calculation). */
+  get startedAt(): number | null {
+    return this.#startedAt;
+  }
+
+  /** Whether the assembler has received any events. */
+  get hasStarted(): boolean {
+    return this.#startedAt !== null;
   }
 }
