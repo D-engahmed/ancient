@@ -9,4 +9,4 @@
 // touching a chat handler. Sub-modules: core (registry + contract + permission)
 // via own sub-branches; core, files, shell, skills, mcp, browser are wired.
 
-export {};
+export * as core from "./core";
