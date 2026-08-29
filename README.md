@@ -18,6 +18,12 @@
 
 **ANCIENT** is a self-hosted, terminal-native AI coding agent that replaces per-seat subscription costs with full control over your AI workforce. Unlike Claude Code, Cursor, or GitHub Copilot — ANCIENT lets you **design custom agent teams**, **assign different LLM models to each agent**, and **orchestrate them through 6 coordination protocols** — all from your terminal.
 
+> **Honesty note:** the multi-agent surface below is the *documented intent*. The **as-built**
+> reality (what currently runs, what is un-wired, and the state/persistence limits) is recorded
+> in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and the assumption register
+> [`docs/architecture/ASSUMPTIONS.md`](docs/architecture/ASSUMPTIONS.md). Trust those over this
+> README for engineering decisions.
+
 Built for teams who refuse to pay $20–$40/month per developer for black-box AI tools.
 
 ```bash
@@ -55,7 +61,11 @@ $ ancient "Build a React dashboard with real-time WebSocket charts"
 
 ## 🧠 The Sub-Agent System
 
-ANCIENT 3.0 introduces the **most powerful multi-agent orchestration framework** ever built into an AI coding assistant. Design teams, assign roles, pick models, and watch them collaborate.
+ANCIENT 3.0 introduces a **multi-agent orchestration framework** built into an AI coding assistant. Design teams, assign roles, pick models, and watch them collaborate.
+
+> See `docs/ARCHITECTURE.md` §2 for what of this is actually wired today (and §5 for the
+> "complexity must be earned" strategy ladder that governs whether a team protocol is used for a
+> given task).
 
 ### 6 Coordination Protocols
 
