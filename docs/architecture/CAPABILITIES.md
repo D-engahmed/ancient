@@ -1,6 +1,6 @@
 # Capability runtime layer — as-built
 
-**Branch:** `layer/06-capabilities` · **Status:** in progress (subs 01–02 wired) ·
+**Branch:** `layer/06-capabilities` · **Status:** in progress (subs 01–03 wired) ·
 **Register:** [A-CAP-001](ASSUMPTIONS.md), [A-LAYER-001](ASSUMPTIONS.md), [A-LAYER-002](ASSUMPTIONS.md)
 
 The **Capability Runtime** (ARCHITECTURE.md §4, audit item #5): owns tools, skills, MCP,
@@ -13,7 +13,7 @@ flowchart LR
     subgraph CAP["@ANCIENT/capabilities"]
         CORE["core — registry · contract · policy edge"]
         F["files — read/list/glob/grep + write/edit"]
-        S["shell — (pending sub-branch)"]
+        S["shell — bash w/ denylist + timeout"]
         SK["skills — (pending sub-branch)"]
         M["mcp — (pending sub-branch)"]
         B["browser — (pending sub-branch)"]
@@ -27,9 +27,9 @@ flowchart LR
 ```
 
 Sub-layers are added one per sub-branch under `sub/06/*`, then merged here. `core`
-(commit `a24c3a1`) and `files` (commit `509e26f`) are wired so far; `shell`, `skills`,
-`mcp`, `browser` are next in build order. `commands`, `computer-use`, `design` stay a
-README roadmap until the engine exists (per A-EXEC-004 test).
+(commit `a24c3a1`), `files` (commit `509e26f`), and `shell` (commit `da57e75`) are wired so
+far; `skills`, `mcp`, `browser` are next in build order. `commands`, `computer-use`,
+`design` stay a README roadmap until the engine exists (per A-EXEC-004 test).
 
 ---
 
@@ -76,7 +76,25 @@ Six contributing tools, hierarchy-safe and PLAN-gated, on the same central edge.
   under the default policy they are denied before touching the filesystem (asserted by the
   core approval tests).
 
+## Sub-03 — Shell (done)
+
+One contributing tool (`bash`, category `exec`), approval-gated with a denylist floor.
+
+| File | Owning responsibility |
+|------|------------------------|
+| `src/shell/dangerous-commands.ts` | `findDangerousCommandMatch` — denylist ported from `packages/server` (MIT attribution): `rm -rf` over root/home/parent, `git push --force main/master`, `git reset --hard`, `curl`/`wget` piped to a shell, `mkfs`, `dd` to block devices, fork bomb, `chmod -R 777 /`, `sudo rm`. |
+| `src/shell/tools.ts` | `bashTool` — `bash`/`exec`, denylist check **before** spawn, `spawn(shell:true, cwd=scope.cwd)`, per-stream 20k cap with truncation marker, timeout kill (default 30s from the shared `bash` schema), `timedOut` flag, error mapping that never throws. |
+| `src/shell/shell.test.ts` | 10 tests — denylist positives/negatives, deny-before-spawn, cwd execution, non-zero exit, timeout kill, exec default denial, BUILD/PLAN gating, truncation of a 50k-output command. |
+
+**Design decisions:**
+- **Approval is the gate, the denylist is the floor** — the default policy denies `exec`
+  outright; a policy that allows `exec` still hits the denylist inside the tool. Two
+  independent layers of defense for an operation that can reach anywhere a user can.
+- **Cross-platform by default** — `shell:true` (cmd/sh) rather than a hard-coded `bash`
+  binary, so the same `@ANCIENT/capabilities` package behaves identically on Windows and
+  POSIX hosts. Timeout is enforced by killing the shell process; best-effort portability.
+
 ## Verification
 
 - `npm run typecheck` — exit 0 (all 7 packages incl. `capabilities`).
-- Full suite — **135 pass** (121 + 14 files) as of `sub/06/02-files`, 0 fail.
+- Full suite — **145 pass** (135 + 10 shell) as of `sub/06/03-shell`, 0 fail.

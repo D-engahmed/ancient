@@ -35,7 +35,7 @@ flowchart TB
 
     style CORE fill:#0f3460,stroke:#7FC4BE,color:#fff
     style FILES fill:#0f3460,stroke:#7FC4BE,color:#fff
-    style SHELL fill:#16213e,stroke:#ff6b6b,color:#fff
+    style SHELL fill:#0f3460,stroke:#7FC4BE,color:#fff
     style SKILLS fill:#16213e,stroke:#ff6b6b,color:#fff
     style MCP fill:#16213e,stroke:#ff6b6b,color:#fff
     style BROWSER fill:#16213e,stroke:#ff6b6b,color:#fff
@@ -96,6 +96,20 @@ Six atomic tools contributing to the registry, hierarchy-safe and PLAN-gated.
 
 Files: `path-safety.ts`, `glob.ts`, `tools.ts`, `index.ts`, `files.test.ts` (14 tests).
 
+### shell — done (commit `da57e75`)
+
+One tool (`bash`) at category `exec` — **denied by default**, approval-gated, denylist-floored.
+
+- The real boundary is `ApprovalPolicy` (exec → deny by default); inside the tool, a
+  denylist ported from `packages/server` (MIT attribution) catches irreversible
+  one-liners (`rm -rf /`, force-push, `curl|sh`, `mkfs`, `dd`, fork bombs, `chmod -R 777 /`
+  …) before anything spawns.
+- `spawn` with `shell:true` (cross-platform), `cwd`, per-stream 20k output cap with a
+  truncation marker, timeout kill (default 30s; overridable via the shared `bash` schema),
+  `timedOut` flag, never-throwing error mapping.
+
+Files: `dangerous-commands.ts`, `tools.ts`, `index.ts`, `shell.test.ts` (10 tests).
+
 ---
 
 ## Roadmap
@@ -104,7 +118,7 @@ Files: `path-safety.ts`, `glob.ts`, `tools.ts`, `index.ts`, `files.test.ts` (14 
 |-----------|--------|--------|
 | `core` | done | `sub/06/01-core` |
 | `files` | done | `sub/06/02-files` |
-| `shell` | pending | `sub/06/03-shell` |
+| `shell` | done | `sub/06/03-shell` |
 | `skills` | pending | `sub/06/04-skills` |
 | `mcp` | pending | `sub/06/05-mcp` |
 | `browser` | pending | `sub/06/06-browser` |
