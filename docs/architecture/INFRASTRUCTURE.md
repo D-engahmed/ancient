@@ -24,8 +24,8 @@ flowchart LR
 ```
 
 Sub-layers are added one per sub-branch under `sub/07/*`, then merged here. `providers`
-(commit `8efd708`), `memory` (commit `06604d7`), and `storage` (commit `0af8197`) are wired so
-far.
+(commit `8efd708`), `memory` (commit `06604d7`), `storage` (commit `0af8197`), and `events`
+(commit `cdbfb83`) are wired so far — `security` is next.
 
 ---
 
@@ -89,6 +89,23 @@ Durable **execution store** that closes assumption A-EXEC-003 (the agent package
 
 A Postgres/Prisma implementation later implements the same `ExecutionStore` interface without
 touching callers.
+
+---
+
+## Sub-04 — Events (done)
+
+**Live** cross-layer notification ring complementing the **durable** log in Sub-03. Per
+A-LAYER-002, cross-layer communication flows through this infra-owned bus.
+
+| File | Owning responsibility |
+|------|------------------------|
+| `src/events/types.ts` | `LifecycleEvent` (alias of storage's `ExecutionEvent`), `EventFilter`, `Listener`, `Unsubscribe`, `BusErrorHandler`, `LogSource`. |
+| `src/events/bus.ts` | `EventBus` interface + `MemoryEventBus` — sync, in-order; `subscribe`/`once`; executionId/type filters; per-listener error isolation; `close`. |
+| `src/events/bridge.ts` | `createExecutionStoreBridge()` — wires a durable `LogSource` onto the bus so appends are re-published live; decoupled from any concrete store. |
+| `src/events/events.test.ts` | 10 tests (ordering, filters, once, unsubscribe, isolation, close, bridge). |
+
+Design: sync in-order delivery by design (async listeners supported, not awaited); error
+isolation keeps one throwing listener from blocking peers or the publisher.
 
 ## Verification
 
