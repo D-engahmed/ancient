@@ -34,4 +34,16 @@ export {
   type ProviderDefinition,
   type ProviderModel,
 } from "./providers";
+
+export {
+  executionEventEnvelopeSchema,
+  errorEnvelopeSchema,
+  TERMINAL,
+  isTerminalExecutionEvent,
+  parseExecutionEvent,
+  type ExecutionEventEnvelope,
+  type ExecutionEventPayload,
+  type ClientSafeError,
+} from "./execution-events";
+
 export { createLogger } from "./logger";

@@ -78,6 +78,14 @@
         "typescript": "^5",
       },
     },
+    "packages/contracts": {
+      "name": "@ANCIENT/contracts",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.4.0",
+      },
+    },
     "packages/database": {
       "name": "@ANCIENT/database",
       "dependencies": {
@@ -92,11 +100,38 @@
         "prisma": "^7.7.0",
       },
     },
+    "packages/execution": {
+      "name": "@ANCIENT/execution",
+      "version": "1.0.0",
+      "dependencies": {
+        "@ANCIENT/capabilities": "workspace:*",
+        "@ANCIENT/infrastructure": "workspace:*",
+        "@ANCIENT/shared": "workspace:*",
+        "@ANCIENT/strategies": "workspace:*",
+        "ai": "^7.0.55",
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.4.0",
+      },
+    },
     "packages/infrastructure": {
       "name": "@ANCIENT/infrastructure",
       "version": "1.0.0",
       "dependencies": {
         "@ANCIENT/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.4.0",
+      },
+    },
+    "packages/reliability": {
+      "name": "@ANCIENT/reliability",
+      "version": "1.0.0",
+      "dependencies": {
+        "@ANCIENT/contracts": "workspace:*",
       },
       "devDependencies": {
         "@types/node": "^20.0.0",
@@ -124,6 +159,7 @@
     "packages/shared": {
       "name": "@ANCIENT/shared",
       "dependencies": {
+        "@ANCIENT/contracts": "workspace:*",
         "ai": "^7.0.55",
         "zod": "^4.3.6",
       },
@@ -152,9 +188,15 @@
 
     "@ANCIENT/cli": ["@ANCIENT/cli@workspace:packages/cli"],
 
+    "@ANCIENT/contracts": ["@ANCIENT/contracts@workspace:packages/contracts"],
+
     "@ANCIENT/database": ["@ANCIENT/database@workspace:packages/database"],
 
+    "@ANCIENT/execution": ["@ANCIENT/execution@workspace:packages/execution"],
+
     "@ANCIENT/infrastructure": ["@ANCIENT/infrastructure@workspace:packages/infrastructure"],
+
+    "@ANCIENT/reliability": ["@ANCIENT/reliability@workspace:packages/reliability"],
 
     "@ANCIENT/server": ["@ANCIENT/server@workspace:packages/server"],
 
