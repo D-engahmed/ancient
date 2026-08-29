@@ -2,7 +2,8 @@
 
 The **Capability Runtime** layer of ANCIENT (see `docs/ARCHITECTURE.md` §4). Owns tools,
 skills, MCP, and browser/file/shell behaviors so the engine and gateway never grow a
-monolithic tool stack (assumption `A-EXEC-004`, audit item #5).
+monolithic tool stack (assumption `A-EXEC-004`, audit item #5). All six sub-layers are
+wired (commit `b3b3d1c`); the layer is ready for engine consumption.
 
 ```mermaid
 flowchart TB
@@ -38,7 +39,7 @@ flowchart TB
     style SHELL fill:#0f3460,stroke:#7FC4BE,color:#fff
     style SKILLS fill:#0f3460,stroke:#7FC4BE,color:#fff
     style MCP fill:#0f3460,stroke:#7FC4BE,color:#fff
-    style BROWSER fill:#16213e,stroke:#ff6b6b,color:#fff
+    style BROWSER fill:#0f3460,stroke:#7FC4BE,color:#fff
 ```
 
 Legend: green-bordered = wired; red-bordered = pending (each built in its own sub-branch under
@@ -139,9 +140,21 @@ MCP server discovery + client, remote tools folded into the registry.
 Files: `config.ts`, `json-schema.ts`, `client.ts`, `tools.ts`, `index.ts`, `fixtures/mock-server.ts`,
 `mcp.test.ts` (11 tests, incl. a real stdio e2e).
 
+### browser — done (commit `b3b3d1c`)
+
+Web-read tooling — the honest "browser" for a terminal-first agent.
+
+- `fetchUrl` (category `network`, **denied by default**): global-fetch with AbortController
+  timeout, redirect follow, 2MB raw-byte guard, structured errors (never throws), `maxChars`
+  cap; HTML is stripped to readable text by a dependency-free `htmlToText`.
+- No browser-automation dependency: `computer-use`/Playwright stays on the roadmap.
+
+Files: `fetch.ts`, `tools.ts`, `index.ts`, `browser.test.ts` (12 tests against a local HTTP
+server).
+
 ---
 
-## Roadmap
+## Roadmap — layer complete
 
 | Sub-layer | Status | Branch |
 |-----------|--------|--------|
@@ -150,6 +163,7 @@ Files: `config.ts`, `json-schema.ts`, `client.ts`, `tools.ts`, `index.ts`, `fixt
 | `shell` | done | `sub/06/03-shell` |
 | `skills` | done | `sub/06/04-skills` |
 | `mcp` | done | `sub/06/05-mcp` |
+| `browser` | done | `sub/06/06-browser` |
 | `skills` | pending | `sub/06/04-skills` |
 | `mcp` | pending | `sub/06/05-mcp` |
 | `browser` | pending | `sub/06/06-browser` |

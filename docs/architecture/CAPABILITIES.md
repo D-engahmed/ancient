@@ -1,6 +1,6 @@
 # Capability runtime layer — as-built
 
-**Branch:** `layer/06-capabilities` · **Status:** in progress (subs 01–05 wired) ·
+**Branch:** `layer/06-capabilities` · **Status:** done (all six subs wired) ·
 **Register:** [A-CAP-001](ASSUMPTIONS.md), [A-LAYER-001](ASSUMPTIONS.md), [A-LAYER-002](ASSUMPTIONS.md)
 
 The **Capability Runtime** (ARCHITECTURE.md §4, audit item #5): owns tools, skills, MCP,
@@ -16,7 +16,7 @@ flowchart LR
         S["shell — bash w/ denylist + timeout"]
         SK["skills — SKILL.md catalog + on-demand load"]
         M["mcp — remote tools via config + client"]
-        B["browser — (pending sub-branch)"]
+        B["browser — fetchUrl web-read"]
     end
     subgraph LOWER["Lean on"]
         INFRA["@ANCIENT/infrastructure"]
@@ -26,10 +26,10 @@ flowchart LR
     CAP --> SHARED
 ```
 
-Sub-layers are added one per sub-branch under `sub/06/*`, then merged here. `core`
-(`a24c3a1`), `files` (`509e26f`), `shell` (`da57e75`), `skills` (`99a02cc`), and `mcp`
-(`c8aa691`) are wired so far; `browser` remains in build order. `commands`, `computer-use`,
-`design` stay a README roadmap until the engine exists (per A-EXEC-004 test).
+Sub-layers were added one per sub-branch under `sub/06/*`, then merged here. All six are
+wired: `core` (`a24c3a1`), `files` (`509e26f`), `shell` (`da57e75`), `skills` (`99a02cc`),
+`mcp` (`c8aa691`), `browser` (`b3b3d1c`). `commands`, `computer-use`, `design` stay a
+README roadmap until the engine exists (per A-EXEC-004 test).
 
 ---
 
@@ -137,7 +137,24 @@ peer-level SDK dependency (A-LAYER-002 — never an upward import).
 - **Dynamic registration is the honest exception** — MCP tools exist only after a live
   connection, so they're pulled at startup and `registerAll`'d, vs. the static modules.
 
+## Sub-06 — Browser (done)
+
+Web-read tooling — the honest "browser" for a terminal-first agent, no automation dep.
+
+| File | Owning responsibility |
+|------|------------------------|
+| `src/browser/fetch.ts` | `fetchUrl` — global fetch + AbortController timeout, redirects, 2 MB raw-byte guard, structured errors (never throws), `maxChars`; `htmlToText` — naive script/style/comment/tag strip, entity decode, whitespace collapse (zero deps). |
+| `src/browser/tools.ts` | `fetchUrlTool` — category `network` (denied by default), `target` = URL for approval display. |
+| `src/browser/browser.test.ts` | 12 tests over a local `node:http` server — htmlToText, plain-text fetch, HTML extraction, non-http rejection, timeout on a slow route, 404 surfacing, maxChars, network default-deny, network-allowed run, arg validation, registry gating, approval target. |
+
+**Design decisions:**
+- **Network egress is opt-in** — `fetchUrl` is category `network`, denied by the default
+  `ApprovalPolicy`; reads of the open web require an operator to allow the category, then
+  it inherits consent/redaction/budget like every other tool (A-CAP-001 TEST).
+- **No headless-browser dependency in this layer** — full `computer-use`/Playwright is a
+  roadmap item; `htmlToText` gives the model readable pages, not screenshots.
+
 ## Verification
 
 - `npm run typecheck` — exit 0 (all 7 packages incl. `capabilities`).
-- Full suite — **167 pass** (156 + 11 mcp) as of `sub/06/05-mcp`, 0 fail.
+- Full suite — **179 pass** (167 + 12 browser) as of `sub/06/06-browser`, 0 fail.
