@@ -115,6 +115,16 @@ export class ExecutionEventBridge {
     }
   }
 
+  /** Emit an approval.requested event for the consent bridge (Phase 9). */
+  emitApprovalRequested(executionId: string, detail: { requestId: string; capability: string; prompt?: string }): void {
+    if (this.#closed) return;
+    this.#emit(this.#build("approval.requested", {
+      requestId: detail.requestId,
+      capability: detail.capability,
+      ...(detail.prompt ? { prompt: detail.prompt } : {}),
+    }));
+  }
+
   /** Direct bridging entry — translate one infra lifecycle event. */
   onLifecycleEvent(event: LifecycleEvent): void {
     if (this.#closed || event.executionId !== this.#executionId) return;

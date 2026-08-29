@@ -125,6 +125,11 @@ export const apiClient = {
         method: "POST",
         body: reason ? { reason } : {},
       }),
+    consent: (executionId: string, requestId: string, granted: boolean) =>
+      request(`/executions/${executionId}/consent`, {
+        method: "POST",
+        body: { requestId, granted },
+      }),
   },
 };
 

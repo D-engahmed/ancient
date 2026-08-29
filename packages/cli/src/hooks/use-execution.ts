@@ -34,11 +34,11 @@ export type SubmitParams = {
 };
 
 /**
- * Risk categories the CLI auto-allows on the server (mirrors the legacy local
- * executor, which ran any tool unfettered). Placeholder until the approval UX
- * (Phase 9) replaces it — the engine still denies by default.
+ * Risk categories the CLI auto-allows on the server. Phase 9 replaces the
+ * former blanket auto-allow with real consent prompts — only read stays
+ * pre-allowed; everything else goes through the approval bus.
  */
-const CLI_ALLOW: readonly RiskCategory[] = ["read", "write", "exec", "network", "scope"];
+const CLI_ALLOW: readonly RiskCategory[] = ["read"];
 
 /** How long to wait for the server to honour a cancel before dropping the stream. */
 const CANCEL_WATCHDOG_MS = 5_000;
@@ -60,6 +60,7 @@ export function useExecution(initialMessages: Message[] = []) {
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [durationMs, setDurationMs] = useState<number | undefined>(undefined);
   const [usage, setUsage] = useState<ChatMessageMetadata["usage"]>(undefined);
+  const [pendingConsent, setPendingConsent] = useState<{ requestId: string; capability: string; prompt?: string } | null>(null);
   const activeRef = useRef<ActiveRun | null>(null);
   const generationRef = useRef(0);
   const durationRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -163,6 +164,14 @@ export function useExecution(initialMessages: Message[] = []) {
         signal: controller.signal,
       })) {
         if (!isCurrent(generation, controller)) return;
+
+        // Handle approval.requested: surface to UI, don't feed to assembler.
+        if (event.type === "approval.requested") {
+          const p = event.payload;
+          setPendingConsent({ requestId: p.requestId, capability: p.capability, prompt: p.prompt });
+          continue;
+        }
+
         assembler.apply(event);
         upsertAssistant(assembler.message);
         setTimeline(assembler.timeline);
@@ -213,5 +222,14 @@ export function useExecution(initialMessages: Message[] = []) {
     void apiClient.executions.cancel(active.executionId, "cancelled by user").catch(() => undefined);
   }, []);
 
-  return { messages, status, error, timeline, durationMs, usage, submit, interrupt };
+  const respondToConsent = useCallback((granted: boolean): void => {
+    const active = activeRef.current;
+    const consent = pendingConsent;
+    if (!active || !consent) return;
+
+    setPendingConsent(null);
+    void apiClient.executions.consent(active.executionId, consent.requestId, granted).catch(() => undefined);
+  }, [pendingConsent]);
+
+  return { messages, status, error, timeline, durationMs, usage, pendingConsent, submit, interrupt, respondToConsent };
 }

@@ -35,6 +35,7 @@ import { ApprovalPolicy, type RiskCategory } from "@ANCIENT/infrastructure/secur
 import { DEFAULT_CHAT_MODEL_ID, type ChatModelSelection, type ModeType } from "@ANCIENT/shared";
 import { resolveChatModel } from "../lib/models";
 import { ExecutionEventBridge } from "./bridge";
+import { ConsentBridge } from "./consent-bridge";
 
 export type ExecutionStartRequest = {
   userId: string;
@@ -66,6 +67,7 @@ export type ExecutionEntry = {
 export class ExecutionHub {
   #engine = new ExecutionEngine({ registry: DEFAULT_REGISTRY });
   #executions = new Map<string, ExecutionEntry>();
+  #consent = new ConsentBridge();
 
   get engine() {
     return this.#engine;
@@ -119,6 +121,7 @@ export class ExecutionHub {
         model: createAiModelChat(resolved.model),
         mode,
         allow: request.toolAllow,
+        consentProvider: this.#consent.createProvider(bridge, executionId),
         observe: (event) => bridge.onStrategyEvent(event),
         bus,
       });
@@ -166,6 +169,11 @@ export class ExecutionHub {
     if (!entry) return undefined;
     entry.session.cancel(reason ?? "cancelled by user");
     return entry;
+  }
+
+  /** Respond to a pending consent request (Phase 9). */
+  respondToConsent(requestId: string, granted: boolean): boolean {
+    return this.#consent.respond(requestId, granted);
   }
 
   #policy(allow: readonly RiskCategory[] | undefined): ApprovalPolicy {

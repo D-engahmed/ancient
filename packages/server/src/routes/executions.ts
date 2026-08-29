@@ -99,6 +99,19 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
     return c.json({ executionId: entry.executionId, status: "cancelled" });
   });
 
+  // Consent response (Phase 9): the CLI sends approve/deny for a pending approval.requested.
+  const consentSchema = z.object({
+    requestId: z.string().min(1),
+    granted: z.boolean(),
+  });
+
+  app.post("/:executionId/consent", zValidator("json", consentSchema), (c) => {
+    const { requestId, granted } = c.req.valid("json");
+    const accepted = hub.respondToConsent(requestId, granted);
+    if (!accepted) return c.json({ error: "Unknown or expired consent request" }, 404);
+    return c.json({ requestId, granted });
+  });
+
   // Honest stubs: the engine exposes cancellation only today (AUDIT F2/F5);
   // pause/resume arrive with the durable execution-store bridge.
   for (const verb of ["pause", "resume"] as const) {

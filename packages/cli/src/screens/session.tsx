@@ -16,6 +16,7 @@ import { ExecutionHeader } from "../components/execution-header";
 import { ExecutionFooter } from "../components/execution-footer";
 import { ExecutionTimeline } from "../components/execution-timeline";
 import { ExecutionInspector } from "../components/execution-inspector";
+import { ConsentPrompt } from "../components/consent-prompt";
 import { InputBar } from "../components/input-bar";
 import { useToast } from "../providers/toast";
 import { useExecution } from "../hooks/use-execution";
@@ -129,8 +130,10 @@ function SessionChat({
         timeline,
         durationMs,
         usage,
+        pendingConsent,
         submit,
         interrupt,
+        respondToConsent,
     } = useExecution(initialMessages);
     const hasSubmittedInitialPromptRef = useRef(false);
     const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
@@ -308,6 +311,18 @@ function SessionChat({
                     </box>
                 )}
             </box>
+
+            {/* Consent prompt (Phase 9) */}
+            {pendingConsent && (
+                <box flexShrink={0} paddingX={2}>
+                    <ConsentPrompt
+                        capability={pendingConsent.capability}
+                        prompt={pendingConsent.prompt}
+                        onApprove={() => respondToConsent(true)}
+                        onDeny={() => respondToConsent(false)}
+                    />
+                </box>
+            )}
 
             {/* Input */}
             <box flexShrink={0} paddingX={2}>
