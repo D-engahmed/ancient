@@ -1,6 +1,6 @@
 # Capability runtime layer — as-built
 
-**Branch:** `layer/06-capabilities` · **Status:** in progress (subs 01–04 wired) ·
+**Branch:** `layer/06-capabilities` · **Status:** in progress (subs 01–05 wired) ·
 **Register:** [A-CAP-001](ASSUMPTIONS.md), [A-LAYER-001](ASSUMPTIONS.md), [A-LAYER-002](ASSUMPTIONS.md)
 
 The **Capability Runtime** (ARCHITECTURE.md §4, audit item #5): owns tools, skills, MCP,
@@ -15,7 +15,7 @@ flowchart LR
         F["files — read/list/glob/grep + write/edit"]
         S["shell — bash w/ denylist + timeout"]
         SK["skills — SKILL.md catalog + on-demand load"]
-        M["mcp — (pending sub-branch)"]
+        M["mcp — remote tools via config + client"]
         B["browser — (pending sub-branch)"]
     end
     subgraph LOWER["Lean on"]
@@ -27,8 +27,8 @@ flowchart LR
 ```
 
 Sub-layers are added one per sub-branch under `sub/06/*`, then merged here. `core`
-(commit `a24c3a1`), `files` (`509e26f`), `shell` (`da57e75`), and `skills` (`99a02cc`) are
-wired so far; `mcp`, `browser` are next in build order. `commands`, `computer-use`,
+(`a24c3a1`), `files` (`509e26f`), `shell` (`da57e75`), `skills` (`99a02cc`), and `mcp`
+(`c8aa691`) are wired so far; `browser` remains in build order. `commands`, `computer-use`,
 `design` stay a README roadmap until the engine exists (per A-EXEC-004 test).
 
 ---
@@ -113,7 +113,31 @@ Two read-category tools — progressive disclosure for SKILL.md instruction pack
 - **Portable global root** — `ANCIENT_USER_DIR` lets deployments relocate `~/.ancient`
   without code changes and makes tests hermetic (never touches the real home).
 
+## Sub-05 — MCP (done)
+
+Discovery + client + remote tools folded into the registry (A-CAP-001) via a
+peer-level SDK dependency (A-LAYER-002 — never an upward import).
+
+| File | Owning responsibility |
+|------|------------------------|
+| `src/mcp/config.ts` | `mcpConfigPaths`/`loadMcpConfig` — merged `{ mcpServers }` from `~/.ancient/.mcp.json` (global) + `<cwd>/.mcp.json` (project wins), `ANCIENT_USER_DIR` override, malformed files skipped. |
+| `src/mcp/json-schema.ts` | `jsonSchemaToZod` — JSON Schema → zod for remote `inputSchema` (object/required/optional/array/string-enum/string/number/int/bool); unknown shapes degrade to `z.unknown()`. |
+| `src/mcp/client.ts` | `getServers` (lazy per-cwd cache, 5-min TTL), stdio + HTTP transports via `@modelcontextprotocol/sdk` (dynamic import), per-server statuses, remote call (isError mapping + 10k result cap), `resetMcpCache`/`disposeMcpConnections`. |
+| `src/mcp/tools.ts` | `listMcpServersTool` (read/PLAN-safe) + `mcpToolDefinitions(cwd)` factory: every remote tool as `mcp__<server>__<tool>`, category `exec`, `target` = tool name for approval display. |
+| `src/mcp/fixtures/mock-server.ts` | A real SDK `McpServer` exposing one tool, spawned in tests as a stdio child (`process.execPath`). |
+| `src/mcp/mcp.test.ts` | 11 tests — config merge/shadow, malformed-config skip, schema translation + enum validation, and a true e2e: connect → status → schema → central-edge call (exec allow) → default-policy denial. |
+
+**Design decisions:**
+- **Remote tools are exec until a policy says otherwise** — the default `ApprovalPolicy`
+  denies `exec`, so every `mcp__*` tool is inert until an operator allows the category
+  (and, via the same central edge, consent/redaction/budget still apply). Granular
+  per-tool approval rules are future work (the rule table already has `targetPattern`).
+- **JSON Schema → zod at the boundary** — the registry contract is zod (A-CAP-001); MCP
+  declares JSON Schema, so translation happens in the mcp module, not in core.
+- **Dynamic registration is the honest exception** — MCP tools exist only after a live
+  connection, so they're pulled at startup and `registerAll`'d, vs. the static modules.
+
 ## Verification
 
 - `npm run typecheck` — exit 0 (all 7 packages incl. `capabilities`).
-- Full suite — **156 pass** (145 + 11 skills) as of `sub/06/04-skills`, 0 fail.
+- Full suite — **167 pass** (156 + 11 mcp) as of `sub/06/05-mcp`, 0 fail.

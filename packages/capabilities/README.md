@@ -37,7 +37,7 @@ flowchart TB
     style FILES fill:#0f3460,stroke:#7FC4BE,color:#fff
     style SHELL fill:#0f3460,stroke:#7FC4BE,color:#fff
     style SKILLS fill:#0f3460,stroke:#7FC4BE,color:#fff
-    style MCP fill:#16213e,stroke:#ff6b6b,color:#fff
+    style MCP fill:#0f3460,stroke:#7FC4BE,color:#fff
     style BROWSER fill:#16213e,stroke:#ff6b6b,color:#fff
 ```
 
@@ -123,6 +123,22 @@ SKILL.md progressive disclosure: a token-lean catalog + on-demand body loader.
 
 Files: `frontmatter.ts`, `loader.ts`, `tools.ts`, `index.ts`, `skills.test.ts` (11 tests).
 
+### mcp — done (commit `c8aa691`)
+
+MCP server discovery + client, remote tools folded into the registry.
+
+- Config: `~/.ancient/.mcp.json` + `<cwd>/.mcp.json` (`mcpServers`), project wins on name;
+  `ANCIENT_USER_DIR` relocates the global root. stdio (`command`/`args`) and HTTP (`url`)
+  transports via `@modelcontextprotocol/sdk`.
+- Remote tools register as `mcp__<server>__<tool>` — category `exec`, **denied by default**
+  (operators opt in via `ApprovalPolicy`); JSON-Schema `inputSchema`s are translated to zod
+  (unknown shapes degrade to `z.unknown()`); results capped at 10k.
+- Lazy per-cwd connection cache (5-min TTL) via `mcpConnections`; `listMcpServers` is a
+  read (PLAN-safe) status tool.
+
+Files: `config.ts`, `json-schema.ts`, `client.ts`, `tools.ts`, `index.ts`, `fixtures/mock-server.ts`,
+`mcp.test.ts` (11 tests, incl. a real stdio e2e).
+
 ---
 
 ## Roadmap
@@ -133,6 +149,7 @@ Files: `frontmatter.ts`, `loader.ts`, `tools.ts`, `index.ts`, `skills.test.ts` (
 | `files` | done | `sub/06/02-files` |
 | `shell` | done | `sub/06/03-shell` |
 | `skills` | done | `sub/06/04-skills` |
+| `mcp` | done | `sub/06/05-mcp` |
 | `skills` | pending | `sub/06/04-skills` |
 | `mcp` | pending | `sub/06/05-mcp` |
 | `browser` | pending | `sub/06/06-browser` |
