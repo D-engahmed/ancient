@@ -14,3 +14,4 @@ export * as files from "./files";
 export * as shell from "./shell";
 export * as skills from "./skills";
 export * as mcp from "./mcp";
+export * as browser from "./browser";

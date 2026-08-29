@@ -34,6 +34,11 @@ export const toolInputSchemas = {
   listSkills: z.object({}),
   useSkill: z.object({ name: z.string() }),
   listMcpServers: z.object({}),
+  fetchUrl: z.object({
+    url: z.string(),
+    maxChars: z.number().int().positive().optional(),
+    timeoutMs: z.number().int().positive().optional(),
+  }),
 } as const;
 
 export const readOnlyToolContracts = {
