@@ -36,7 +36,7 @@ flowchart TB
     style MEM fill:#0f3460,stroke:#7FC4BE,color:#fff
     style STO fill:#0f3460,stroke:#7FC4BE,color:#fff
     style EVT fill:#0f3460,stroke:#7FC4BE,color:#fff
-    style SEC fill:#16213e,stroke:#ff6b6b,color:#fff
+    style SEC fill:#0f3460,stroke:#7FC4BE,color:#fff
 ```
 
 Legend: green-bordered = wired; red-bordered = pending (built in a later sub-branch).
@@ -145,6 +145,27 @@ Files: `types.ts` (`LifecycleEvent`, `EventFilter`, `Listener`), `bus.ts` (`Even
 `MemoryEventBus` — once, filters, error isolation), `bridge.ts` (store→bus bridge),
 `events.test.ts` (10 tests).
 
+### security — done (commit `8e2035a`)
+
+Secret containment + the consent boundary for risky tool calls.
+
+```mermaid
+flowchart LR
+    subgraph SEC["security/"]
+        direction TB
+        RED["Redactor<br/>mask secrets in logs/prompts/output"]
+        APP["ApprovalPolicy<br/>allow · deny · require-consent"]
+    end
+    OUT["tool output / prompts<br/>(text streams)"]
+    CALL["capability runtime / engine<br/>(risky tool calls)"]
+    OUT --> RED
+    CALL --> APP
+```
+
+Files: `redaction.ts` (`Redactor` — prefixed secrets + labeled key=value, `$1`-group
+replacements, hit-names for flagging), `approval.ts` (`ApprovalPolicy` — read/write/exec/
+network/scope, glob target patterns, `allow()` override), `security.test.ts` (11 tests).
+
 ---
 
 ## Roadmap
@@ -155,7 +176,7 @@ Files: `types.ts` (`LifecycleEvent`, `EventFilter`, `Listener`), `bus.ts` (`Even
 | `memory` | done | `sub/07/02-memory` |
 | `storage` | done | `sub/07/03-storage` |
 | `events` | done | `sub/07/04-events` |
-| `security` | pending | `sub/07/05-security` |
+| `security` | done | `sub/07/05-security` |
 
 ## Verification
 
