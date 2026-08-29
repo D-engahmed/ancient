@@ -35,7 +35,7 @@ flowchart TB
     style PROV fill:#0f3460,stroke:#7FC4BE,color:#fff
     style MEM fill:#0f3460,stroke:#7FC4BE,color:#fff
     style STO fill:#0f3460,stroke:#7FC4BE,color:#fff
-    style EVT fill:#16213e,stroke:#ff6b6b,color:#fff
+    style EVT fill:#0f3460,stroke:#7FC4BE,color:#fff
     style SEC fill:#16213e,stroke:#ff6b6b,color:#fff
 ```
 
@@ -127,6 +127,24 @@ Files: `types.ts`, `store.ts` (`ExecutionStore` + `EventSourcedExecutionStore` s
 `checkpoints.ts` (`shouldCheckpoint` policy), `storage.test.ts` (9 tests). A Postgres
 implementation later implements the same interface without touching callers.
 
+### events — done (commit `cdbfb83`)
+
+**Live** cross-layer notification ring, complementing the **durable** log in storage
+(A-LAYER-002 cross-layer comms). React to execution progress without polling a store.
+
+```mermaid
+flowchart LR
+    STORE["Durable store<br/>(storage — the log)"]
+    BRIDGE["createExecutionStoreBridge()<br/>(source -> bus)"]
+    BUS["MemoryEventBus<br/>sync · in-order · filtered"]
+    ENG["engine / strategies / gateway<br/>(react real-time)"]
+    STORE --> BRIDGE --> BUS --> ENG
+```
+
+Files: `types.ts` (`LifecycleEvent`, `EventFilter`, `Listener`), `bus.ts` (`EventBus` +
+`MemoryEventBus` — once, filters, error isolation), `bridge.ts` (store→bus bridge),
+`events.test.ts` (10 tests).
+
 ---
 
 ## Roadmap
@@ -136,7 +154,7 @@ implementation later implements the same interface without touching callers.
 | `providers` | done | `sub/07/01-providers` |
 | `memory` | done | `sub/07/02-memory` |
 | `storage` | done | `sub/07/03-storage` |
-| `events` | pending | `sub/07/04-events` |
+| `events` | done | `sub/07/04-events` |
 | `security` | pending | `sub/07/05-security` |
 
 ## Verification
