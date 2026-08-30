@@ -47,7 +47,18 @@ export const byokRateLimit = createMiddleware<AuthenticatedEnv>(async (c, next) 
   if (bucket.requestCount > limit) {
     const retryAfterSeconds = Math.max(1, Math.ceil((windowMs - (now - bucket.startedAt)) / 1_000));
     c.header("Retry-After", String(retryAfterSeconds));
-    return c.json({ error: "Too many AI requests. Please try again shortly." }, 429);
+    return c.json(
+      {
+        error: {
+          code: "EDGE_RATE_LIMITED",
+          message: "Too many AI requests. Please try again shortly.",
+          retryable: true,
+          retryAfterMs: retryAfterSeconds * 1_000,
+          traceId: c.get("traceId"),
+        },
+      },
+      429,
+    );
   }
 
   await next();

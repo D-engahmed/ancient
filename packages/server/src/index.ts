@@ -4,8 +4,10 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
+import { traceId } from "./middleware/trace-id";
 import { requireAuth } from "./middleware/require-auth";
 import { byokRateLimit } from "./middleware/byok-rate-limit";
+import { errorJson, genericMessageFor, guardJson } from "./lib/error-mapper";
 import sessions from "./routes/sessions";
 import chat from "./routes/chat";
 import auth from "./routes/auth";
@@ -16,11 +18,14 @@ import agent from "./routes/agent";
 import pipeline from "./routes/pipeline";
 import executions from "./routes/executions";
 
-const app = new Hono();
+const app = new Hono<{ Variables: { traceId: string } }>();
+
+/** First-in-chain: every response (incl. onError) carries X-Trace-Id. */
+app.use("*", traceId);
 
 app.onError((error, c) => {
   if (error instanceof HTTPException) {
-    return c.json({ error: error.message || "Request failed" }, error.status);
+    return guardJson(c, error.message || "Request failed", error.status);
   }
   // `console.error("...", error)` used to print the raw error object. For
   // errors like Prisma's PrismaClientValidationError, `error.stack` embeds
@@ -34,7 +39,7 @@ app.onError((error, c) => {
   if (process.env.ANCIENT_DEBUG_ERRORS === "1") {
     console.error(error);
   }
-  return c.json({ error: "Internal server error" }, 500);
+  return errorJson(c, error);
 });
 
 app.use("/sessions/*", requireAuth);

@@ -24,6 +24,7 @@ import {
   type ExecutionEventEnvelope,
 } from "@ANCIENT/shared";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
+import { guardJson } from "../lib/error-mapper";
 import { ExecutionHub, type ExecutionEntry } from "../executions/hub";
 
 const executionRequestSchema = z.object({
@@ -87,7 +88,7 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
   app.get("/:executionId", async (c) => {
     const userId = c.get("userId");
     const entry = hub.get(userId, c.req.param("executionId"));
-    if (!entry) return c.json({ error: "Execution not found" }, 404);
+    if (!entry) return guardJson(c, "Execution not found", 404);
     return c.json(snapshot(entry));
   });
 
@@ -95,7 +96,7 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
     const userId = c.get("userId");
     const reason = c.req.valid("json").reason;
     const entry = hub.cancel(userId, c.req.param("executionId"), reason);
-    if (!entry) return c.json({ error: "Execution not found" }, 404);
+    if (!entry) return guardJson(c, "Execution not found", 404);
     return c.json({ executionId: entry.executionId, status: "cancelled" });
   });
 
@@ -110,7 +111,7 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
     const executionId = c.req.param("executionId");
     const { requestId, granted } = c.req.valid("json");
     const accepted = hub.respondToConsent(userId, executionId, requestId, granted);
-    if (!accepted) return c.json({ error: "Unknown or expired consent request" }, 404);
+    if (!accepted) return guardJson(c, "Unknown or expired consent request", 404);
     return c.json({ requestId, granted, executionId });
   });
 
@@ -120,11 +121,8 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
     app.post(`/:executionId/${verb}`, (c) => {
       const userId = c.get("userId");
       const entry = hub.get(userId, c.req.param("executionId"));
-      if (!entry) return c.json({ error: "Execution not found" }, 404);
-      return c.json(
-        { error: `${verb} is not supported by the engine yet — only cancel is wired.` },
-        409,
-      );
+      if (!entry) return guardJson(c, "Execution not found", 404);
+      return guardJson(c, `${verb} is not supported by the engine yet — only cancel is wired.`, 409);
     });
   }
 
@@ -137,7 +135,7 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
   app.get("/:executionId/events", async (c) => {
     const userId = c.get("userId");
     const entry = hub.get(userId, c.req.param("executionId"));
-    if (!entry) return c.json({ error: "Execution not found" }, 404);
+    if (!entry) return guardJson(c, "Execution not found", 404);
 
     const raw = c.req.header("Last-Event-ID") ?? c.req.query("lastEventId") ?? "0";
     const from = Math.max(0, Number.parseInt(raw, 10) || 0);
