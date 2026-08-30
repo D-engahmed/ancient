@@ -8,7 +8,9 @@
   },
   "scripts": {
     "dev": "bun run --watch src/index.tsx",
-    "build": "bun build src/index.tsx --outdir dist --target bun"
+    "build": "bun build src/index.tsx --outdir dist --target bun",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@ANCIENT/server": "workspace:*",

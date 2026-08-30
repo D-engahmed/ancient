@@ -2,48 +2,37 @@ name: CI
 
 on:
   push:
-    branches: [main, master, agent]
+    branches: ["main", "master"]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  typecheck:
-    name: Typecheck
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: bun install --frozen-lockfile
-      - run: bun run typecheck
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: bun install --frozen-lockfile
-      - run: bun test
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: bun install --frozen-lockfile
-      - run: bun run build:cli
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bun run db:generate
+
+      - name: Typecheck (all packages)
+        run: bun run typecheck
+
+      - name: Unit tests
+        run: bun test
+
+      - name: Build CLI
+        run: bun run build:cli
