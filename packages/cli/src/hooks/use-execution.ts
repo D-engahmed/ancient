@@ -218,6 +218,11 @@ export function useExecution(initialMessages: Message[] = []) {
     const active = activeRef.current;
     if (!active) return;
 
+    // Bump the generation so any in-flight run loop sees `isCurrent() ===
+    // false` and stops writing UI state — a cancelled run must never clobber
+    // the "ready" status with a late terminal event.
+    generationRef.current++;
+    teardown(active.controller);
     setStatus("ready");
     void apiClient.executions.cancel(active.executionId, "cancelled by user").catch(() => undefined);
   }, []);

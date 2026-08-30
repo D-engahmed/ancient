@@ -107,8 +107,8 @@ export const COMMANDS: Command[] = [
     action: (ctx) => {
       ctx.toast.show({
         variant: "info",
-        message: "Commands: /clear /cancel /inspect /status /models /theme /sessions /skills /exit",
-        duration: 5000,
+        message: "Commands: /new /clear /cancel /status /inspect /agents /models /usage /sessions /prompts /subagents /mcp /skills /compact /rewind /theme /workspace /style /pipeline /login /logout /exit",
+        duration: 6000,
       });
     },
   },

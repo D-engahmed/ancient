@@ -72,7 +72,16 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
       return null as T;
     }
 
-    return response.json() as Promise<T>;
+    // Some 2xx responses carry an empty body (e.g. bare "ok" DELETEs). Try
+    // JSON first, fall back to raw text, and return null for truly empty
+    // bodies so callers never see a raw "Unexpected end of JSON input".
+    const raw = await response.text();
+    if (!raw) return null as T;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return raw as T;
+    }
   }
 
   throw lastError ?? new Error("request failed");
@@ -171,7 +180,10 @@ export async function* streamExecutionEvents(
   let lastEventId = 0;
 
   while (reconnects <= maxReconnects) {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = {
+      "Accept": "text/event-stream",
+      "Cache-Control": "no-cache",
+    };
     const auth = getAuth();
     if (auth) headers["Authorization"] = `Bearer ${auth.token}`;
     if (lastEventId > 0) headers["Last-Event-ID"] = String(lastEventId);

@@ -19,12 +19,12 @@ import { ExecutionTimeline } from "../components/execution-timeline";
 import { ExecutionInspector } from "../components/execution-inspector";
 import { ConsentPrompt } from "../components/consent-prompt";
 import { InputBar } from "../components/input-bar";
+import { Spinner } from "../components/spinner";
 import { useToast } from "../providers/toast";
 import { useExecution } from "../hooks/use-execution";
 import { usePromptConfig } from "../providers/prompt-config";
 import { useKeyboardLayer } from "../providers/Keyboard-layer";
 import type { Message } from "../hooks/use-execution";
-import { API_URL } from "../lib/api-client";
 
 /** Track online/offline status via navigator.onLine + event listeners. */
 function useOnline(): boolean {
@@ -312,12 +312,13 @@ function SessionChat({
             {/* Header */}
             <ExecutionHeader status={status} durationMs={durationMs} />
 
-            {/* Offline banner (Phase 11) */}
+            {/* Offline banner (Phase 11) — honest: requests are NOT queued,
+                so say what actually happens. */}
             {!online && (
                 <box flexShrink={0} paddingX={2} paddingY={0}>
                     <text>
                         <span fg="yellow" attributes={TextAttributes.BOLD}>Offline</span>
-                        <span attributes={TextAttributes.DIM}> — commands will be queued until connection is restored</span>
+                        <span attributes={TextAttributes.DIM}> — sending is disabled until the network is back</span>
                     </text>
                 </box>
             )}
@@ -337,6 +338,22 @@ function SessionChat({
                         {inspectorVisible && (
                             <ExecutionInspector entry={inspectedEntry} />
                         )}
+                    </box>
+                ) : isExecuting ? (
+                    /* Early execution: request sent, first tool event not here yet.
+                       Show the prompt plus a working indicator so the screen never
+                       looks frozen. */
+                    <box flexDirection="column" gap={1}>
+                        {lastUserMsg && (
+                            <UserMessage
+                                message={messageText(lastUserMsg)}
+                                mode={lastUserMsg.metadata?.mode ?? mode}
+                            />
+                        )}
+                        <box flexDirection="row" gap={1} alignItems="center">
+                            <Spinner mode={mode} />
+                            <text attributes={TextAttributes.DIM}>Working…</text>
+                        </box>
                     </box>
                 ) : (
                     /* Full conversation view when not executing */
@@ -382,6 +399,7 @@ function SessionChat({
                 status={status}
                 durationMs={durationMs}
                 usage={usage}
+                inspectable={timeline.length > 0}
             />
         </box>
     );

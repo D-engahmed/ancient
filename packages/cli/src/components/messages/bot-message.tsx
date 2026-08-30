@@ -102,7 +102,7 @@ export function BotMessage({
   const safeParts = Array.isArray(parts) ? parts : [];
   return (
     <box width="100%" alignItems="center">
-      {groupConsecutiveParts(parts).map((group, i) => (
+      {groupConsecutiveParts(safeParts).map((group, i) => (
         <box key={group.key} width="100%" paddingTop={i === 0 ? 0 : 1}>
           {group.parts.map((part, j) => {
             // Tolerant read: persisted session history may carry legacy AI-SDK

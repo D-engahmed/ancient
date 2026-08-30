@@ -17,12 +17,13 @@ type Props = {
 const MAX_LINES = 40;
 const MAX_LINE_LEN = 200;
 
-function truncate(text: string, maxLines: number): { text: string; truncated: boolean } {
+function truncate(text: string, maxLines: number): { text: string; truncated: boolean; hidden: number } {
   const lines = text.split("\n");
-  if (lines.length <= maxLines) return { text, truncated: false };
+  if (lines.length <= maxLines) return { text, truncated: false, hidden: 0 };
   return {
     text: lines.slice(0, maxLines).join("\n"),
     truncated: true,
+    hidden: lines.length - maxLines,
   };
 }
 
@@ -42,7 +43,7 @@ function isDiffOutput(text: string): boolean {
 
 function DiffView({ text }: { text: string }) {
   const { colors } = useTheme();
-  const { text: display, truncated } = truncate(text, MAX_LINES);
+  const { text: display, truncated, hidden } = truncate(text, MAX_LINES);
   const lines = display.split("\n");
 
   return (
@@ -69,7 +70,7 @@ function DiffView({ text }: { text: string }) {
       })}
       {truncated && (
         <text attributes={TextAttributes.DIM}>
-          {"  ... "}{lines.length} more lines (showing first {MAX_LINES})
+          {"  ... "}{hidden} more lines (showing first {MAX_LINES})
         </text>
       )}
     </box>
@@ -78,7 +79,7 @@ function DiffView({ text }: { text: string }) {
 
 function FileListView({ text }: { text: string }) {
   const { colors } = useTheme();
-  const { text: display, truncated } = truncate(text, MAX_LINES);
+  const { text: display, truncated, hidden } = truncate(text, MAX_LINES);
   const lines = display.split("\n");
 
   return (
@@ -97,7 +98,7 @@ function FileListView({ text }: { text: string }) {
       })}
       {truncated && (
         <text attributes={TextAttributes.DIM}>
-          {"... "}{lines.length} more entries (showing first {MAX_LINES})
+          {"... "}{hidden} more entries (showing first {MAX_LINES})
         </text>
       )}
     </box>
@@ -106,7 +107,7 @@ function FileListView({ text }: { text: string }) {
 
 function CommandOutputView({ text }: { text: string }) {
   const { colors } = useTheme();
-  const { text: display, truncated } = truncate(text, MAX_LINES);
+  const { text: display, truncated, hidden } = truncate(text, MAX_LINES);
   const lines = display.split("\n");
 
   return (
@@ -124,7 +125,7 @@ function CommandOutputView({ text }: { text: string }) {
       })}
       {truncated && (
         <text attributes={TextAttributes.DIM}>
-          {"... "}{lines.length} more lines (showing first {MAX_LINES})
+          {"... "}{hidden} more lines (showing first {MAX_LINES})
         </text>
       )}
     </box>
@@ -132,13 +133,13 @@ function CommandOutputView({ text }: { text: string }) {
 }
 
 function DefaultResultView({ text }: { text: string }) {
-  const { text: display, truncated } = truncate(text, MAX_LINES);
+  const { text: display, truncated, hidden } = truncate(text, MAX_LINES);
   return (
     <box flexDirection="column" gap={0}>
       <text>{display}</text>
       {truncated && (
         <text attributes={TextAttributes.DIM}>
-          {"... output truncated (showing first {MAX_LINES} lines)"}
+          {"... output truncated (showing first "}{MAX_LINES}{` lines, ${hidden} hidden)`}
         </text>
       )}
     </box>

@@ -5,6 +5,7 @@ import { RootLayout } from "./layouts/root-layout";
 import { Home } from "./screens/home";
 import { NewSession } from "./screens/new-session";
 import { Session } from "./screens/session";
+import { ErrorBoundary } from "./components/error-boundary";
 
 const router = createMemoryRouter([
   {
@@ -19,7 +20,11 @@ const router = createMemoryRouter([
 ]);
 
 function App() {
-  return <RouterProvider router={router} />
+  return (
+    <ErrorBoundary>
+      <RouterProvider router={router} />
+    </ErrorBoundary>
+  );
 }
 
 const renderer = await createCliRenderer({

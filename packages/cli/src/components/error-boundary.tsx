@@ -7,7 +7,9 @@
 // to reset or Esc to quit.
 
 import { Component, type ReactNode } from "react";
+import { useKeyboard, useRenderer } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
+import { useTheme } from "../providers/theme";
 
 type Props = {
   children: ReactNode;
@@ -17,6 +19,28 @@ type Props = {
 type State = {
   error: Error | null;
 };
+
+export function RecoveryFallback({ onReset }: { onReset: () => void }) {
+  const { colors } = useTheme();
+  const renderer = useRenderer();
+
+  useKeyboard((key) => {
+    if (key.name === "return" || key.name === "enter") {
+      key.preventDefault();
+      onReset();
+    } else if (key.name === "escape") {
+      key.preventDefault();
+      renderer.destroy();
+    }
+  });
+
+  return (
+    <box flexDirection="column" gap={1} padding={2}>
+      <text fg={colors.error} attributes={TextAttributes.BOLD}>Something went wrong.</text>
+      <text>{`The UI hit an unexpected error. Press Enter to restart the app, or Esc to quit.`}</text>
+    </box>
+  );
+}
 
 export class ErrorBoundary extends Component<Props, State> {
   override state: State = { error: null };
@@ -30,19 +54,14 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error("[ErrorBoundary]", error.message, info.componentStack);
   }
 
+  reset() {
+    this.setState({ error: null });
+  }
+
   override render() {
     if (this.state.error) {
       if (this.props.fallback) return this.props.fallback;
-      return (
-        <box flexDirection="column" gap={1} padding={2}>
-          <text attributes={TextAttributes.BOLD}>Something went wrong.</text>
-          <text>{this.state.error.message}</text>
-          <text>
-            Press <span attributes={TextAttributes.BOLD}>Enter</span> to restart or{" "}
-            <span attributes={TextAttributes.BOLD}>Esc</span> to quit.
-          </text>
-        </box>
-      );
+      return <RecoveryFallback onReset={() => this.reset()} />;
     }
     return this.props.children;
   }

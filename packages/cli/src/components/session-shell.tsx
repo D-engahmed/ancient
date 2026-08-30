@@ -65,8 +65,9 @@ export function SessionShell({
         </box>
 
         <box flexDirection="row" gap={1} flexShrink={0} marginLeft="auto">
-          <text>tab</text>
-          <text attributes={TextAttributes.DIM}>agents</text>
+          {loading ? (
+            <text attributes={TextAttributes.DIM}>setting up session…</text>
+          ) : null}
         </box>
       </box>
     </box>

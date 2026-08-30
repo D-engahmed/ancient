@@ -15,6 +15,8 @@ type Props = {
   status: ExecutionStatus;
   durationMs?: number;
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
+  /** Whether there is timeline content for the TAB inspector to show. */
+  inspectable?: boolean;
 };
 
 function formatDuration(ms: number): string {
@@ -47,7 +49,7 @@ function formatTokens(usage: Props["usage"]): string {
   return parts.join(" / ");
 }
 
-export function ExecutionFooter({ status, durationMs, usage }: Props) {
+export function ExecutionFooter({ status, durationMs, usage, inspectable = false }: Props) {
   const { colors } = useTheme();
   const { mode, modelSelection } = usePromptConfig();
   const isActive = status === "submitted" || status === "streaming";
@@ -90,8 +92,12 @@ export function ExecutionFooter({ status, durationMs, usage }: Props) {
         )}
       </box>
       <box flexDirection="row" alignItems="center" gap={1}>
-        <text attributes={TextAttributes.DIM} fg={colors.dimSeparator}>TAB</text>
-        <text attributes={TextAttributes.DIM}>inspect</text>
+        {inspectable && (
+          <>
+            <text attributes={TextAttributes.DIM} fg={colors.dimSeparator}>TAB</text>
+            <text attributes={TextAttributes.DIM}>inspect</text>
+          </>
+        )}
       </box>
     </box>
   );
