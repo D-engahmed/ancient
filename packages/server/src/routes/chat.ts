@@ -166,12 +166,6 @@ function buildConversationHistory(
   return result;
 }
 
-function getResumableUserMessage(messages: any[]) {
-  const last = messages[messages.length - 1];
-  if (!last || last.role !== "USER") return null;
-  return last;
-}
-
 type StreamParams = {
   sessionId: string;
   userId: string;
@@ -686,56 +680,6 @@ async function prepareTurn(params: {
 }
 
 const app = new Hono<AuthenticatedEnv>();
-
-app.post("/:sessionId/resume", async (c) => {
-  const sessionId = c.req.param("sessionId");
-  const userId = c.get("userId");
-
-  const session = await db.session.findUnique({
-    where: { id: sessionId, userId },
-    include: { messages: { orderBy: { createdAt: "asc" } } },
-  });
-  if (!session) return c.json({ error: "Session not found" }, 404);
-
-  const lastUser = getResumableUserMessage(session.messages);
-  if (!lastUser) return c.json({ error: "No pending user message" }, 409);
-
-  const selection: ChatModelSelection = lastUser.modelKind === "builtin"
-    ? { modelKind: "builtin", modelId: lastUser.modelRef }
-    : { modelKind: "custom", connectionId: lastUser.modelRef };
-
-  try { await resolveChatModel(selection, userId); } catch {
-    return c.json({ error: "The model used in this session is no longer available" }, 409);
-  }
-
-  const settings = await loadSettings(session.cwd);
-  const history = buildConversationHistory(session.messages);
-  const abortController = new AbortController();
-  const timeoutId = setTimeout(() => abortController.abort(), CHAT_TIMEOUT_MS);
-
-  try {
-    const response = await streamAIResponse({
-      sessionId,
-      userId,
-      selection,
-      cwd: session.cwd,
-      history,
-      mode: lastUser.mode,
-      settings,
-      abortController,
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err instanceof RateLimitCooldownError) {
-      c.header("Retry-After", String(err.retryAfterSeconds));
-      return c.json({ error: err.message }, 429);
-    }
-    const msg = err instanceof Error ? err.message : String(err);
-    return c.json({ error: msg }, 500);
-  }
-});
 
 app.post(
   "/:sessionId",
