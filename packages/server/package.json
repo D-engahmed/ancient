@@ -7,11 +7,14 @@
   },
   "scripts": {
     "dev": "bun run --hot src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun"
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ANCIENT/agent": "workspace:*",
     "@ANCIENT/capabilities": "workspace:*",
+    "@ANCIENT/contracts": "workspace:*",
     "@ANCIENT/database": "workspace:*",
     "@ANCIENT/execution": "workspace:*",
     "@ANCIENT/infrastructure": "workspace:*",

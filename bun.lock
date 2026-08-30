@@ -38,6 +38,7 @@
       "name": "@ANCIENT/capabilities",
       "version": "1.0.0",
       "dependencies": {
+        "@ANCIENT/contracts": "workspace:*",
         "@ANCIENT/infrastructure": "workspace:*",
         "@ANCIENT/shared": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.18.0",
@@ -106,7 +107,9 @@
       "version": "1.0.0",
       "dependencies": {
         "@ANCIENT/capabilities": "workspace:*",
+        "@ANCIENT/contracts": "workspace:*",
         "@ANCIENT/infrastructure": "workspace:*",
+        "@ANCIENT/reliability": "workspace:*",
         "@ANCIENT/shared": "workspace:*",
         "@ANCIENT/strategies": "workspace:*",
         "ai": "^7.0.55",
@@ -144,6 +147,7 @@
       "dependencies": {
         "@ANCIENT/agent": "workspace:*",
         "@ANCIENT/capabilities": "workspace:*",
+        "@ANCIENT/contracts": "workspace:*",
         "@ANCIENT/database": "workspace:*",
         "@ANCIENT/execution": "workspace:*",
         "@ANCIENT/infrastructure": "workspace:*",
@@ -173,6 +177,7 @@
       "name": "@ANCIENT/strategies",
       "version": "1.0.0",
       "dependencies": {
+        "@ANCIENT/contracts": "workspace:*",
         "@ANCIENT/infrastructure": "workspace:*",
         "@ANCIENT/shared": "workspace:*",
         "zod": "^4.3.6",

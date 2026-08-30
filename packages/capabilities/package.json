@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@ANCIENT/shared": "workspace:*",
+    "@ANCIENT/contracts": "workspace:*",
     "@ANCIENT/infrastructure": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.18.0",
     "ai": "^7.0.55",

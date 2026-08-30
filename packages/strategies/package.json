@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@ANCIENT/shared": "workspace:*",
+    "@ANCIENT/contracts": "workspace:*",
     "@ANCIENT/infrastructure": "workspace:*",
     "zod": "^4.3.6"
   },
