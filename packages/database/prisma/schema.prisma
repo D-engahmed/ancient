@@ -180,3 +180,37 @@ model AgentCheckpoint {
   reason        String
   timestamp     DateTime @default(now())
 }
+
+// ============================================================================
+// Durable execution log (A-EXEC-003): the append-only lifecycle-event stream is
+// the source of truth; ExecutionRecord is a projection over these rows. Kept
+// provider-agnostic on purpose (payload is JSON) so strategies/gateways can
+// append without a schema migration per new event type.
+// ============================================================================
+
+model ExecutionEvent {
+  id          String   @id
+  executionId String
+  /// Monotonic per-execution sequence — replay order, gapless.
+  seq         Int
+  type        String
+  timestamp   DateTime
+  payload     Json?
+
+  @@unique([executionId, seq])
+  @@index([executionId, timestamp])
+  @@index([executionId, type])
+}
+
+model ExecutionCheckpoint {
+  id          String   @id @default(uuid())
+  executionId String
+  timestamp   DateTime
+  seq         Int
+  reason      String
+  /// Serialized state snapshot (implementation-defined shape).
+  snapshot    Json
+
+  @@unique([executionId, seq])
+  @@index([executionId, timestamp])
+}

@@ -2,4 +2,4 @@
 // Licensed under the MIT License.
 // file: packages/database/src/index.ts
 
-export * from "../generated/prisma/client.ts";
+export * from "../generated/prisma/index.js";
