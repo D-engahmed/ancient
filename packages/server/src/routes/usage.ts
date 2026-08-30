@@ -3,6 +3,7 @@
 
 import { Hono } from "hono";
 import { db } from "@ANCIENT/database/client";
+import { guardJson } from "../lib/error-mapper";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 
 // Used only when a connection has never reported a quota window (e.g. no
@@ -88,7 +89,7 @@ const app = new Hono<AuthenticatedEnv>()
     .get("/:connectionId", async (c) => {
         const userId = c.get("userId");
         const usage = await computeUsage(userId, c.req.param("connectionId"));
-        if (!usage) return c.json({ error: "Connection not found" }, 404);
+        if (!usage) return guardJson(c, "Connection not found", 404);
         return c.json(usage);
     });
 

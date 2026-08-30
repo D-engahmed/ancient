@@ -16,6 +16,7 @@ import { listMcpServers, resetMcpCache } from "../mcp/client";
 import { loadSettings } from "../hooks/settings";
 import { listCheckpoints, rewindTo } from "../checkpoints/store";
 import { resolveFreeModel, resolveChatModel } from "../lib/models";
+import { guardJson } from "../lib/error-mapper";
 import type { ChatModelSelection } from "@ANCIENT/shared";
 import { SUMMARY_MARKER } from "./chat";
 import { createLogger } from "@ANCIENT/shared";
@@ -37,7 +38,7 @@ app.get("/skills", async (c) => {
 app.get("/skills/:name", async (c) => {
     const cwd = c.req.query("cwd") || null;
     const skill = await loadSkill(cwd, c.req.param("name"));
-    if (!skill) return c.json({ error: "Skill not found" }, 404);
+    if (!skill) return guardJson(c, "Skill not found", 404);
     return c.json(skill);
 });
 
@@ -78,9 +79,9 @@ app.post("/compact/:sessionId", async (c) => {
         where: { id: sessionId, userId },
         include: { messages: { orderBy: { createdAt: "asc" } } },
     });
-    if (!session) return c.json({ error: "Session not found" }, 404);
+    if (!session) return guardJson(c, "Session not found", 404);
     if (session.messages.length < 4) {
-        return c.json({ error: "Session is too short to compact" }, 409);
+        return guardJson(c, "Session is too short to compact", 409);
     }
 
     // Transcript, capped — compaction input should itself be cheap.
@@ -101,7 +102,7 @@ app.post("/compact/:sessionId", async (c) => {
         usedModel = free.modelId;
     } else {
         const last = [...session.messages].reverse().find((m) => m.modelRef);
-        if (!last) return c.json({ error: "No model available to summarize with" }, 409);
+        if (!last) return guardJson(c, "No model available to summarize with", 409);
         const selection: ChatModelSelection = last.modelKind === "builtin"
             ? { modelKind: "builtin", modelId: last.modelRef }
             : { modelKind: "custom", connectionId: last.modelRef };
@@ -110,7 +111,7 @@ app.post("/compact/:sessionId", async (c) => {
             model = resolved.model;
             usedModel = resolved.modelId;
         } catch (err) {
-            return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
+            return guardJson(c, err instanceof Error ? err.message : String(err), 409);
         }
     }
 
@@ -137,7 +138,7 @@ app.post("/compact/:sessionId", async (c) => {
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         log.warn("compact failed", { sessionId, error: msg });
-        return c.json({ error: `Compaction failed: ${msg}` }, 500);
+        return guardJson(c, `Compaction failed: ${msg}`, 500);
     }
 });
 
@@ -147,7 +148,7 @@ app.get("/checkpoints/:sessionId", async (c) => {
     const sessionId = c.req.param("sessionId");
     const userId = c.get("userId");
     const session = await db.session.findUnique({ where: { id: sessionId, userId } });
-    if (!session) return c.json({ error: "Session not found" }, 404);
+    if (!session) return guardJson(c, "Session not found", 404);
     if (!session.cwd) return c.json([]);
     return c.json(await listCheckpoints(session.cwd, sessionId));
 });
@@ -161,16 +162,16 @@ app.post(
         const { checkpointId } = c.req.valid("json");
 
         const session = await db.session.findUnique({ where: { id: sessionId, userId } });
-        if (!session) return c.json({ error: "Session not found" }, 404);
-        if (!session.cwd) return c.json({ error: "Session has no working directory" }, 409);
+        if (!session) return guardJson(c, "Session not found", 404);
+        if (!session.cwd) return guardJson(c, "Session has no working directory", 409);
 
         const checkpoints = await listCheckpoints(session.cwd, sessionId);
         const target = checkpoints.find((cp) => cp.id === checkpointId || cp.id.startsWith(checkpointId));
-        if (!target) return c.json({ error: `Unknown checkpoint: ${checkpointId}` }, 404);
+        if (!target) return guardJson(c, `Unknown checkpoint: ${checkpointId}`, 404);
 
         // 1. Restore files.
         const restored = await rewindTo(session.cwd, target.id);
-        if (!restored.ok) return c.json({ error: restored.error }, 500);
+        if (!restored.ok) return guardJson(c, restored.error ?? "Rewind failed", 500);
 
         // 2. Delete conversation messages created after the checkpoint.
         const deleted = await db.message.deleteMany({

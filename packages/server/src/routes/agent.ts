@@ -32,6 +32,7 @@ import { TeamOrchestrator, defaultRegistry } from "@ANCIENT/agent";
 import type { ModelOverrides } from "@ANCIENT/agent/team";
 import type { AgentRole, BackendProvider } from "@ANCIENT/agent";
 import { decryptApiKey } from "../lib/connection-crypto";
+import { guardJson } from "../lib/error-mapper";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 
 // One orchestrator for the whole process — see the scope note above.
@@ -97,7 +98,7 @@ const app = new Hono<AuthenticatedEnv>()
         const { templateId, task, defaultConnectionId, connections } = c.req.valid("json");
 
         const template = defaultRegistry.get(templateId);
-        if (!template) return c.json({ error: `Unknown template: ${templateId}` }, 404);
+        if (!template) return guardJson(c, `Unknown template: ${templateId}`, 404);
 
         // Decrypt each referenced connection once, then reuse the resolved
         // backend for every role that maps to it — not once per role, which
@@ -137,7 +138,7 @@ const app = new Hono<AuthenticatedEnv>()
 
     .get("/status/:executionId", (c) => {
         const state = orchestrator.getExecutionStatus(c.req.param("executionId"));
-        if (!state) return c.json({ error: "Execution not found" }, 404);
+        if (!state) return guardJson(c, "Execution not found", 404);
         return c.json({
             id: state.id,
             status: state.status,
@@ -150,19 +151,19 @@ const app = new Hono<AuthenticatedEnv>()
 
     .post("/pause/:executionId", (c) => {
         const ok = orchestrator.pauseExecution(c.req.param("executionId"));
-        if (!ok) return c.json({ error: "Execution not found or not running" }, 409);
+        if (!ok) return guardJson(c, "Execution not found or not running", 409);
         return c.json({ status: "paused" });
     })
 
     .post("/resume/:executionId", (c) => {
         const ok = orchestrator.resumeExecution(c.req.param("executionId"));
-        if (!ok) return c.json({ error: "Execution not found or not paused" }, 409);
+        if (!ok) return guardJson(c, "Execution not found or not paused", 409);
         return c.json({ status: "running" });
     })
 
     .post("/cancel/:executionId", (c) => {
         const ok = orchestrator.cancelExecution(c.req.param("executionId"));
-        if (!ok) return c.json({ error: "Execution not found or already finished" }, 409);
+        if (!ok) return guardJson(c, "Execution not found or already finished", 409);
         return c.json({ status: "cancelled" });
     });
 

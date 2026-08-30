@@ -31,7 +31,7 @@ import { listSkillsTool, useSkillTool } from "@ANCIENT/capabilities/skills";
 import { fetchUrlTool } from "@ANCIENT/capabilities/browser";
 import { ExecutionEngine, createAiModelChat, type ExecutionStatus } from "@ANCIENT/execution";
 import { MemoryEventBus } from "@ANCIENT/infrastructure/events";
-import { ApprovalPolicy, type RiskCategory } from "@ANCIENT/infrastructure/security";
+import { ApprovalPolicy, Redactor, type RiskCategory } from "@ANCIENT/infrastructure/security";
 import { DEFAULT_CHAT_MODEL_ID, type ChatModelSelection, type ModeType } from "@ANCIENT/shared";
 import { resolveChatModel } from "../lib/models";
 import { ExecutionEventBridge } from "./bridge";
@@ -68,6 +68,10 @@ export class ExecutionHub {
   #engine = new ExecutionEngine({ registry: DEFAULT_REGISTRY });
   #executions = new Map<string, ExecutionEntry>();
   #consent = new ConsentBridge();
+  // R7: tool outputs reach the CLI verbatim unless the capability central edge
+  // is handed a redactor — without this, secrets printed by a tool (env dumps,
+  // git remotes with embedded tokens, …) stream to the client unmasked.
+  #redactor = new Redactor();
 
   get engine() {
     return this.#engine;
@@ -122,6 +126,7 @@ export class ExecutionHub {
         mode,
         allow: request.toolAllow,
         consentProvider: this.#consent.createProvider(bridge, executionId),
+        redactor: this.#redactor,
         observe: (event) => bridge.onStrategyEvent(event),
         bus,
       });

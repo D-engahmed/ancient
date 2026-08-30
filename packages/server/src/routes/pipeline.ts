@@ -6,6 +6,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 import { jobRunner } from "../lib/job-runner";
+import { guardJson } from "../lib/error-mapper";
 
 // Mirrors CLI detectPackageManager precedence.
 const LOCKFILES = [
@@ -88,7 +89,7 @@ const app = new Hono<AuthenticatedEnv>()
   .get("/status/:id", async (c) => {
     const id = c.req.param("id");
     const job = jobRunner.get(id);
-    if (!job) return c.json({ error: "No such pipeline run" }, 404);
+    if (!job) return guardJson(c, "No such pipeline run", 404);
     if (job.status === "succeeded" || job.status === "failed") {
       return c.json({ id, status: job.status, result: job.result, error: job.error });
     }

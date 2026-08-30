@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { db } from "@ANCIENT/database/client";
+import { guardJson } from "../lib/error-mapper";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 
 const createSessionSchema = z.object({
@@ -36,14 +37,14 @@ const app = new Hono<AuthenticatedEnv>()
       where: { id, userId },
       include: { messages: { orderBy: { createdAt: "asc" } } },
     });
-    if (!session) return c.json({ error: "Session not found" }, 404);
+    if (!session) return guardJson(c, "Session not found", 404);
     return c.json(session);
   })
   .delete("/:id", async (c) => {
     const userId = c.get("userId");
     const id = c.req.param("id");
     const result = await db.session.deleteMany({ where: { id, userId } });
-    if (result.count === 0) return c.json({ error: "Session not found" }, 404);
+    if (result.count === 0) return guardJson(c, "Session not found", 404);
     return c.json({ success: true });
   });
 

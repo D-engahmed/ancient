@@ -17,6 +17,7 @@ import {
 
 import { createToolsAsync } from "../tools";
 import { buildSystemPrompt } from "../system-prompt";
+import { Redactor } from "@ANCIENT/infrastructure/security";
 import { resolveChatModel, resolveFreeModel, resolveBuiltinFallbackModel, type ResolvedModel } from "../lib/models";
 import { modelKey, checkCooldown, recordRateLimitFailure, isRateLimitError, RateLimitCooldownError } from "../lib/rate-limit-breaker";
 import { pickHealthyFallback, asFallbackCandidate } from "../lib/fallback";
@@ -31,8 +32,16 @@ import { expandSlashCommand, listCommands } from "../commands/loader";
 import { routeTurn } from "../lib/model-router";
 import { createCheckpoint } from "../checkpoints/store";
 import { parseQuotaFromError, persistQuota } from "../lib/quota";
+import { errorJson, guardJson } from "../lib/error-mapper";
 
 const log = createLogger("chat");
+
+// R7: provider error bodies can echo the very credentials that failed (an
+// auth error repeating the Authorization header, a gateway echoing `api_key`)
+// and the shared logger's key-name redaction can't see inside a string field.
+// Every error surface below (log line + persisted ERROR message) passes
+// through this redactor first.
+const errorRedactor = new Redactor();
 
 const MAX_RESPONSE_CHARS = Number.parseInt(process.env.ANCIENT_MAX_RESPONSE_CHARS ?? "200000", 10);
 // Raised from 60s: subagent tasks and MCP tools legitimately run longer.
@@ -158,12 +167,6 @@ function buildConversationHistory(
   return result;
 }
 
-function getResumableUserMessage(messages: any[]) {
-  const last = messages[messages.length - 1];
-  if (!last || last.role !== "USER") return null;
-  return last;
-}
-
 type StreamParams = {
   sessionId: string;
   userId: string;
@@ -207,15 +210,12 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
   // spending another ~3-attempt retry cycle (each with backoff) against a
   // limit that hasn't reset yet — that multi-attempt round trip is why the
   // error took a while to surface and then repeated on every retry. See
-  // rate-limit-breaker.ts. BUT: for a weak/free BYOK model (the core
-  // assumption is that these must degrade gracefully, not take the whole turn
-  // down), we don't just throw — we first try a healthy fallback model for
-  // this reply. Only if no healthy alternative exists do we surface the
-  // cooldown error. Note this deliberately skips the fallback for a router
-  // pre-resolved free lane (we never replace what the router already picked).
+  // rate-limit-breaker.ts. When a model is on cooldown we try a healthy
+  // fallback model first. Only if no healthy alternative exists do we surface
+  // the cooldown error.
   let rlKey = modelKey(resolved.provider, resolved.modelId);
   const cooldown = checkCooldown(rlKey);
-  if (cooldown.onCooldown && !preResolved) {
+  if (cooldown.onCooldown) {
     const fallback = selectHealthyFallbackModel(settings, rlKey);
     if (fallback) {
       usedFreeLane = fallback.isFree || usedFreeLane;
@@ -237,6 +237,10 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
 
   const model = resolved.model;
   const apiKey = resolved.apiKey;
+  // Free models are on shared pools that rate-limit aggressively — fail fast
+  // (no SDK retries) so the cooldown + fallback path kicks in on the NEXT call
+  // instead of wasting 3 attempts against a limit that hasn't reset.
+  const maxRetries = usedFreeLane ? 0 : undefined;
   // The model ref this turn actually ran on — surfaced in persisted messages
   // and stream metadata (see messageMetadata below).
   const usedModelRef = usedFreeLane
@@ -356,6 +360,7 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
 
   const result = streamText({
     model,
+    maxRetries,
     system: buildSystemPrompt({
       cwd,
       mode,
@@ -473,7 +478,10 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
     // richer detail silently failed to make it into this log line or the
     // persisted DB message.) Destructuring `{ error }` here fixes that.
     onError: async ({ error }) => {
-      const errMsg = sanitizeError(error);
+      // sanitizeError strips the exact apiKey from the text; the redactor
+      // additionally masks *patterned* secrets (bearer tokens, sk-…, labeled
+      // api_key=…) that survive inside wrapped provider messages.
+      const errMsg = errorRedactor.mask(sanitizeError(error));
       const modelKind = selection.modelKind;
       const modelRef = usedModelRef;
       const cause = (error as { cause?: unknown })?.cause;
@@ -501,7 +509,18 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
               responseBody: (unwrapped as { responseBody?: unknown }).responseBody,
             }
             : undefined;
-      log.warn("stream error", { sessionId, modelKind, modelRef, error: errMsg, ...apiError });
+      // R7: log the masked body — the raw one may embed the failed request's
+      // credentials. Quota learning below still reads the raw body.
+      const loggedApiError = apiError
+        ? {
+          ...apiError,
+          responseBody:
+            typeof apiError.responseBody === "string"
+              ? errorRedactor.mask(apiError.responseBody)
+              : apiError.responseBody,
+        }
+        : undefined;
+      log.warn("stream error", { sessionId, modelKind, modelRef, error: errMsg, ...loggedApiError });
 
       // Learn this connection's real quota, if the provider just told us
       // one, so the /usage graph reflects an actual reported limit instead
@@ -557,7 +576,7 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
     },
-    onError: (error) => sanitizeError(error),
+    onError: (error) => errorRedactor.mask(sanitizeError(error)),
 
     messageMetadata: ({ part }) => {
       const turnModel = usedModelRef;
@@ -663,56 +682,6 @@ async function prepareTurn(params: {
 
 const app = new Hono<AuthenticatedEnv>();
 
-app.post("/:sessionId/resume", async (c) => {
-  const sessionId = c.req.param("sessionId");
-  const userId = c.get("userId");
-
-  const session = await db.session.findUnique({
-    where: { id: sessionId, userId },
-    include: { messages: { orderBy: { createdAt: "asc" } } },
-  });
-  if (!session) return c.json({ error: "Session not found" }, 404);
-
-  const lastUser = getResumableUserMessage(session.messages);
-  if (!lastUser) return c.json({ error: "No pending user message" }, 409);
-
-  const selection: ChatModelSelection = lastUser.modelKind === "builtin"
-    ? { modelKind: "builtin", modelId: lastUser.modelRef }
-    : { modelKind: "custom", connectionId: lastUser.modelRef };
-
-  try { await resolveChatModel(selection, userId); } catch {
-    return c.json({ error: "The model used in this session is no longer available" }, 409);
-  }
-
-  const settings = await loadSettings(session.cwd);
-  const history = buildConversationHistory(session.messages);
-  const abortController = new AbortController();
-  const timeoutId = setTimeout(() => abortController.abort(), CHAT_TIMEOUT_MS);
-
-  try {
-    const response = await streamAIResponse({
-      sessionId,
-      userId,
-      selection,
-      cwd: session.cwd,
-      history,
-      mode: lastUser.mode,
-      settings,
-      abortController,
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err instanceof RateLimitCooldownError) {
-      c.header("Retry-After", String(err.retryAfterSeconds));
-      return c.json({ error: err.message }, 429);
-    }
-    const msg = err instanceof Error ? err.message : String(err);
-    return c.json({ error: msg }, 500);
-  }
-});
-
 app.post(
   "/:sessionId",
   zValidator("json", submitSchema),
@@ -724,7 +693,7 @@ app.post(
       where: { id: sessionId, userId },
       include: { messages: { orderBy: { createdAt: "asc" } } },
     });
-    if (!session) return c.json({ error: "Session not found" }, 404);
+    if (!session) return guardJson(c, "Session not found", 404);
 
     const data = c.req.valid("json");
 
@@ -736,7 +705,7 @@ app.post(
       cwd: session.cwd,
       isFirstMessage: session.messages.length === 0,
     });
-    if (!prepared.ok) return c.json({ error: prepared.error }, prepared.status);
+    if (!prepared.ok) return guardJson(c, prepared.error, prepared.status);
 
     const modelKind = data.model.modelKind;
     const modelRef = data.model.modelKind === "builtin" ? data.model.modelId : data.model.connectionId;
