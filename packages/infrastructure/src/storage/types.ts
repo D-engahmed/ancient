@@ -9,10 +9,20 @@
 // that contract so the engine, gateway, and strategies all share one shape and
 // one replay rule, instead of the agent package's one in-memory Map.
 
+/**
+ * Execution status projection (docs/03 §state diagram). The gateway surface
+ * (hub) only ever sees `created|running|completed|failed|cancelled` today; the
+ * transitional states (`queued`, `waiting_approval`, `paused`, `checkpointed`)
+ * are part of the documented machine so the projection layer renders them the
+ * moment the engine/orchestrator drives them — representable before runtime.
+ */
 export type ExecutionStatus =
     | "pending"
+    | "queued"
     | "running"
+    | "waiting_approval"
     | "paused"
+    | "checkpointed"
     | "completed"
     | "failed"
     | "cancelled";
@@ -47,6 +57,7 @@ export type LifecycleEventType =
     | "checkpoint-saved"
     | "paused"
     | "resumed"
+    | "retrying"
     | "completed"
     | "failed";
 

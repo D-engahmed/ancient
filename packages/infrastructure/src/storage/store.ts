@@ -81,6 +81,9 @@ export function applyEvent(record: ExecutionRecord | undefined, event: Execution
         case "resumed":
             next.status = "running";
             break;
+        case "retrying":
+            next.status = "running";
+            break;
         case "completed":
             next.status = "completed";
             next.completedAt = event.timestamp;

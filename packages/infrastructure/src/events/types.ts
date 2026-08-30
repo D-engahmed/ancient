@@ -17,6 +17,9 @@ import type { ExecutionEvent } from "../storage/types";
  */
 export type LifecycleEvent = ExecutionEvent;
 
+/** The lifecycle event type union (synonym to the storage-layer type). */
+export type { LifecycleEventType } from "../storage/types";
+
 /** Events are published with their executionId for convenient correlation. */
 export type BusContext = {
     executionId: string;
