@@ -4,6 +4,7 @@ import type { ExecutionEventEnvelope, ChatModelSelection, ModeType } from "@ANCI
 import { parseExecutionEvent } from "@ANCIENT/shared";
 import type { RiskCategory } from "@ANCIENT/infrastructure/security";
 import { sseFrames } from "./execution-stream";
+import { errorMessageFrom } from "./http-errors";
 
 export const API_URL = process.env.API_URL ?? "http://localhost:3000";
 
@@ -60,8 +61,8 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
     if (!response.ok) {
       let errorMessage = response.statusText;
       try {
-        const data = await response.json() as { error?: string; message?: string };
-        errorMessage = data.error || data.message || errorMessage;
+        const data = await response.json() as { error?: unknown; message?: unknown };
+        errorMessage = errorMessageFrom(data) || errorMessage;
       } catch {
         // ignore JSON parse errors
       }
@@ -212,8 +213,8 @@ export async function* streamExecutionEvents(
     if (!response.ok) {
       let message = response.statusText;
       try {
-        const data = (await response.json()) as { error?: string; message?: string };
-        message = data.error || data.message || message;
+        const data = (await response.json()) as { error?: unknown; message?: unknown };
+        message = errorMessageFrom(data) || message;
       } catch {
         // non-JSON error body
       }
