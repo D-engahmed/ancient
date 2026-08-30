@@ -32,6 +32,7 @@ import { expandSlashCommand, listCommands } from "../commands/loader";
 import { routeTurn } from "../lib/model-router";
 import { createCheckpoint } from "../checkpoints/store";
 import { parseQuotaFromError, persistQuota } from "../lib/quota";
+import { errorJson, guardJson } from "../lib/error-mapper";
 
 const log = createLogger("chat");
 
@@ -692,7 +693,7 @@ app.post(
       where: { id: sessionId, userId },
       include: { messages: { orderBy: { createdAt: "asc" } } },
     });
-    if (!session) return c.json({ error: "Session not found" }, 404);
+    if (!session) return guardJson(c, "Session not found", 404);
 
     const data = c.req.valid("json");
 
@@ -704,7 +705,7 @@ app.post(
       cwd: session.cwd,
       isFirstMessage: session.messages.length === 0,
     });
-    if (!prepared.ok) return c.json({ error: prepared.error }, prepared.status);
+    if (!prepared.ok) return guardJson(c, prepared.error, prepared.status);
 
     const modelKind = data.model.modelKind;
     const modelRef = data.model.modelKind === "builtin" ? data.model.modelId : data.model.connectionId;

@@ -11,7 +11,16 @@ import {
     ProviderConnectionValidationError,
     validateProviderConnection,
 } from "../lib/provider-connection-validation";
+import { errorJson, gatewayError, guardJson } from "../lib/error-mapper";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
+
+/** 422 for a failed connection validation: envelope + the refreshed row. */
+function validationFailedJson(c: any, message: string, connection: unknown) {
+    return c.json(
+        { error: gatewayError(message, 422, String(c.get("traceId"))).error, connection },
+        422 as const,
+    );
+}
 
 const createConnectionSchema = z.object({
     label: z.string().trim().min(1).max(100),
@@ -47,10 +56,8 @@ const app = new Hono<AuthenticatedEnv>()
         try {
             await validateProviderConnection({ protocol, baseUrl, apiKey, modelId });
         } catch (error) {
-            const message = error instanceof ProviderConnectionValidationError
-                ? error.message
-                : "Unable to validate the provider connection";
-            return c.json({ error: message }, 422);
+            if (error instanceof ProviderConnectionValidationError) return errorJson(c, error, 422);
+            return guardJson(c, "Unable to validate the provider connection", 422);
         }
 
         const encrypted = await encryptApiKey(apiKey);
@@ -82,7 +89,7 @@ const app = new Hono<AuthenticatedEnv>()
         const userId = c.get("userId");
         const id = c.req.param("id");
         const connection = await db.providerConnection.findUnique({ where: { id, userId } });
-        if (!connection) return c.json({ error: "Connection not found" }, 404);
+        if (!connection) return guardJson(c, "Connection not found", 404);
 
         try {
             await assertSafeBaseUrl(connection.baseUrl);
@@ -108,7 +115,7 @@ const app = new Hono<AuthenticatedEnv>()
                 data: { isValid: false, lastValidatedAt: new Date(), lastValidationError: message },
                 select: connectionSelect,
             });
-            return c.json({ error: message, connection: updated }, 422);
+            return validationFailedJson(c, message, updated);
         }
     })
 
@@ -116,7 +123,7 @@ const app = new Hono<AuthenticatedEnv>()
         const userId = c.get("userId");
         const id = c.req.param("id");
         const current = await db.providerConnection.findUnique({ where: { id, userId } });
-        if (!current) return c.json({ error: "Connection not found" }, 404);
+        if (!current) return guardJson(c, "Connection not found", 404);
 
         const input = c.req.valid("json");
         const protocol = input.protocol ?? (current.protocol as "openai" | "anthropic" | "gemini");
@@ -128,10 +135,8 @@ const app = new Hono<AuthenticatedEnv>()
             await assertSafeBaseUrl(baseUrl);
             await validateProviderConnection({ protocol, baseUrl, apiKey, modelId });
         } catch (error) {
-            const message = error instanceof ProviderConnectionValidationError
-                ? error.message
-                : "Unable to validate the provider connection";
-            return c.json({ error: message }, 422);
+            if (error instanceof ProviderConnectionValidationError) return errorJson(c, error, 422);
+            return guardJson(c, "Unable to validate the provider connection", 422);
         }
 
         const updateData: any = {
@@ -159,7 +164,7 @@ const app = new Hono<AuthenticatedEnv>()
             where: { id, userId },
             select: { id: true, label: true, protocol: true, baseUrl: true, modelId: true, keyLastFour: true, createdAt: true },
         });
-        if (!connection) return c.json({ error: "Connection not found" }, 404);
+        if (!connection) return guardJson(c, "Connection not found", 404);
         return c.json(connection);
     })
 
@@ -167,7 +172,7 @@ const app = new Hono<AuthenticatedEnv>()
         const userId = c.get("userId");
         const id = c.req.param("id");
         const result = await db.providerConnection.deleteMany({ where: { id, userId } });
-        if (result.count === 0) return c.json({ error: "Connection not found" }, 404);
+        if (result.count === 0) return guardJson(c, "Connection not found", 404);
         return c.json({ success: true });
     });
 
