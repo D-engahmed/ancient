@@ -16,9 +16,11 @@
 
 import type { LifecycleEvent, Listener } from "@ANCIENT/infrastructure/events";
 import type { ExecutionStatus as StoreStatus } from "@ANCIENT/infrastructure/storage";
+import type { ErrorEnvelope } from "@ANCIENT/contracts";
 import {
   executionEventEnvelopeSchema,
   TERMINAL,
+  type ClientSafeError,
   type ExecutionEventEnvelope,
   type ExecutionEventPayload,
 } from "@ANCIENT/shared";
@@ -90,7 +92,7 @@ export class ExecutionEventBridge {
   }
 
   /** Wires the endpoint of the run: terminal + rollup, no double-terminals. */
-  finish(status: StoreStatus, detail?: { output?: string; usage?: { inputTokens: number; outputTokens: number; costUsd?: number }; summary?: string; error?: string }): void {
+  finish(status: StoreStatus, detail?: { output?: string; usage?: { inputTokens: number; outputTokens: number; costUsd?: number }; summary?: string; error?: string; clientError?: ClientSafeError }): void {
     if (this.#closed) return;
     const output = detail?.output ?? this.#textChunks.join("");
     const usage = detail?.usage;
@@ -99,7 +101,7 @@ export class ExecutionEventBridge {
       this.#emit(this.#build("execution.cancelled", { ...(detail?.error ? { reason: detail.error } : {}) }));
     } else if (status === "failed") {
       this.#emit(this.#build("execution.failed", {
-        error: {
+        error: detail?.clientError ?? {
           code: "SYSTEM_UNKNOWN",
           message: detail?.error ?? "execution failed",
           retryable: false,
@@ -155,12 +157,25 @@ export class ExecutionEventBridge {
         break;
       }
       case "failed": {
-        const cancelled = event.payload?.reason === "cancelled";
+        // The engine publishes the terminal ErrorEnvelope (Layer 20) on the
+        // lifecycle event; pass its code/retryability through instead of the
+        // blanket SYSTEM_UNKNOWN the wire used to fabricate.
+        const cancelled = event.payload?.reason === "cancelled" || event.payload?.terminal === "cancelled";
+        const envelope = event.payload?.error as ErrorEnvelope | undefined;
         this.finish(cancelled ? "cancelled" : "failed", {
           error: typeof event.payload?.message === "string" ? event.payload.message : "execution failed",
+          ...(envelope ? { clientError: this.#clientError(envelope) } : {}),
         });
         break;
       }
+      case "retrying":
+        // Failed → Queued for transient errors (docs/03): surface the bounded
+        // retry so the CLI is honest about why the run is still alive.
+        this.#emit(this.#build("execution.retrying", {
+          attempt: Number(event.payload?.attempt ?? 1),
+          ...(event.payload?.waitMs !== undefined ? { waitMs: Number(event.payload.waitMs) } : {}),
+        }));
+        break;
       default:
         // "created" is emitted by bridge.start(); "plan-updated" /
         // "tool-executed" / "artifact-created" / "checkpoint-saved" have no
@@ -218,6 +233,17 @@ export class ExecutionEventBridge {
     } catch {
       return `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     }
+  }
+
+  /** Project a canonical ErrorEnvelope (Layer 20 §1) onto the safe wire shape
+   *  (clientMessage ?? message; code + retryability passed through). */
+  #clientError(envelope: ErrorEnvelope): ClientSafeError {
+    return {
+      code: envelope.code,
+      message: envelope.clientMessage ?? envelope.message,
+      retryable: envelope.transient,
+      traceId: envelope.traceId,
+    };
   }
 
   #build(type: ExecutionEventEnvelope["type"], payload: ExecutionEventPayload): ExecutionEventEnvelope {

@@ -29,7 +29,7 @@ import {
 import { bashTool } from "@ANCIENT/capabilities/shell";
 import { listSkillsTool, useSkillTool } from "@ANCIENT/capabilities/skills";
 import { fetchUrlTool } from "@ANCIENT/capabilities/browser";
-import { ExecutionEngine, createAiModelChat } from "@ANCIENT/execution";
+import { ExecutionEngine, createAiModelChat, type ExecutionStatus } from "@ANCIENT/execution";
 import { MemoryEventBus } from "@ANCIENT/infrastructure/events";
 import { ApprovalPolicy, type RiskCategory } from "@ANCIENT/infrastructure/security";
 import { DEFAULT_CHAT_MODEL_ID, type ChatModelSelection, type ModeType } from "@ANCIENT/shared";
@@ -128,7 +128,7 @@ export class ExecutionHub {
 
       const entry: ExecutionEntry = {
         ...entryBase,
-        status: session.status,
+        status: toSurfaceStatus(session.status),
         session: {
           cancel: (reason?: string) => session.cancel(reason),
           done: session.done,
@@ -187,6 +187,24 @@ export class ExecutionHub {
     const policy = new ApprovalPolicy();
     for (const category of allow ?? []) policy.allow(category);
     return policy;
+  }
+}
+
+/** Collapse the engine's rich lifecycle onto the wire's five-state surface:
+ *  queued / waiting_approval / paused / checkpointed are all "live" while a
+ *  run is still in flight, and the engine alone writes the terminal states. */
+function toSurfaceStatus(status: ExecutionStatus): ExecutionEntry["status"] {
+  switch (status) {
+    case "created":
+      return "created";
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return "running";
   }
 }
 

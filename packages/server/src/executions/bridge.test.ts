@@ -6,6 +6,7 @@
 // mapping, capability callId pairing, terminal semantics, and replay slices.
 
 import { describe, expect, test } from "bun:test";
+import { makeError } from "@ANCIENT/contracts";
 import type { LifecycleEvent } from "@ANCIENT/infrastructure/events";
 import type { StrategyEvent } from "@ANCIENT/strategies";
 import type { ExecutionEventEnvelope } from "@ANCIENT/shared";
@@ -138,6 +139,33 @@ describe("ExecutionEventBridge — engine → wire mapping", () => {
     expect(bridge.closed).toBe(true);
   });
 
+  test("a typed terminal envelope passes its code + retryability to the wire", () => {
+    const bridge = fresh();
+    const envelope = makeError({
+      code: "PROVIDER_RATE_LIMITED",
+      domain: "provider",
+      message: "hit 429 on anthropic",
+      transient: true,
+      retryableAsIs: true,
+    });
+    bridge.onLifecycleEvent(lifecycle("failed", { message: envelope.message, error: envelope, terminal: "failed" }));
+
+    const last = bridge.snapshot().at(-1)! as Extract<ExecutionEventEnvelope, { type: "execution.failed" }>;
+    expect(last.payload.error.code).toBe("PROVIDER_RATE_LIMITED");
+    expect(last.payload.error.message).toBe("hit 429 on anthropic");
+    expect(last.payload.error.retryable).toBe(true);
+    expect(last.payload.error.traceId).toBe(envelope.traceId);
+  });
+
+  test("transient retries surface as execution.retrying, staying non-terminal", () => {
+    const bridge = fresh();
+    bridge.onLifecycleEvent(lifecycle("retrying", { attempt: 2, waitMs: 500, code: "PROVIDER_UNAVAILABLE", message: "backing off" }));
+
+    const last = bridge.snapshot().at(-1)! as Extract<ExecutionEventEnvelope, { type: "execution.retrying" }>;
+    expect(last.payload).toMatchObject({ attempt: 2, waitMs: 500 });
+    expect(bridge.closed).toBe(false);
+  });
+
   test("post-terminal lifecycle events are ignored (exactly one terminal)", () => {
     const bridge = fresh();
     bridge.onLifecycleEvent(lifecycle("completed", {}));
@@ -152,7 +180,7 @@ describe("ExecutionEventBridge — engine → wire mapping", () => {
     bridge.onLifecycleEvent(lifecycle("plan-updated", { plan: "x" }));
     bridge.onLifecycleEvent(lifecycle("tool-executed", { tool: "bash", ok: true }));
     bridge.onStrategyEvent({ type: "subtask", subtaskId: "s", goal: "g", status: "completed" });
-    bridge.onStrategyEvent({ type: "error", message: "non-fatal" });
+    bridge.onStrategyEvent({ type: "error", error: makeError({ code: "SYSTEM_UNKNOWN", domain: "strategy", message: "non-fatal" }) });
     expect(bridge.snapshot().length).toBe(1); // only execution.created
     expect(bridge.lastSeq).toBe(1);
   });
