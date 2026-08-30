@@ -207,15 +207,12 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
   // spending another ~3-attempt retry cycle (each with backoff) against a
   // limit that hasn't reset yet — that multi-attempt round trip is why the
   // error took a while to surface and then repeated on every retry. See
-  // rate-limit-breaker.ts. BUT: for a weak/free BYOK model (the core
-  // assumption is that these must degrade gracefully, not take the whole turn
-  // down), we don't just throw — we first try a healthy fallback model for
-  // this reply. Only if no healthy alternative exists do we surface the
-  // cooldown error. Note this deliberately skips the fallback for a router
-  // pre-resolved free lane (we never replace what the router already picked).
+  // rate-limit-breaker.ts. When a model is on cooldown we try a healthy
+  // fallback model first. Only if no healthy alternative exists do we surface
+  // the cooldown error.
   let rlKey = modelKey(resolved.provider, resolved.modelId);
   const cooldown = checkCooldown(rlKey);
-  if (cooldown.onCooldown && !preResolved) {
+  if (cooldown.onCooldown) {
     const fallback = selectHealthyFallbackModel(settings, rlKey);
     if (fallback) {
       usedFreeLane = fallback.isFree || usedFreeLane;
@@ -237,6 +234,10 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
 
   const model = resolved.model;
   const apiKey = resolved.apiKey;
+  // Free models are on shared pools that rate-limit aggressively — fail fast
+  // (no SDK retries) so the cooldown + fallback path kicks in on the NEXT call
+  // instead of wasting 3 attempts against a limit that hasn't reset.
+  const maxRetries = usedFreeLane ? 0 : undefined;
   // The model ref this turn actually ran on — surfaced in persisted messages
   // and stream metadata (see messageMetadata below).
   const usedModelRef = usedFreeLane
@@ -356,6 +357,7 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
 
   const result = streamText({
     model,
+    maxRetries,
     system: buildSystemPrompt({
       cwd,
       mode,
