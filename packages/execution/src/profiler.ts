@@ -20,6 +20,19 @@ const KNOWN_TOOLS = [
 const PARALLEL_SIGNALS = [
     "parallel", "independent", "many files", "multiple files", "several",
     "across the codebase", "whole project", "batch", "in parallel",
+    "whole system", "whole codebase", "entire system", "entire codebase",
+];
+
+/**
+ * Repo-scale audit prompts: open-ended "analyze everything and tell me all
+ * the bugs" asks need real scouting + synthesis, never a single direct turn.
+ * Hitting any of these raises the tier to at least "complex" so the ladder
+ * selects a scouting strategy (subagents), not the one-turn direct rung.
+ */
+const AUDIT_SIGNALS = [
+    "list every", "list all", "all bugs", "every bug", "whole system", "whole codebase",
+    "entire codebase", "analyze the codebase", "audit the", "synthesize",
+    "give me a report", "write a report", "comprehensive review", "review the entire",
 ];
 
 const CHARS_PER_TOKEN = 4;
@@ -61,12 +74,17 @@ export function inferProfile(
     mode: ModeType = "BUILD",
     hints: Partial<TaskProfile> = {},
 ): TaskProfile {
+    const text = task.toLowerCase();
     const base = tierFromScore(classifyPrompt(task, mode));
     const detected = detectRequiredTools(task);
     // Mentioning real tools is a moderate-work signal: a task that names
     // readFile/writeFile/bash is rarely a single direct turn, so bump out of
     // direct's trust zone (which the ladder enforces below).
-    const complexity = hints.complexity ?? (detected.length > 0 && base === "simple" ? "moderate" : base);
+    const bumped = detected.length > 0 && base === "simple" ? "moderate" : base;
+    // Repo-scale audit/synthesis prompts are never a one-turn answer: raise to
+    // complex so the ladder picks a scouting + synthesizing rung (subagents).
+    const auditHit = AUDIT_SIGNALS.some((s) => text.includes(s));
+    const complexity = hints.complexity ?? (auditHit ? "complex" : bumped);
     return {
         description: task,
         complexity,

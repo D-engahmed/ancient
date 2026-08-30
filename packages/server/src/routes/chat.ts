@@ -18,9 +18,9 @@ import {
 import { createToolsAsync } from "../tools";
 import { buildSystemPrompt } from "../system-prompt";
 import { Redactor } from "@ANCIENT/infrastructure/security";
-import { resolveChatModel, resolveFreeModel, resolveBuiltinFallbackModel, type ResolvedModel } from "../lib/models";
+import { resolveChatModel, resolveFreeModel, type ResolvedModel } from "../lib/models";
 import { modelKey, checkCooldown, recordRateLimitFailure, isRateLimitError, RateLimitCooldownError } from "../lib/rate-limit-breaker";
-import { pickHealthyFallback, asFallbackCandidate } from "../lib/fallback";
+import { selectHealthyFallbackModel } from "../lib/fallback";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 import { loadSettings, type AncientSettings } from "../hooks/settings";
 import { runHooks, type HookContext } from "../hooks/runner";
@@ -66,25 +66,6 @@ function toolCallParts(parts: MessagePart[]) {
  * choice is still respected (and never silently replaced by a model we know
  * is also rate-limited, which would just produce a second confusing failure).
  */
-function selectHealthyFallbackModel(
-  settings: AncientSettings,
-  primaryRlKey: string,
-): { resolved: ResolvedModel; isFree: boolean } | null {
-  const candidates: Array<{ resolved: ResolvedModel; isFree: boolean }> = [];
-
-  const free = resolveFreeModel(settings.modelRouting?.freeModel);
-  if (free) candidates.push({ resolved: free, isFree: true });
-
-  const builtin = resolveBuiltinFallbackModel();
-  if (builtin) candidates.push({ resolved: builtin, isFree: false });
-
-  const picked = pickHealthyFallback(
-    candidates.map((c) => asFallbackCandidate(c.resolved, c.isFree)),
-    primaryRlKey,
-  );
-  return picked ? { resolved: picked.resolved, isFree: picked.isFree } : null;
-}
-
 /**
  * Rebuilds the message array sent back to the model from DB rows.
  *

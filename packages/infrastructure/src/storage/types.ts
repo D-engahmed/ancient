@@ -58,6 +58,7 @@ export type LifecycleEventType =
     | "paused"
     | "resumed"
     | "retrying"
+    | "degraded"
     | "completed"
     | "failed";
 

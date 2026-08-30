@@ -53,6 +53,10 @@ app.use("/usage/*", requireAuth);
 app.use("/agent/*", requireAuth);
 app.use("/pipeline/*", requireAuth);
 app.use("/executions/*", requireAuth);
+// The AI-heavy surfaces share one per-user budget so a scripted burst of
+// executions (or a runaway subagent fan-out) can't monopolize the upstream
+// pool behind the gateway — same window/quota as /chat/*.
+app.use("/executions/*", byokRateLimit);
 
 const routes = app
   .route("/auth", auth)

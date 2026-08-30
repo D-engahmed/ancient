@@ -166,6 +166,26 @@ describe("ExecutionEventBridge — engine → wire mapping", () => {
     expect(bridge.closed).toBe(false);
   });
 
+  test("cooldown fallback surfaces as execution.fallback_engaged with from/to/reason", () => {
+    const bridge = fresh();
+    bridge.onLifecycleEvent(lifecycle("started", { strategy: "agent-loop", rung: 1, reason: "moderate", task: "t" }));
+    bridge.onFallbackEngaged({
+      from: "3b3fba13",
+      to: "gemini-2.0-flash",
+      reason: "your selected model is rate-limited (~30s) — using gemini-2.0-flash for this run instead",
+    });
+
+    const last = bridge.snapshot().at(-1) as Extract<ExecutionEventEnvelope, { type: "execution.fallback_engaged" }>;
+    expect(last.type).toBe("execution.fallback_engaged");
+    expect(last.seq).toBe(4); // created + strategy.selected + started + fallback
+    expect(last.payload).toEqual({
+      from: "3b3fba13",
+      to: "gemini-2.0-flash",
+      reason: "your selected model is rate-limited (~30s) — using gemini-2.0-flash for this run instead",
+    });
+    expect(bridge.closed).toBe(false);
+  });
+
   test("post-terminal lifecycle events are ignored (exactly one terminal)", () => {
     const bridge = fresh();
     bridge.onLifecycleEvent(lifecycle("completed", {}));

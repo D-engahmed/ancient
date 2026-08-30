@@ -84,6 +84,10 @@ export function applyEvent(record: ExecutionRecord | undefined, event: Execution
         case "retrying":
             next.status = "running";
             break;
+        case "degraded":
+            // A run that under-delivered (empty output after tools, fallback
+            // engaged…) stays live — the projection keeps the current status.
+            break;
         case "completed":
             next.status = "completed";
             next.completedAt = event.timestamp;

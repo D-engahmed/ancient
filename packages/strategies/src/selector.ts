@@ -16,7 +16,7 @@ const TOKEN_BUMP_RUNG_ABOVE = 60_000;
 const TIER_ORDER: readonly ComplexityTier[] = ["trivial", "simple", "moderate", "complex", "very-complex"];
 
 /** Upper complexity a strategy's rung is comfortable forcing via preference. */
-const RUNG_CEILING: Record<StrategyRung, ComplexityTier> = {
+export const RUNG_CEILING: Record<StrategyRung, ComplexityTier> = {
     0: "simple",
     1: "moderate",
     2: "complex",
@@ -49,17 +49,24 @@ export function wantedRung(profile: TaskProfile): StrategyRung {
 export function selectStrategy(
     profile: TaskProfile,
     catalog: readonly ExecutionStrategy[],
+    options?: { minRung?: StrategyRung },
 ): { id: StrategyId; rung: StrategyRung; reason: string } {
+    const floor = options?.minRung ?? 0;
     const byId = new Map(catalog.map((s) => [s.id, s]));
+    // "At least this rung" guard (used by the engine's bounded re-selection):
+    // a strategy a full rung *below* the escalation floor must never win, even
+    // if it also happens to match the profile.
+    const atLeast = (s: ExecutionStrategy): boolean => s.rung >= floor;
 
-    // 1. Explicit preference wins — unless it is not wired or the profile is
-    //    beyond the strategy's ceiling (e.g. forcing `direct` onto heavy work).
+    // 1. Explicit preference wins — unless it is not wired, below the rung
+    //    floor, or the profile is beyond the strategy's ceiling (e.g. forcing
+    //    `direct` onto heavy work).
     if (profile.preferredStrategy) {
         const preferred = byId.get(profile.preferredStrategy);
-        if (preferred && preferred.wired && acceptsAsPreferred(preferred, profile)) {
+        if (preferred && preferred.wired && atLeast(preferred) && acceptsAsPreferred(preferred, profile)) {
             return { id: preferred.id, rung: preferred.rung, reason: `preferred ${preferred.id}` };
         }
-        const fallback = cheapestWired(catalog);
+        const fallback = cheapestWiredAtOrAbove(catalog, floor) ?? cheapestWired(catalog);
         return {
             id: fallback.id,
             rung: fallback.rung,
@@ -69,7 +76,7 @@ export function selectStrategy(
 
     // 2. Lowest wired rung that accepts the profile (complexity must be earned).
     const wanted = wantedRung(profile);
-    const accepting = catalog.filter((s) => s.wired && s.match(profile));
+    const accepting = catalog.filter((s) => s.wired && atLeast(s) && s.match(profile));
     if (accepting.length > 0) {
         const best = [...accepting].sort((a, b) => a.rung - b.rung)[0]!;
         const over = best.rung > wanted;
@@ -82,8 +89,10 @@ export function selectStrategy(
         };
     }
 
-    // 3. Nothing matches — cheapest wired strategy as a safety ceiling.
-    const fallback = cheapestWired(catalog);
+    // 3. Nothing matches — cheapest wired strategy at or above the floor as a
+    //    safety ceiling (falling back below the floor means the engine will
+    //    detect no escalation happened and settle honestly).
+    const fallback = cheapestWiredAtOrAbove(catalog, floor) ?? cheapestWired(catalog);
     return {
         id: fallback.id,
         rung: fallback.rung,
@@ -94,5 +103,12 @@ export function selectStrategy(
 export function cheapestWired(catalog: readonly ExecutionStrategy[]): ExecutionStrategy {
     const wired = catalog.filter((s) => s.wired);
     if (wired.length === 0) throw new Error("strategy catalog has no wired strategies");
+    return wired.sort((a, b) => a.rung - b.rung)[0]!;
+}
+
+/** Cheapest wired strategy at or above the rung floor; undefined when none. */
+function cheapestWiredAtOrAbove(catalog: readonly ExecutionStrategy[], floor: StrategyRung): ExecutionStrategy | undefined {
+    const wired = catalog.filter((s) => s.wired && s.rung >= floor);
+    if (wired.length === 0) return undefined;
     return wired.sort((a, b) => a.rung - b.rung)[0]!;
 }

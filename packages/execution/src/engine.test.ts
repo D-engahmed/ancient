@@ -183,6 +183,68 @@ describe("ExecutionEngine", () => {
         expect(session.status).toBe("failed");
     });
 
+    it("escalates once when a run used tools but produced no final text", async () => {
+        const bus = new MemoryEventBus();
+        const engine = new ExecutionEngine({ registry: registry(), bus });
+        const lifecycle: string[] = [];
+        bus.subscribe((e) => {
+            lifecycle.push(e.type);
+        });
+
+        // Force direct (rung 0): the model runs a tool, then returns empty text
+        // in both passes — that is an INCOMPLETE run, not a success. The engine
+        // must degrade and re-select a heavier strategy (agent-loop, rung 1).
+        const session = engine.run(
+            request({
+                task: "read the config",
+                profile: { complexity: "simple" },
+                model: scripted([
+                    turn("", [call("readFile", { path: "x.ts" })]),
+                    turn(""),
+                    turn("deep analysis report"),
+                ]),
+            }),
+        );
+
+        const result = await session.done;
+        expect(result.status).toBe("completed");
+        expect(result.strategy.id).toBe("agent-loop"); // escalated, not direct
+        expect(result.output).toContain("deep analysis report");
+        expect(result.toolCount).toBe(1);
+        expect(lifecycle).toContain("degraded");
+        // created → started ⇒ degraded ⇒ started ⇒ completed
+        expect(lifecycle.filter((t) => t === "started")).toHaveLength(2);
+        expect(lifecycle.at(-1)).toBe("completed");
+    });
+
+    it("does not escalate noisy-but-nonempty output", async () => {
+        const bus = new MemoryEventBus();
+        const engine = new ExecutionEngine({ registry: registry(), bus });
+        const lifecycle: string[] = [];
+        bus.subscribe((e) => {
+            lifecycle.push(e.type);
+        });
+
+        // direct, tool ran, but the continuation produced real text — no
+        // re-selection is warranted; the run completes on direct.
+        const session = engine.run(
+            request({
+                task: "read the config",
+                profile: { complexity: "simple" },
+                model: scripted([
+                    turn("reading", [call("readFile", { path: "x.ts" })]),
+                    turn("founded the answer"),
+                ]),
+            }),
+        );
+
+        const result = await session.done;
+        expect(result.status).toBe("completed");
+        expect(result.strategy.id).toBe("direct");
+        expect(lifecycle).not.toContain("degraded");
+        expect(lifecycle.filter((t) => t === "started")).toHaveLength(1);
+    });
+
     it("retries a transient failure once, then completes (Failed → Queued edge)", async () => {
         const bus = new MemoryEventBus();
         const engine = new ExecutionEngine({ registry: registry(), bus });

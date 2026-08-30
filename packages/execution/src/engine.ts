@@ -26,6 +26,7 @@ import {
   strategyCatalog,
   StrategySelector,
   asEnvelope,
+  RUNG_CEILING,
   type StrategyEvent,
   type StrategyRuntime,
   type StrategySelection,
@@ -44,6 +45,7 @@ import { inferProfile } from "./profiler";
 import { createStrategyRuntime } from "./runtime";
 import { createContext } from "./context";
 import { randomUUID as createId } from "node:crypto";
+import type { StrategyRung, ComplexityTier } from "@ANCIENT/strategies";
 
 /** Default transient-retry budget (Layer 12 §4). Conservative: two attempts. */
 export const DEFAULT_RETRY_BUDGET: RetryBudget = {
@@ -53,6 +55,9 @@ export const DEFAULT_RETRY_BUDGET: RetryBudget = {
     jitter: true,
     backoffMultiplier: 2,
 };
+
+/** Bounded re-selection (docs/03 §3.5): at most ONE escalation per run. */
+export const RESELECTION_LIMIT = 1;
 
 export class ExecutionEngine {
     #bus: EventBus;
@@ -176,7 +181,7 @@ export class ExecutionEngine {
         session.status = "queued"; // Created → Queued → Running (docs/03 state diagram)
 
         const profile: TaskProfile = inferProfile(task, mode, request.profile);
-        const selection = this.selector.select(profile);
+        let selection = this.selector.select(profile);
         // Engine-owned context (A-ENG-002): pre-rendered blocks + budgets from
         // the request; identity/mode/cwd/date come from the run itself.
         const context = createContext({
@@ -201,7 +206,7 @@ export class ExecutionEngine {
             context,
         });
 
-        const strategy = strategyCatalog.find((s) => s.id === selection.id);
+        let strategy = strategyCatalog.find((s) => s.id === selection.id);
         if (!strategy) {
             const missing = makeError({
                 code: "STRATEGY_UNRECOVERABLE",
@@ -221,29 +226,89 @@ export class ExecutionEngine {
         const budget: RetryBudget = request.retryBudget ?? DEFAULT_RETRY_BUDGET;
         let lastError: ErrorEnvelope | undefined;
         let retryCount = 0;
+        let reselectionCount = 0;
         let outcome: ConsumeOutcome = EMPTY_OUTCOME;
+        // Across re-selections a run's totals are cumulative: the direct pass
+        // that ran a tool via then escalated still counts that tool.
+        let totalTurnCount = 0;
+        let totalToolCount = 0;
+        let totalUsage = { inputTokens: 0, outputTokens: 0 };
 
         for (let attempt = 1; attempt <= budget.maxAttempts; attempt++) {
             outcome = await this.#consume(session, request, strategy, profile, runtime);
+            totalTurnCount += outcome.turnCount;
+            totalToolCount += outcome.toolCount;
+            totalUsage = {
+                inputTokens: totalUsage.inputTokens + outcome.usage.inputTokens,
+                outputTokens: totalUsage.outputTokens + outcome.usage.outputTokens,
+            };
 
             if (session.cancelled) break;
 
             if (!outcome.error) {
+                // Quality gate ("cheapest RELIABLE", A-STRAT-001): a run that
+                // only used tools and produced no final text is INCOMPLETE, not
+                // a success. Escalate up the ladder once (bounded, docs/03 §3.5)
+                // before accepting it — this is what turned "analyze the whole
+                // system" into an empty answer in the field.
+                const emptyAfterTools = outcome.toolCount > 0 && outcome.output.trim().length === 0;
+                if (emptyAfterTools && reselectionCount < RESELECTION_LIMIT) {
+                    reselectionCount += 1;
+                    session.status = "queued";
+                    session.publish("degraded", {
+                        reason: "empty-output",
+                        reselection: reselectionCount,
+                        from: selection.id,
+                    });
+
+                    // Re-profile at the next tier so a heavier, previously
+                    // non-accepting strategy becomes a legitimate candidate.
+                    const nextRung = Math.min(selection.rung + 1, 4) as StrategyRung;
+                    const next = this.selector.select(
+                        { ...profile, complexity: RUNG_CEILING[nextRung] },
+                        { minRung: nextRung },
+                    );
+                    if (next.id !== selection.id && next.rung > selection.rung) {
+                        selection = next;
+                        strategy = strategyCatalog.find((s) => s.id === selection.id);
+                        if (!strategy) {
+                            const missing = makeError({
+                                code: "STRATEGY_UNRECOVERABLE",
+                                domain: "engine",
+                                message: `engine: strategy '${selection.id}' not found in catalog`,
+                            });
+                            this.#fail(session, selection, retryCount, missing, EMPTY_OUTCOME);
+                            return;
+                        }
+                        session.publish("started", {
+                            strategy: selection.id,
+                            rung: selection.rung,
+                            reason: selection.reason,
+                        });
+                        session.status = "running";
+                        attempt = 0; // full retry budget for the escalated strategy
+                        continue;
+                    }
+                    // No heavier wired strategy exists — accept the honest empty
+                    // answer rather than fabricate one or loop forever.
+                    session.status = "running";
+                }
+
                 // Graceful completion — terminal, written by the engine.
                 session.status = "completed";
                 session.publish("completed", {
-                    turnCount: outcome.turnCount,
-                    toolCount: outcome.toolCount,
-                    usage: outcome.usage,
+                    turnCount: totalTurnCount,
+                    toolCount: totalToolCount,
+                    usage: totalUsage,
                     ...(outcome.summary ? { summary: outcome.summary } : {}),
                 });
                 session.resolve({
                     sessionId: session.id,
                     status: "completed",
                     strategy: selection,
-                    turnCount: outcome.turnCount,
-                    toolCount: outcome.toolCount,
-                    usage: outcome.usage,
+                    turnCount: totalTurnCount,
+                    toolCount: totalToolCount,
+                    usage: totalUsage,
                     retryCount,
                     ...(outcome.output ? { output: outcome.output } : {}),
                     ...(outcome.summary ? { summary: outcome.summary } : {}),
@@ -284,9 +349,9 @@ export class ExecutionEngine {
                 sessionId: session.id,
                 status: "cancelled",
                 strategy: selection,
-                turnCount: outcome.turnCount,
-                toolCount: outcome.toolCount,
-                usage: outcome.usage,
+                turnCount: totalTurnCount,
+                toolCount: totalToolCount,
+                usage: totalUsage,
                 retryCount,
                 ...(outcome.output ? { output: outcome.output } : {}),
                 ...(outcome.summary ? { summary: outcome.summary } : {}),

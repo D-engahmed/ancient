@@ -1,7 +1,8 @@
 import { test, expect } from "bun:test";
-import { pickHealthyFallback, asFallbackCandidate } from "./fallback";
+import { pickHealthyFallback, asFallbackCandidate, selectHealthyFallbackModel } from "./fallback";
 import { recordRateLimitFailure, checkCooldown, modelKey } from "./rate-limit-breaker";
 import type { ResolvedModel } from "./models";
+import type { AncientSettings } from "../hooks/settings";
 
 function fakeResolved(modelId: string, provider = "custom"): ResolvedModel {
     return { model: {} as never, provider: provider as never, modelId, apiKey: undefined };
@@ -94,4 +95,42 @@ test("asFallbackCandidate derives a key the breaker recognizes for cooldown trac
     expect(checkCooldown(cand.key).onCooldown).toBe(false);
     recordRateLimitFailure(cand.key);
     expect(checkCooldown(cand.key).onCooldown).toBe(true);
+});
+
+test("selectHealthyFallbackModel adopts the configured free model when the primary is on cooldown", () => {
+    const prevBase = process.env.ANCIENT_FREE_MODEL_BASE_URL;
+    const prevId = process.env.ANCIENT_FREE_MODEL_ID;
+    try {
+        process.env.ANCIENT_FREE_MODEL_BASE_URL = "http://localhost:11434/v1";
+        process.env.ANCIENT_FREE_MODEL_ID = "local-llama";
+        const resolved = fakeResolved("primary");
+
+        const picked = selectHealthyFallbackModel({} as AncientSettings, modelKey(resolved.provider, resolved.modelId));
+        expect(picked).not.toBeNull();
+        expect(picked?.resolved.modelId).toBe("local-llama");
+        expect(picked?.isFree).toBe(true);
+    } finally {
+        if (prevBase === undefined) delete process.env.ANCIENT_FREE_MODEL_BASE_URL; else process.env.ANCIENT_FREE_MODEL_BASE_URL = prevBase;
+        if (prevId === undefined) delete process.env.ANCIENT_FREE_MODEL_ID; else process.env.ANCIENT_FREE_MODEL_ID = prevId;
+    }
+});
+
+test("selectHealthyFallbackModel returns null when every candidate is unavailable", () => {
+    // Repo .env sets OPENAI_API_KEY, so the builtin default would resolve here;
+    // clear it (with the free model) to prove the null path deterministically.
+    const prevFreeBase = process.env.ANCIENT_FREE_MODEL_BASE_URL;
+    const prevFreeId = process.env.ANCIENT_FREE_MODEL_ID;
+    const prevKey = process.env.OPENAI_API_KEY;
+    try {
+        delete process.env.ANCIENT_FREE_MODEL_BASE_URL;
+        delete process.env.ANCIENT_FREE_MODEL_ID;
+        delete process.env.OPENAI_API_KEY;
+        const resolved = fakeResolved("primary");
+        const picked = selectHealthyFallbackModel({} as AncientSettings, modelKey(resolved.provider, resolved.modelId));
+        expect(picked).toBeNull();
+    } finally {
+        if (prevFreeBase === undefined) delete process.env.ANCIENT_FREE_MODEL_BASE_URL; else process.env.ANCIENT_FREE_MODEL_BASE_URL = prevFreeBase;
+        if (prevFreeId === undefined) delete process.env.ANCIENT_FREE_MODEL_ID; else process.env.ANCIENT_FREE_MODEL_ID = prevFreeId;
+        if (prevKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = prevKey;
+    }
 });

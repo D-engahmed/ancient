@@ -46,6 +46,7 @@ export const agentLoopStrategy: ExecutionStrategy = {
         const history: TurnMessage[] = [];
         let turnCount = 0;
         let toolCount = 0;
+        let producedText = false;
         let usage: UsageTokens = EMPTY_USAGE();
 
         try {
@@ -59,12 +60,31 @@ export const agentLoopStrategy: ExecutionStrategy = {
 
                 turnCount += 1;
                 usage = sumUsage(usage, turn.usage);
-                if (turn.text) {
+                if (turn.text.trim()) {
+                    producedText = true;
                     history.push({ role: "assistant", text: turn.text });
                     yield { type: "text-delta", text: turn.text } as const;
                 }
 
                 if (turn.toolCalls.length === 0) {
+                    if (toolCount > 0 && !producedText) {
+                        // The model ran tools but produced no prose — land the
+                        // answer explicitly so a loop that went quiet is never
+                        // "complete" without contactable output (the repro for
+                        // empty final messages — docs/03 AS-BUILT fix).
+                        const closing = await runtime.runModel({
+                            system: "You are ANCIENT's agent loop. You already ran tools and observed their results in the conversation. Write the final answer to the task now. Do NOT call any tools.",
+                            prompt: `Task: ${profile.description}\n\nTool results are in the history above. Produce the final answer.`,
+                            history,
+                        });
+                        turnCount += 1;
+                        usage = sumUsage(usage, closing.usage);
+                        if (closing.text.trim()) {
+                            producedText = true;
+                            history.push({ role: "assistant", text: closing.text });
+                            yield { type: "text-delta", text: closing.text } as const;
+                        }
+                    }
                     yield { type: "done", turnCount, toolCount, usage } as const;
                     return;
                 }

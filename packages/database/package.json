@@ -5,6 +5,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/client.ts",
+    "./execution-store": "./src/execution-store.ts",
     "./enums": "./src/enums.ts"
   },
   "scripts": {
@@ -16,9 +17,11 @@
     "prisma": "^7.7.0"
   },
   "dependencies": {
+    "@ANCIENT/infrastructure": "workspace:*",
     "@ANCIENT/shared": "workspace:*",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
+    "@prisma/client-runtime-utils": "^7.7.0",
     "dotenv": "^16.4.7",
     "pg": "^8.22.0"
   }
