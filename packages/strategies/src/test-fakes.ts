@@ -3,7 +3,7 @@
 //
 // Test-only fakes for strategy tests (not exported from the package root).
 
-import type { ModelTurnResult, RuntimeTool, StrategyRuntime, TurnMessage } from "./types";
+import type { ModelTurnResult, RuntimeTool, StrategyRuntime, ToolResult, TurnMessage } from "./types";
 
 export type FakeTurn = ModelTurnResult | ((history: TurnMessage[]) => ModelTurnResult);
 
@@ -16,6 +16,21 @@ export function fakeRuntime(opts: {
 }): StrategyRuntime & { calls: { name: string; args: unknown }[] } {
     const calls: { name: string; args: unknown }[] = [];
     let cursor = 0;
+
+    const resultOf = (text: string): ToolResult =>
+        text.startsWith("error: ")
+            ? {
+                  text,
+                  ok: false,
+                  failure: {
+                      code: "CAPABILITY_EXECUTION_FAILED",
+                      message: text.slice(7), // strip the "error: " prefix
+                      transient: false,
+                      retryableAsIs: false,
+                      partialEffect: "unknown",
+                  },
+              }
+            : { text, ok: true };
 
     return {
         calls,
@@ -31,8 +46,8 @@ export function fakeRuntime(opts: {
         },
         async executeTool(call) {
             calls.push(call);
-            if (opts.exec) return opts.exec(call);
-            return `ok:${call.name}`;
+            if (opts.exec) return resultOf(await opts.exec(call));
+            return { text: `ok:${call.name}`, ok: true };
         },
     };
 }

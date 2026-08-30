@@ -7,12 +7,19 @@
   },
   "scripts": {
     "dev": "bun run --hot src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun"
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ANCIENT/agent": "workspace:*",
+    "@ANCIENT/capabilities": "workspace:*",
+    "@ANCIENT/contracts": "workspace:*",
     "@ANCIENT/database": "workspace:*",
+    "@ANCIENT/execution": "workspace:*",
+    "@ANCIENT/infrastructure": "workspace:*",
     "@ANCIENT/shared": "workspace:*",
+    "@ANCIENT/strategies": "workspace:*",
     "@ai-sdk/anthropic": "^4.0.27",
     "@ai-sdk/google": "^4.0.36",
     "@ai-sdk/openai": "^4.0.0",

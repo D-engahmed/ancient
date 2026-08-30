@@ -5,10 +5,9 @@
 import prettyMs from "pretty-ms";
 import { EmptyBorder } from "../border";
 import { useTheme } from "../../providers/theme";
-import type { Message } from "../../hooks/use-chat";
+import type { Message } from "../../hooks/use-execution";
 import { Mode, type ModeType } from "@ANCIENT/shared";
 import { TextAttributes } from "@opentui/core";
-import { isToolUIPart, isDynamicToolUIPart, getToolName } from "ai";
 
 type ClientMessagePart = Message["parts"][number];
 
@@ -19,6 +18,42 @@ type Props = {
   durationMs?: number;
   streaming?: boolean;
 };
+
+type ToolPart = Extract<ClientMessagePart, { type: "tool" }>;
+
+function isToolPart(part: ClientMessagePart): part is ToolPart {
+  return part?.type === "tool";
+}
+
+// The server's persisted session history predates the wire contract; its tool
+// parts may arrive in the legacy AI-SDK shape (toolCallId/toolName/input).
+// Read both spellings so old transcripts still render. Kept deliberately lax.
+function toolIdentity(part: ToolPart): { callId: string; name: string; args: Record<string, unknown> } {
+  const legacy = part as unknown as {
+    toolCallId?: string;
+    toolName?: string;
+    tool?: string;
+    name?: string;
+    input?: unknown;
+  };
+  const rawArgs = (part.args ?? legacy.input ?? {}) as Record<string, unknown>;
+  return {
+    callId: part.callId ?? legacy.toolCallId ?? "?",
+    name: part.name ?? legacy.toolName ?? legacy.tool ?? "tool",
+    args: rawArgs,
+  };
+}
+
+function toolIsDone(part: ToolPart): boolean {
+  const state = String(part.state ?? "");
+  return (
+    state === "ok" ||
+    state === "error" ||
+    state.endsWith("available") ||
+    state.endsWith("error") ||
+    state.endsWith("denied")
+  );
+}
 
 function formatToolName(name: string): string {
   return name
@@ -48,10 +83,7 @@ function groupConsecutiveParts(parts: ClientMessagePart[]): PartGroup[] {
     if (lastGroup && lastGroup.type === part.type) {
       lastGroup.parts.push(part);
     } else {
-      const key =
-        isToolUIPart(part) || isDynamicToolUIPart(part)
-          ? `group-tc-${part.toolCallId}`
-          : `group-${part.type}-${i}`;
+      const key = isToolPart(part) ? `group-tc-${toolIdentity(part).callId}` : `group-${part.type}-${i}`;
       groups.push({ type: part.type, parts: [part], key });
     }
   }
@@ -70,10 +102,19 @@ export function BotMessage({
   const safeParts = Array.isArray(parts) ? parts : [];
   return (
     <box width="100%" alignItems="center">
-      {groupConsecutiveParts(parts).map((group, i) => (
+      {groupConsecutiveParts(safeParts).map((group, i) => (
         <box key={group.key} width="100%" paddingTop={i === 0 ? 0 : 1}>
           {group.parts.map((part, j) => {
-            if (part.type === "reasoning") {
+            // Tolerant read: persisted session history may carry legacy AI-SDK
+            // parts (reasoning/tool-input/…) outside the closed wire union.
+            // The strict new-model parts (text/tool) are a subset of this view.
+            const legacy = part as unknown as {
+              type?: string;
+              text?: string;
+              input?: unknown;
+            };
+
+            if (legacy.type === "reasoning") {
               return (
                 <box
                   key={`reasoning-${j}`}
@@ -87,21 +128,18 @@ export function BotMessage({
                   paddingX={2}
                 >
                   <text attributes={TextAttributes.DIM}>
-                    <em fg={colors.thinking}>Thinking:</em> {part.text}
+                    <em fg={colors.thinking}>Thinking:</em> {legacy.text ?? ""}
                   </text>
                 </box>
               );
             }
 
-            if (isToolUIPart(part) || isDynamicToolUIPart(part)) {
-              const toolName = getToolName(part);
-              const isDone =
-                part.state === "output-available" ||
-                part.state === "output-error" ||
-                part.state === "output-denied";
+            if (isToolPart(part)) {
+              const { callId, name, args } = toolIdentity(part);
+              const isDone = toolIsDone(part);
               return (
                 <box
-                  key={part.toolCallId}
+                  key={callId}
                   border={["left"]}
                   borderColor={colors.thinkingBorder}
                   customBorderChars={{
@@ -112,8 +150,8 @@ export function BotMessage({
                   paddingX={2}
                 >
                   <text attributes={TextAttributes.DIM}>
-                    <em fg={colors.info}>{formatToolName(toolName)}:</em>{" "}
-                    {formatToolArgs((part.input as Record<string, unknown>) ?? {})}
+                    <em fg={colors.info}>{formatToolName(name)}:</em>{" "}
+                    {formatToolArgs(args)}
                     {isDone ? "" : " …"}
                   </text>
                 </box>

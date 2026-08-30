@@ -6,6 +6,7 @@
 import { resolve, relative } from "path";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveWithinCwd } from "../lib/fs-safety";
 
 const MAX_RESULTS = 200;
 
@@ -21,9 +22,9 @@ export function createGlobTool(cwd: string) {
                 .default("."),
         }),
         execute: async ({ pattern, path }) => {
-            const resolved = resolve(cwd, path);
+            const resolved = resolveWithinCwd(cwd, path);
 
-            if (!resolved.startsWith(cwd)) {
+            if (!resolved) {
                 return { error: "Path is outside the project directory" };
             }
 

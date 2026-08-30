@@ -1,8 +1,11 @@
 /**
- * Execution Engine
- * 
- * The heart of the runtime. Manages execution lifecycle, checkpointing,
- * and coordinates between arena, tasks, and backends.
+ * Team Orchestrator (legacy multi-agent engine)
+ *
+ * Runs a team of agents through the ArenaCoordinator. Coordinates between
+ * arena, tasks, and backends. Renamed from `ExecutionEngine` (CLI-V2 audit F9)
+ * to remove the name collision with the unified execution engine in
+ * @ANCIENT/execution; this remains the legacy team/arena orchestrator until
+ * the strategies `teams`/`arena` leaves are wired.
  */
 
 import type { TeamConfig, ExecutionState, TaskResult } from "../types";
@@ -12,15 +15,16 @@ import { BackendRouter } from "../backends/router";
 import { MessageBus } from "../arena/messaging";
 
 // NOTE: ExecutionScheduler (./scheduler) is not wired in here. It's a
-// cross-execution concurrency limiter (cap how many teams run at once
-// across the whole engine) that was never implemented — runNext() finds a
-// job and immediately no-ops. ArenaCoordinator already handles parallelism
-// *within* one team's execution (e.g. Promise.all in runSwarm), so this
-// engine works correctly without it for a single execution. If you need to
-// cap concurrent executions across multiple teams, that's real, unwritten
-// work — don't re-add the import as a decoration.
+    // cross-execution concurrency limiter (cap how many teams run at once
+    // across the whole orchestrator) that was never implemented — runNext()
+    // finds a job and immediately no-ops. ArenaCoordinator already handles
+    // parallelism *within* one team's execution (e.g. Promise.all in
+    // runSwarm), so this orchestrator works correctly without it for a single
+    // execution. If you need to cap concurrent executions across multiple
+    // teams, that's real, unwritten work — don't re-add the import as a
+    // decoration.
 
-export class ExecutionEngine {
+export class TeamOrchestrator {
     private coordinator: ArenaCoordinator;
     private router: BackendRouter;
     private messageBus: MessageBus;

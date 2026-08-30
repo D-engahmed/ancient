@@ -1,13 +1,12 @@
 // new-session.tsx
 import { useEffect, useMemo, useRef } from "react";
 import { z } from "zod";
-import { Mode, modeSchema, chatModelSelectionSchema } from "@ANCIENT/shared";
+import { modeSchema, chatModelSelectionSchema } from "@ANCIENT/shared";
 import { useNavigate, useLocation } from "react-router";
 import { SessionShell } from "../components/session-shell";
 import { UserMessage } from "../components/messages";
 import { useToast } from "../providers/toast";
 import { apiClient } from "../lib/api-client";
-import { getErrorMessage } from "../lib/http-errors";
 
 const newSessionStateSchema = z.object({
     message: z.string(),

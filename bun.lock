@@ -38,6 +38,7 @@
       "name": "@ANCIENT/capabilities",
       "version": "1.0.0",
       "dependencies": {
+        "@ANCIENT/contracts": "workspace:*",
         "@ANCIENT/infrastructure": "workspace:*",
         "@ANCIENT/shared": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.18.0",
@@ -55,6 +56,7 @@
         "ANCIENT": "./bin/ANCIENT",
       },
       "dependencies": {
+        "@ANCIENT/infrastructure": "workspace:*",
         "@ANCIENT/shared": "workspace:*",
         "@ai-sdk/react": "^4.0.70",
         "@opentui/core": "^0.1.97",
@@ -78,6 +80,14 @@
         "typescript": "^5",
       },
     },
+    "packages/contracts": {
+      "name": "@ANCIENT/contracts",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.4.0",
+      },
+    },
     "packages/database": {
       "name": "@ANCIENT/database",
       "dependencies": {
@@ -92,6 +102,24 @@
         "prisma": "^7.7.0",
       },
     },
+    "packages/execution": {
+      "name": "@ANCIENT/execution",
+      "version": "1.0.0",
+      "dependencies": {
+        "@ANCIENT/capabilities": "workspace:*",
+        "@ANCIENT/contracts": "workspace:*",
+        "@ANCIENT/infrastructure": "workspace:*",
+        "@ANCIENT/reliability": "workspace:*",
+        "@ANCIENT/shared": "workspace:*",
+        "@ANCIENT/strategies": "workspace:*",
+        "ai": "^7.0.55",
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.4.0",
+      },
+    },
     "packages/infrastructure": {
       "name": "@ANCIENT/infrastructure",
       "version": "1.0.0",
@@ -103,12 +131,28 @@
         "typescript": "^5.4.0",
       },
     },
+    "packages/reliability": {
+      "name": "@ANCIENT/reliability",
+      "version": "1.0.0",
+      "dependencies": {
+        "@ANCIENT/contracts": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.4.0",
+      },
+    },
     "packages/server": {
       "name": "@ANCIENT/server",
       "dependencies": {
         "@ANCIENT/agent": "workspace:*",
+        "@ANCIENT/capabilities": "workspace:*",
+        "@ANCIENT/contracts": "workspace:*",
         "@ANCIENT/database": "workspace:*",
+        "@ANCIENT/execution": "workspace:*",
+        "@ANCIENT/infrastructure": "workspace:*",
         "@ANCIENT/shared": "workspace:*",
+        "@ANCIENT/strategies": "workspace:*",
         "@ai-sdk/anthropic": "^4.0.27",
         "@ai-sdk/google": "^4.0.36",
         "@ai-sdk/openai": "^4.0.0",
@@ -124,6 +168,7 @@
     "packages/shared": {
       "name": "@ANCIENT/shared",
       "dependencies": {
+        "@ANCIENT/contracts": "workspace:*",
         "ai": "^7.0.55",
         "zod": "^4.3.6",
       },
@@ -132,6 +177,7 @@
       "name": "@ANCIENT/strategies",
       "version": "1.0.0",
       "dependencies": {
+        "@ANCIENT/contracts": "workspace:*",
         "@ANCIENT/infrastructure": "workspace:*",
         "@ANCIENT/shared": "workspace:*",
         "zod": "^4.3.6",
@@ -152,9 +198,15 @@
 
     "@ANCIENT/cli": ["@ANCIENT/cli@workspace:packages/cli"],
 
+    "@ANCIENT/contracts": ["@ANCIENT/contracts@workspace:packages/contracts"],
+
     "@ANCIENT/database": ["@ANCIENT/database@workspace:packages/database"],
 
+    "@ANCIENT/execution": ["@ANCIENT/execution@workspace:packages/execution"],
+
     "@ANCIENT/infrastructure": ["@ANCIENT/infrastructure@workspace:packages/infrastructure"],
+
+    "@ANCIENT/reliability": ["@ANCIENT/reliability@workspace:packages/reliability"],
 
     "@ANCIENT/server": ["@ANCIENT/server@workspace:packages/server"],
 

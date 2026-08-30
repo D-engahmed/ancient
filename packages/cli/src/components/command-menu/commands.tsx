@@ -7,6 +7,7 @@ import {
   AgentsDialogListContent,
   CheckpointsDialogContent,
   CommandsDialogContent,
+  InspectDialogContent,
   McpDialogContent,
   ModelsDialogContent,
   SessionsDialogContent,
@@ -65,6 +66,77 @@ export const COMMANDS: Command[] = [
     value: "/new",
     action: (ctx) => {
       ctx.navigate("/");
+    },
+  },
+  {
+    name: "cancel",
+    description: "Cancel the active execution",
+    value: "/cancel",
+    action: (ctx) => {
+      if (ctx.executionStatus !== "submitted" && ctx.executionStatus !== "streaming") {
+        ctx.toast.show({ variant: "info", message: "No active execution to cancel" });
+        return;
+      }
+      ctx.interrupt?.();
+      ctx.toast.show({ variant: "success", message: "Execution cancelled" });
+    },
+  },
+  {
+    name: "status",
+    description: "Show current execution status",
+    value: "/status",
+    action: (ctx) => {
+      const status = ctx.executionStatus ?? "idle";
+      const labels: Record<string, string> = {
+        idle: "Idle — no execution running",
+        submitted: "Starting execution...",
+        streaming: "Executing — streaming events",
+        ready: "Execution completed",
+        error: "Execution failed",
+      };
+      ctx.toast.show({
+        variant: status === "error" ? "error" : status === "ready" ? "success" : "info",
+        message: labels[status] ?? status,
+      });
+    },
+  },
+  {
+    name: "help",
+    description: "Show available commands",
+    value: "/help",
+    action: (ctx) => {
+      ctx.toast.show({
+        variant: "info",
+        message: "Commands: /new /clear /cancel /status /inspect /agents /models /usage /sessions /prompts /subagents /mcp /skills /compact /rewind /theme /workspace /style /pipeline /login /logout /exit",
+        duration: 6000,
+      });
+    },
+  },
+  {
+    name: "clear",
+    description: "Start a new conversation (clear history)",
+    value: "/clear",
+    action: (ctx) => {
+      ctx.navigate("/");
+      ctx.toast.show({ variant: "success", message: "Conversation cleared" });
+    },
+  },
+  {
+    name: "inspect",
+    description: "Show execution details (status, duration, tokens, tool calls)",
+    value: "/inspect",
+    action: (ctx) => {
+      ctx.dialog.open({
+        title: "Execution Inspector",
+        children: (
+          <InspectDialogContent
+            status={ctx.executionStatus ?? "idle"}
+            durationMs={ctx.durationMs}
+            usage={ctx.usage}
+            timeline={ctx.timeline ?? []}
+          />
+        ),
+      });
     },
   },
   {

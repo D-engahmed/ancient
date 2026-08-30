@@ -11,6 +11,7 @@ import { directStrategy } from "./direct";
 import { selectStrategy } from "./selector";
 import { subagentsStrategy } from "./subagents";
 import { EMPTY_USAGE } from "./util";
+import { makeError } from "@ANCIENT/contracts";
 import type { ExecutionStrategy, StrategyId, StrategyRung, StrategySelection, TaskProfile } from "./types";
 
 /** A catalogued-but-unwired strategy: never selectable, never throws. */
@@ -23,7 +24,11 @@ function unwired(id: "teams" | "arena", rung: StrategyRung): ExecutionStrategy {
         async *execute() {
             yield {
                 type: "error",
-                message: `strategy '${id}' is not wired yet (requires the engine runtime)`,
+                error: makeError({
+                    code: "STRATEGY_UNRECOVERABLE",
+                    domain: "strategy",
+                    message: `strategy '${id}' is not wired yet (requires the engine runtime)`,
+                }),
             } as const;
             yield { type: "done", turnCount: 0, toolCount: 0, usage: EMPTY_USAGE() } as const;
         },

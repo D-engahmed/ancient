@@ -8,8 +8,8 @@
 // status, and pause/resume/cancel.
 //
 // SCOPE / KNOWN LIMITS — read before assuming more than this does:
-// - Execution state lives in one in-memory ExecutionEngine for the whole
-//   process (see `engine` below). It does not survive a server restart and
+// - Execution state lives in one in-memory TeamOrchestrator for the whole
+//   process (see `orchestrator` below). It does not survive a server restart and
 //   will not work correctly behind more than one server instance sharing a
 //   load balancer — status/pause/cancel for an execution only work against
 //   whichever process instance is holding it. Fine for a single dev/small
@@ -28,14 +28,14 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { HTTPException } from "hono/http-exception";
 import { db } from "@ANCIENT/database/client";
-import { ExecutionEngine, defaultRegistry } from "@ANCIENT/agent";
+import { TeamOrchestrator, defaultRegistry } from "@ANCIENT/agent";
 import type { ModelOverrides } from "@ANCIENT/agent/team";
 import type { AgentRole, BackendProvider } from "@ANCIENT/agent";
 import { decryptApiKey } from "../lib/connection-crypto";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 
-// One engine for the whole process — see the scope note above.
-const engine = new ExecutionEngine();
+// One orchestrator for the whole process — see the scope note above.
+const orchestrator = new TeamOrchestrator();
 
 const ROLES: AgentRole[] = [
     "coordinator", "coder", "reviewer", "tester", "architect",
@@ -120,7 +120,7 @@ const app = new Hono<AuthenticatedEnv>()
         }
 
         const team = template.build(overrides);
-        const { executionId, result } = engine.startExecution(team, task);
+        const { executionId, result } = orchestrator.startExecution(team, task);
 
         // Deliberately not awaited — the HTTP response returns the id
         // immediately; the run continues in the background and is polled
@@ -136,7 +136,7 @@ const app = new Hono<AuthenticatedEnv>()
     })
 
     .get("/status/:executionId", (c) => {
-        const state = engine.getExecutionStatus(c.req.param("executionId"));
+        const state = orchestrator.getExecutionStatus(c.req.param("executionId"));
         if (!state) return c.json({ error: "Execution not found" }, 404);
         return c.json({
             id: state.id,
@@ -149,19 +149,19 @@ const app = new Hono<AuthenticatedEnv>()
     })
 
     .post("/pause/:executionId", (c) => {
-        const ok = engine.pauseExecution(c.req.param("executionId"));
+        const ok = orchestrator.pauseExecution(c.req.param("executionId"));
         if (!ok) return c.json({ error: "Execution not found or not running" }, 409);
         return c.json({ status: "paused" });
     })
 
     .post("/resume/:executionId", (c) => {
-        const ok = engine.resumeExecution(c.req.param("executionId"));
+        const ok = orchestrator.resumeExecution(c.req.param("executionId"));
         if (!ok) return c.json({ error: "Execution not found or not paused" }, 409);
         return c.json({ status: "running" });
     })
 
     .post("/cancel/:executionId", (c) => {
-        const ok = engine.cancelExecution(c.req.param("executionId"));
+        const ok = orchestrator.cancelExecution(c.req.param("executionId"));
         if (!ok) return c.json({ error: "Execution not found or already finished" }, 409);
         return c.json({ status: "cancelled" });
     });

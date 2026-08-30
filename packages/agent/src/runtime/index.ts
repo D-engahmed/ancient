@@ -1,4 +1,4 @@
-export { ExecutionEngine } from "./engine";
+export { TeamOrchestrator } from "./engine";
 export { AgentExecutor } from "./executor";
 export { ExecutionScheduler } from "./scheduler";
 export { StateManager } from "./state";

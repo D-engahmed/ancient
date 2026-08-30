@@ -7,13 +7,17 @@
 // couple of turns; the loop is what scouts, plans, and edits do in practice.
 
 import type { UsageTokens } from "@ANCIENT/infrastructure/providers";
+import { makeError } from "@ANCIENT/contracts";
 import { sumUsage, EMPTY_USAGE } from "./util";
+import { asEnvelope } from "./errors";
 import type {
     ExecutionStrategy,
     ModelToolCall,
     StrategyEvent,
     StrategyRuntime,
     TaskProfile,
+    ToolFailure,
+    ToolResult,
     TurnMessage,
 } from "./types";
 
@@ -68,20 +72,36 @@ export const agentLoopStrategy: ExecutionStrategy = {
                 for (const call of turn.toolCalls) {
                     yield { type: "tool-call", call } as const;
                     toolCount += 1;
-                    const result = await executeSafe(runtime, call);
-                    history.push({ role: "user", text: `${call.name} → ${truncateForHistory(result)}` });
+                    const res = await executeSafe(runtime, call);
+                    history.push({ role: "user", text: `${call.name} → ${truncateForHistory(res.text)}` });
                     yield {
                         type: "tool-result",
                         callId: call.id,
-                        result,
-                        ...(result.startsWith("error: ") ? { error: result } : {}),
+                        result: res.text,
+                        ...(res.failure ? { error: res.text, failure: res.failure } : {}),
                     } as const;
                 }
             }
 
-            yield { type: "error", message: `agent-loop: reached max turns (${maxTurns})` } as const;
+            // Turn budget exhausted — a strategy-level failure (docs/04 §4.2),
+            // typed so the Lifecycle Manager can classify retry-vs-terminal.
+            yield {
+                type: "error",
+                error: makeError({
+                    code: "STRATEGY_BUDGET_EXCEEDED",
+                    domain: "strategy",
+                    message: `agent-loop: reached max turns (${maxTurns})`,
+                }),
+            } as const;
         } catch (err) {
-            yield { type: "error", message: `agent-loop: ${err instanceof Error ? err.message : String(err)}` } as const;
+            yield {
+                type: "error",
+                error: asEnvelope(err, {
+                    code: "STRATEGY_UNRECOVERABLE",
+                    domain: "strategy",
+                    message: `agent-loop: ${err instanceof Error ? err.message : String(err)}`,
+                }),
+            } as const;
         }
 
         yield { type: "done", turnCount, toolCount, usage } as const;
@@ -96,10 +116,19 @@ function truncateForHistory(text: string): string {
     return text.length > 2_000 ? text.slice(0, 2_000) + "…" : text;
 }
 
-async function executeSafe(runtime: StrategyRuntime, call: ModelToolCall): Promise<string> {
+async function executeSafe(runtime: StrategyRuntime, call: ModelToolCall): Promise<ToolResult> {
+    // The runtime's central edge never throws (approval/arg/executor failures
+    // arrive as `ok:false` ToolResults) — but a port bug must still fail typed.
     try {
         return await runtime.executeTool(call);
     } catch (err) {
-        return `error: ${err instanceof Error ? err.message : String(err)}`;
+        const failure: ToolFailure = {
+            code: "CAPABILITY_EXECUTION_FAILED",
+            message: err instanceof Error ? err.message : String(err),
+            transient: false,
+            retryableAsIs: false,
+            partialEffect: "unknown",
+        };
+        return { text: `error: ${failure.message}`, ok: false, failure };
     }
 }

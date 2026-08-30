@@ -7,6 +7,7 @@
 // (it consumes this stream); here subtasks run sequentially and interleave.
 
 import type { UsageTokens } from "@ANCIENT/infrastructure/providers";
+import { makeError } from "@ANCIENT/contracts";
 import { extractJson, sumUsage, EMPTY_USAGE } from "./util";
 import { agentLoopStrategy } from "./agent-loop";
 import type { ExecutionStrategy, ModelToolCall, StrategyEvent, StrategyRuntime, TaskProfile } from "./types";
@@ -53,7 +54,11 @@ export const subagentsStrategy: ExecutionStrategy = {
         } catch (err) {
             yield {
                 type: "error",
-                message: `subagents: planning failed (${err instanceof Error ? err.message : String(err)})`,
+                error: makeError({
+                    code: "STRATEGY_UNRECOVERABLE",
+                    domain: "strategy",
+                    message: `subagents: planning failed (${err instanceof Error ? err.message : String(err)})`,
+                }),
             } as const;
             yield { type: "done", turnCount: 1, toolCount, usage } as const;
             return;

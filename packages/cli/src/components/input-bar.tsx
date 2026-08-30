@@ -268,6 +268,20 @@ type Props = {
   disabled?: boolean;
   /** When set, loads the given text into the input for the caller (e.g. re-send). */
   prefill?: { text: string; nonce: number } | null;
+  /** Cancel the active execution (wired to /cancel command). */
+  interrupt?: () => void;
+  /** Current execution status (wired to /cancel, /status, /inspect commands). */
+  executionStatus?: import("../hooks/use-execution").ExecutionStatus;
+  /** Live duration in milliseconds (wired to /inspect command). */
+  durationMs?: number;
+  /** Token usage from the terminal envelope (wired to /inspect command). */
+  usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
+  /** Tool-call timeline entries (wired to /inspect command). */
+  timeline?: import("../lib/execution-stream").TimelineEntry[];
+  /** Full message list (wired to /clear command). */
+  messages?: import("../hooks/use-execution").Message[];
+  /** When true, TAB is handled externally (inspector toggle) and should not toggle mode. */
+  tabHandledExternally?: boolean;
 };
 
 export const TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
@@ -277,7 +291,7 @@ export const TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
   { name: "enter", shift: true, action: "newline" },
 ];
 
-export function InputBar({ onSubmit, disabled = false, prefill = null }: Props) {
+export function InputBar({ onSubmit, disabled = false, prefill = null, interrupt, executionStatus, durationMs, usage, timeline, messages, tabHandledExternally }: Props) {
   const { mode, toggleMode, setMode, setModel } = usePromptConfig();
   const textareaRef = useRef<TextareaRenderable>(null);
   const onSubmitRef = useRef<() => void>(() => { });
@@ -410,11 +424,17 @@ export function InputBar({ onSubmit, disabled = false, prefill = null }: Props) 
         setModel,
         sessionId: routeParams["id"],
         cwd: process.cwd(),
+        interrupt,
+        executionStatus,
+        durationMs,
+        usage,
+        timeline,
+        messages,
       });
     } else {
       textarea.insertText(command.value + " ");
     }
-  }, [renderer, toast, dialog, navigate, mode, setMode, setModel, routeParams]);
+  }, [renderer, toast, dialog, navigate, mode, setMode, setModel, routeParams, interrupt, executionStatus, durationMs, usage, timeline, messages]);
 
   const handleCommandExecute = useCallback(
     (index: number) => {
@@ -494,6 +514,7 @@ export function InputBar({ onSubmit, disabled = false, prefill = null }: Props) 
     if (disabled) return;
     if (!isTopLayer("base")) return;
     if (key.name === "tab") {
+      if (tabHandledExternally) return;
       key.preventDefault();
       toggleMode();
     }

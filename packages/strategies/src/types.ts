@@ -10,6 +10,7 @@
 // capability registry + model runtime when it wires this layer in.
 
 import type { z } from "zod";
+import type { ErrorCode, ErrorEnvelope, PartialEffect } from "@ANCIENT/contracts";
 import type { UsageTokens } from "@ANCIENT/infrastructure/providers";
 import type { ModeType } from "@ANCIENT/shared";
 
@@ -73,6 +74,27 @@ export type ModelTurnResult = {
 
 export type TurnMessage = { role: "user" | "assistant"; text: string };
 
+/** Typed tool-failure projection (docs/04; upstream: capabilities §5.2). */
+export type ToolFailure = {
+    code: ErrorCode;
+    message: string;
+    transient: boolean;
+    retryableAsIs: boolean;
+    partialEffect: PartialEffect;
+};
+
+/**
+ * Result of executing one tool call. Text is what strategies feed back to the
+ * model; the typed failure rides alongside so the engine can classify the run
+ * (retry vs. terminal) without parsing prose.
+ */
+export type ToolResult = {
+    /** Serialized, redacted, budget-capped text ("" on failure). */
+    text: string;
+    ok: boolean;
+    failure?: ToolFailure;
+};
+
 /**
  * Port the engine implements: model access (RUNTIMES' Model Runtime), tool
  * catalog, and tool execution (already run through the capability registry's
@@ -86,7 +108,7 @@ export type StrategyRuntime = {
         history?: TurnMessage[];
         tools?: RuntimeTool[];
     }): Promise<ModelTurnResult>;
-    executeTool(call: ModelToolCall): Promise<string>;
+    executeTool(call: ModelToolCall): Promise<ToolResult>;
 };
 
 /** Streamed outcome of one strategy execution. */
@@ -94,9 +116,9 @@ export type StrategyEvent =
     | { type: "strategy-selected"; id: StrategyId; rung: StrategyRung; reason: string }
     | { type: "text-delta"; text: string }
     | { type: "tool-call"; call: ModelToolCall }
-    | { type: "tool-result"; callId: string; result: string; error?: string }
+    | { type: "tool-result"; callId: string; result: string; error?: string; failure?: ToolFailure }
     | { type: "subtask"; subtaskId: string; goal: string; status: "created" | "completed" }
-    | { type: "error"; message: string }
+    | { type: "error"; error: ErrorEnvelope }
     | { type: "done"; summary?: string; turnCount: number; toolCount: number; usage: UsageTokens };
 
 /**

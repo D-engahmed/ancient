@@ -1,22 +1,55 @@
-// session.tsx
+// session.tsx — CLI-V2 Phase 6/11 execution console layout.
+// During execution: header + timeline + live output + input + footer.
+// After completion: header + full conversation + input + footer.
+
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useLocation, useNavigate } from "react-router";
 import { z } from "zod";
 import { useKeyboard } from "@opentui/react";
+import { TextAttributes } from "@opentui/core";
 import {
     type ModeType,
     type ChatModelSelection,
     chatModelSelectionSchema,
 } from "@ANCIENT/shared";
-import { SessionShell } from "../components/session-shell";
 import { UserMessage, BotMessage, ErrorMessage } from "../components/messages";
+import { ExecutionHeader } from "../components/execution-header";
+import { ExecutionFooter } from "../components/execution-footer";
+import { ExecutionTimeline } from "../components/execution-timeline";
+import { ExecutionInspector } from "../components/execution-inspector";
+import { ConsentPrompt } from "../components/consent-prompt";
+import { InputBar } from "../components/input-bar";
+import { Spinner } from "../components/spinner";
 import { useToast } from "../providers/toast";
-import { useChat } from "../hooks/use-chat";
+import { useExecution } from "../hooks/use-execution";
 import { usePromptConfig } from "../providers/prompt-config";
-import type { Message } from "../hooks/use-chat";
-import { apiClient } from "../lib/api-client";
-import { getErrorMessage } from "../lib/http-errors";
 import { useKeyboardLayer } from "../providers/Keyboard-layer";
+import type { Message } from "../hooks/use-execution";
+
+/** Track online/offline status via navigator.onLine + event listeners. */
+function useOnline(): boolean {
+    const [online, setOnline] = useState<boolean>(() => {
+        try {
+            return typeof navigator !== "undefined" && "onLine" in navigator ? (navigator as { onLine: boolean }).onLine : true;
+        } catch {
+            return true;
+        }
+    });
+
+    useEffect(() => {
+        const on = () => setOnline(true);
+        const off = () => setOnline(false);
+        globalThis.addEventListener?.("online", on);
+        globalThis.addEventListener?.("offline", off);
+        return () => {
+            globalThis.removeEventListener?.("online", on);
+            globalThis.removeEventListener?.("offline", off);
+        };
+    }, []);
+
+    return online;
+}
+import { apiClient } from "../lib/api-client";
 import { copyToClipboard } from "../lib/clipboard";
 import {
   openLearningStore,
@@ -43,7 +76,6 @@ function extractErrorCode(message: string): string | null {
 
 function makeRecorder(cwd: string) {
     const file = defaultLearningFile(cwd);
-    // Synchronous best-effort open; persistence happens on meaningful events.
     const learning = new LearningStore();
     void openLearningStore(file).then((store) => {
         learning.recordMany(store.all);
@@ -117,17 +149,34 @@ function SessionChat({
     const { mode, modelSelection } = usePromptConfig();
     const { isTopLayer } = useKeyboardLayer();
     const toast = useToast();
-    const { messages, status, submit, abort, interrupt, error } = useChat(
-        session.id,
-        initialMessages
-    );
+    const {
+        messages,
+        status,
+        error,
+        timeline,
+        durationMs,
+        usage,
+        pendingConsent,
+        submit,
+        interrupt,
+        respondToConsent,
+    } = useExecution(initialMessages);
     const hasSubmittedInitialPromptRef = useRef(false);
+    const online = useOnline();
     const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
+    const [inspectorVisible, setInspectorVisible] = useState(false);
+    const [selectedEntryIdx, setSelectedEntryIdx] = useState(-1);
+
+    // The currently inspected timeline entry (defaults to the last one).
+    const inspectedEntry = inspectorVisible
+        ? timeline[selectedEntryIdx >= 0 ? selectedEntryIdx : timeline.length - 1] ?? null
+        : null;
 
     useEffect(() => {
-        return () => void abort();
-    }, [abort]);
+        return () => void interrupt();
+    }, [interrupt]);
 
+    // ESC to cancel during execution.
     useKeyboard((key) => {
         if (key.name === "escape" && isTopLayer("base") && status === "streaming") {
             key.preventDefault();
@@ -135,12 +184,34 @@ function SessionChat({
         }
     });
 
+    // TAB to toggle the inspector during execution; Up/Down to navigate entries.
     useKeyboard((key) => {
         if (!isTopLayer("base")) return;
-        // Require ctrl+shift so these chords never hijack ordinary typing:
-        // bare `y`/`r` must keep inserting text into the input. On terminals
-        // that don't report the shift modifier, the chord still arrives as
-        // `name === "y"`/`"r"` (see opentui's KeyHandler / modifyOtherKeys).
+        if (key.name === "tab") {
+            if (isExecuting && timeline.length > 0) {
+                key.preventDefault();
+                setInspectorVisible((v) => !v);
+                setSelectedEntryIdx(-1);
+            }
+            // When not executing, let the default TAB mode-toggle in InputBar handle it.
+            return;
+        }
+        if (inspectorVisible && (key.name === "up" || key.name === "down")) {
+            key.preventDefault();
+            setSelectedEntryIdx((prev) => {
+                const max = timeline.length - 1;
+                if (max < 0) return -1;
+                const base = prev >= 0 ? prev : max;
+                return key.name === "up"
+                    ? Math.max(0, base - 1)
+                    : Math.min(max, base + 1);
+            });
+        }
+    });
+
+    // Ctrl+Shift+Y to copy, Ctrl+Shift+R to re-send.
+    useKeyboard((key) => {
+        if (!isTopLayer("base")) return;
         if (!key.ctrl || !key.shift) return;
         if (key.name !== "y" && key.name !== "r") return;
 
@@ -178,6 +249,7 @@ function SessionChat({
         }
     });
 
+    // Auto-submit the initial prompt.
     useEffect(() => {
         if (!initialPrompt || hasSubmittedInitialPromptRef.current) return;
         hasSubmittedInitialPromptRef.current = true;
@@ -213,8 +285,7 @@ function SessionChat({
         }
     }, [recorder, error]);
 
-    // Performance: record server round-trip latency when a submit leaves the
-    // streaming/submitted state (i.e. a chat request completed).
+    // Performance: record server round-trip latency.
     const runStartRef = useRef<number | null>(null);
     const wasRunningRef = useRef(false);
     useEffect(() => {
@@ -228,18 +299,109 @@ function SessionChat({
         wasRunningRef.current = isRunning;
     }, [status]);
 
+    // Derive the current user message and live text for the timeline view.
+    const isExecuting = status === "submitted" || status === "streaming";
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+    const lastAssistantMsg = [...messages].reverse().find((m) => m.role === "assistant");
+    const liveText = lastAssistantMsg
+        ? (lastAssistantMsg.parts.filter((p) => p.type === "text")[0] as { text?: string })?.text ?? ""
+        : "";
+
     return (
-        <SessionShell
-            onSubmit={(text) => submit({ userText: text, mode, modelSelection })}
-            loading={status === "submitted" || status === "streaming"}
-            interruptible={status === "submitted" || status === "streaming"}
-            prefill={prefill}
-        >
-            {messages.map((msg) => (
-                <ChatMessage key={msg.id} msg={msg} />
-            ))}
-            {error && <ErrorMessage message={error.message} />}
-        </SessionShell>
+        <box flexDirection="column" flexGrow={1} width="100%" height="100%">
+            {/* Header */}
+            <ExecutionHeader status={status} durationMs={durationMs} />
+
+            {/* Offline banner (Phase 11) — honest: requests are NOT queued,
+                so say what actually happens. */}
+            {!online && (
+                <box flexShrink={0} paddingX={2} paddingY={0}>
+                    <text>
+                        <span fg="yellow" attributes={TextAttributes.BOLD}>Offline</span>
+                        <span attributes={TextAttributes.DIM}> — sending is disabled until the network is back</span>
+                    </text>
+                </box>
+            )}
+
+            {/* Content area */}
+            <box flexGrow={1} flexDirection="column" paddingX={2} gap={1} overflow="hidden">
+                {isExecuting && timeline.length > 0 ? (
+                    /* Timeline view during execution */
+                    <box flexDirection="column" gap={1}>
+                        {lastUserMsg && (
+                            <UserMessage
+                                message={messageText(lastUserMsg)}
+                                mode={lastUserMsg.metadata?.mode ?? mode}
+                            />
+                        )}
+                        <ExecutionTimeline entries={timeline} text={liveText || undefined} />
+                        {inspectorVisible && (
+                            <ExecutionInspector entry={inspectedEntry} />
+                        )}
+                    </box>
+                ) : isExecuting ? (
+                    /* Early execution: request sent, first tool event not here yet.
+                       Show the prompt plus a working indicator so the screen never
+                       looks frozen. */
+                    <box flexDirection="column" gap={1}>
+                        {lastUserMsg && (
+                            <UserMessage
+                                message={messageText(lastUserMsg)}
+                                mode={lastUserMsg.metadata?.mode ?? mode}
+                            />
+                        )}
+                        <box flexDirection="row" gap={1} alignItems="center">
+                            <Spinner mode={mode} />
+                            <text attributes={TextAttributes.DIM}>Working…</text>
+                        </box>
+                    </box>
+                ) : (
+                    /* Full conversation view when not executing */
+                    <box flexGrow={1} overflow="hidden">
+                        {messages.map((msg) => (
+                            <ChatMessage key={msg.id} msg={msg} />
+                        ))}
+                        {error && <ErrorMessage message={error.message} />}
+                    </box>
+                )}
+            </box>
+
+            {/* Consent prompt (Phase 9) */}
+            {pendingConsent && (
+                <box flexShrink={0} paddingX={2}>
+                    <ConsentPrompt
+                        capability={pendingConsent.capability}
+                        prompt={pendingConsent.prompt}
+                        onApprove={() => respondToConsent(true)}
+                        onDeny={() => respondToConsent(false)}
+                    />
+                </box>
+            )}
+
+            {/* Input */}
+            <box flexShrink={0} paddingX={2}>
+                <InputBar
+                    onSubmit={(text) => submit({ userText: text, mode, modelSelection })}
+                    disabled={isExecuting}
+                    prefill={prefill}
+                    interrupt={interrupt}
+                    executionStatus={status}
+                    durationMs={durationMs}
+                    usage={usage}
+                    timeline={timeline}
+                    messages={messages}
+                    tabHandledExternally={isExecuting && timeline.length > 0}
+                />
+            </box>
+
+            {/* Footer */}
+            <ExecutionFooter
+                status={status}
+                durationMs={durationMs}
+                usage={usage}
+                inspectable={timeline.length > 0}
+            />
+        </box>
     );
 }
 
@@ -285,7 +447,14 @@ export function Session() {
     }, [id, prefetched, toast, navigate]);
 
     if (!session) {
-        return <SessionShell onSubmit={() => { }} inputDisabled loading />;
+        return (
+            <box flexDirection="column" flexGrow={1} width="100%" height="100%">
+                <ExecutionHeader status="idle" />
+                <box flexGrow={1} alignItems="center" justifyContent="center">
+                    <text>Loading...</text>
+                </box>
+            </box>
+        );
     }
 
     return <SessionChat key={session.id} session={session} initialPrompt={prefetched?.initialPrompt} />;

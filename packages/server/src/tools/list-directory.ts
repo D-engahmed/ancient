@@ -3,10 +3,11 @@
 // Licensed under the MIT License.
 // file: packages/server/src/tools/list-directory.ts
 
-import { resolve, relative, join } from "path";
+import { relative, join } from "path";
 import { readdir, stat } from "fs/promises";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveWithinCwd } from "../lib/fs-safety";
 
 export function createListDirectoryTool(cwd: string) {
     return tool({
@@ -19,9 +20,9 @@ export function createListDirectoryTool(cwd: string) {
                 .default("."),
         }),
         execute: async ({ path }) => {
-            const resolved = resolve(cwd, path);
+            const resolved = resolveWithinCwd(cwd, path);
 
-            if (!resolved.startsWith(cwd)) {
+            if (!resolved) {
                 return { error: "Path is outside the project directory" };
             }
 

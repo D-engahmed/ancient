@@ -54,7 +54,7 @@ describe("agent-loop strategy", () => {
         const forever = () => turn("still going", [call("glob", { pattern: "*" })]);
         const rt = fakeRuntime({ turns: Array.from({ length: 20 }, forever) });
         const events = await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
-        expect(events.some((e) => e.type === "error" && (e as { message: string }).message.includes("max turns"))).toBe(true);
+        expect(events.some((e) => e.type === "error" && (e as { error: { message: string } }).error.message.includes("max turns"))).toBe(true);
         const done = events.find((e) => e.type === "done");
         expect((done as { turnCount: number }).turnCount).toBe(10);
     });

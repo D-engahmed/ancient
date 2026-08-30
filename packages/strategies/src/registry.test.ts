@@ -35,7 +35,7 @@ describe("unwired strategies", () => {
         const rt = fakeRuntime({ turns: [] });
         const events = await collect(arena.execute({ profile: { description: "x" }, runtime: rt }));
         expect(events[0]?.type).toBe("error");
-        expect((events[0] as { message: string }).message).toContain("not wired");
+        expect((events[0] as { error: { message: string } }).error.message).toContain("not wired");
         expect(events[1]?.type).toBe("done");
     });
 });

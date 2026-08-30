@@ -51,8 +51,9 @@ session.
 
 - All prose docs live in `docs/`.
 - `docs/ARCHITECTURE.md` — as-built audit + target architecture + strategy ladder (the narrative).
-- `docs/architecture/` — deep-dive design docs and the **live assumption register**
-  (`ASSUMPTIONS.md`). One markdown file per major design topic (e.g. `EXECUTION-STATE.md`).
+- `docs/architecture/` — deep-dive design docs. The **live assumption register** lives at
+  `docs/08-assumption-register/README.md` (`ASSUMPTION-XXX` entries, fixed template). One
+  markdown file per major design topic (e.g. `EXECUTION-STATE.md`).
 - **Mermaid is welcome** in `docs/architecture/*` and `docs/ARCHITECTURE.md` for diagrams of
   architecture, data flow, lifecycle, and decisions. Keep diagrams honest: label `as-built`
   vs `target`, and mark any element that is currently un-wired.
@@ -60,7 +61,7 @@ session.
 ### Assumption register — required for architecture work
 
 Any architectural decision must carry an entry with the fixed shape (see
-`docs/architecture/ASSUMPTIONS.md`):
+`docs/08-assumption-register/README.md`):
 
 ```text
 ASSUMPTION · EVIDENCE · FAILURE MODE · BLAST RADIUS · ALTERNATIVES · DECISION · TEST

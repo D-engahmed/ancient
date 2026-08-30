@@ -7,13 +7,17 @@
 // (A-STRAT-001).
 
 import type { UsageTokens } from "@ANCIENT/infrastructure/providers";
+import { makeError, type ErrorEnvelope } from "@ANCIENT/contracts";
 import { sumUsage, EMPTY_USAGE } from "./util";
+import { asEnvelope } from "./errors";
 import type {
     ExecutionStrategy,
     ModelTurnResult,
     StrategyEvent,
     StrategyRuntime,
     TaskProfile,
+    ToolFailure,
+    ToolResult,
     TurnMessage,
 } from "./types";
 
@@ -49,7 +53,7 @@ export const directStrategy: ExecutionStrategy = {
         });
 
         if (!pass1.ok) {
-            yield { type: "error", message: pass1.message } as const;
+            yield { type: "error", error: pass1.error } as const;
             yield { type: "done", turnCount, toolCount, usage } as const;
             return;
         }
@@ -61,13 +65,13 @@ export const directStrategy: ExecutionStrategy = {
         for (const call of pass1.result.toolCalls) {
             yield { type: "tool-call", call } as const;
             toolCount += 1;
-            const out = await executeSafe(runtime, call);
-            history.push({ role: "assistant", text: `${call.name} → ${out}` });
+            const res = await executeSafe(runtime, call);
+            history.push({ role: "assistant", text: `${call.name} → ${res.text}` });
             yield {
                 type: "tool-result",
                 callId: call.id,
-                result: out,
-                ...(out.startsWith("error: ") ? { error: out } : {}),
+                result: res.text,
+                ...(res.failure ? { error: res.text, failure: res.failure } : {}),
             } as const;
         }
 
@@ -94,10 +98,16 @@ export const directStrategy: ExecutionStrategy = {
             for (const call of pass2.result.toolCalls) {
                 yield { type: "tool-call", call } as const;
                 toolCount += 1;
-                yield { type: "tool-result", callId: call.id, result: await executeSafe(runtime, call) } as const;
+                const res = await executeSafe(runtime, call);
+                yield {
+                    type: "tool-result",
+                    callId: call.id,
+                    result: res.text,
+                    ...(res.failure ? { error: res.text, failure: res.failure } : {}),
+                } as const;
             }
         } else {
-            yield { type: "error", message: pass2.message } as const;
+            yield { type: "error", error: pass2.error } as const;
         }
 
         yield { type: "done", turnCount, toolCount, usage } as const;
@@ -107,18 +117,34 @@ export const directStrategy: ExecutionStrategy = {
 async function safeTurn(
     runtime: StrategyRuntime,
     input: Parameters<StrategyRuntime["runModel"]>[0],
-): Promise<{ ok: true; result: ModelTurnResult } | { ok: false; message: string }> {
+): Promise<{ ok: true; result: ModelTurnResult } | { ok: false; error: ErrorEnvelope }> {
     try {
         return { ok: true, result: await runtime.runModel(input) };
     } catch (err) {
-        return { ok: false, message: err instanceof Error ? err.message : String(err) };
+        // A typed envelope (e.g. PROVIDER_RATE_LIMITED from the model port)
+        // keeps its classification; a generic throw is conservatively terminal.
+        return {
+            ok: false,
+            error: asEnvelope(err, {
+                code: "STRATEGY_UNRECOVERABLE",
+                domain: "strategy",
+                message: `direct: ${err instanceof Error ? err.message : String(err)}`,
+            }),
+        };
     }
 }
 
-async function executeSafe(runtime: StrategyRuntime, call: { id: string; name: string; args: unknown }): Promise<string> {
+async function executeSafe(runtime: StrategyRuntime, call: { id: string; name: string; args: unknown }): Promise<ToolResult> {
     try {
         return await runtime.executeTool(call);
     } catch (err) {
-        return `error: ${err instanceof Error ? err.message : String(err)}`;
+        const failure: ToolFailure = {
+            code: "CAPABILITY_EXECUTION_FAILED",
+            message: err instanceof Error ? err.message : String(err),
+            transient: false,
+            retryableAsIs: false,
+            partialEffect: "unknown",
+        };
+        return { text: `error: ${failure.message}`, ok: false, failure };
     }
 }
