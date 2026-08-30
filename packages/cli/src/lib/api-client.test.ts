@@ -54,6 +54,31 @@ describe("apiClient.request", () => {
     await expect(apiClient.sessions.list()).rejects.toThrow("Connection not found");
   });
 
+  test("reads the envelope message from a Gateway ErrorEnvelope response", async () => {
+    stubFetch(() =>
+      jsonResponse(
+        {
+          error: {
+            code: "EDGE_RATE_LIMITED",
+            message: "Too many AI requests. Please try again shortly.",
+            retryable: true,
+            retryAfterMs: 30_000,
+            traceId: "trace-1",
+          },
+        },
+        429,
+      ),
+    );
+    await expect(apiClient.sessions.list()).rejects.toThrow(
+      "Too many AI requests. Please try again shortly.",
+    );
+  });
+
+  test("falls back to {message} when the gateway body has no usable error", async () => {
+    stubFetch(() => jsonResponse({ message: "boom" }, 400));
+    await expect(apiClient.sessions.list()).rejects.toThrow("boom");
+  });
+
   test("throws a clear message on 401 (auth cleared by caller)", async () => {
     stubFetch(() => jsonResponse({ error: "Unauthorized" }, 401));
     await expect(apiClient.sessions.list()).rejects.toThrow(/Unauthorized/);
@@ -107,5 +132,23 @@ describe("streamExecutionEvents", () => {
     stubFetch(() => jsonResponse({ error: "Execution not found" }, 404));
     const gen = streamExecutionEvents("missing", { signal: new AbortController().signal });
     await expect(gen.next()).rejects.toThrow("Execution not found");
+  });
+
+  test("reads the envelope message from a failed stream request", async () => {
+    stubFetch(() =>
+      jsonResponse(
+        {
+          error: {
+            code: "SYSTEM_UNKNOWN",
+            message: "Something went wrong on our side.",
+            retryable: false,
+            traceId: "trace-2",
+          },
+        },
+        500,
+      ),
+    );
+    const gen = streamExecutionEvents("missing", { signal: new AbortController().signal });
+    await expect(gen.next()).rejects.toThrow("Something went wrong on our side.");
   });
 });
