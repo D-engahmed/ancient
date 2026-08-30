@@ -6,6 +6,7 @@
 import { resolve, relative } from "path";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveWithinCwd } from "../lib/fs-safety";
 
 const MAX_MATCHES = 50;
 
@@ -25,9 +26,9 @@ export function createGrepTool(cwd: string) {
                 .optional(),
         }),
         execute: async ({ pattern, path, include }) => {
-            const resolved = resolve(cwd, path);
+            const resolved = resolveWithinCwd(cwd, path);
 
-            if (!resolved.startsWith(cwd)) {
+            if (!resolved) {
                 return { error: "Path is outside the project directory" };
             }
 

@@ -45,7 +45,6 @@ const app = new Hono<AuthenticatedEnv>()
         await assertSafeBaseUrl(baseUrl);
 
         try {
-            // FIX: pass modelId
             await validateProviderConnection({ protocol, baseUrl, apiKey, modelId });
         } catch (error) {
             const message = error instanceof ProviderConnectionValidationError
@@ -109,7 +108,7 @@ const app = new Hono<AuthenticatedEnv>()
                 data: { isValid: false, lastValidatedAt: new Date(), lastValidationError: message },
                 select: connectionSelect,
             });
-            return c.json(updated, 422);
+            return c.json({ error: message, connection: updated }, 422);
         }
     })
 

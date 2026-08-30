@@ -17,6 +17,7 @@ import type { ConsentProvider } from "@ANCIENT/capabilities/core";
 import type { ExecutionEventBridge } from "./bridge";
 
 type PendingConsent = {
+  executionId: string;
   resolve: (granted: boolean) => void;
   timer: ReturnType<typeof setTimeout>;
 };
@@ -52,18 +53,22 @@ export class ConsentBridge {
           resolve(false);
         }, CONSENT_TIMEOUT_MS);
 
-        this.#pending.set(requestId, { resolve, timer });
+        this.#pending.set(requestId, { executionId, resolve, timer });
       });
     };
   }
 
   /**
    * Called when the CLI sends a consent response (POST /executions/:id/consent).
-   * Resolves the pending Promise for the given requestId.
+   * Resolves the pending Promise for the given requestId — but only if the
+   * requestId belongs to the given execution, so one user can never answer
+   * another user's pending approval (defense in depth: requestIds are also
+   * unguessable UUIDs).
    */
-  respond(requestId: string, granted: boolean): boolean {
+  respond(executionId: string, requestId: string, granted: boolean): boolean {
     const pending = this.#pending.get(requestId);
     if (!pending) return false;
+    if (pending.executionId !== executionId) return false;
 
     clearTimeout(pending.timer);
     this.#pending.delete(requestId);

@@ -171,9 +171,16 @@ export class ExecutionHub {
     return entry;
   }
 
-  /** Respond to a pending consent request (Phase 9). */
-  respondToConsent(requestId: string, granted: boolean): boolean {
-    return this.#consent.respond(requestId, granted);
+  /** Respond to a pending consent request (Phase 9). Scoped to one execution. */
+  respondToConsent(
+    userId: string,
+    executionId: string,
+    requestId: string,
+    granted: boolean,
+  ): boolean {
+    const entry = this.get(userId, executionId);
+    if (!entry) return false;
+    return this.#consent.respond(executionId, requestId, granted);
   }
 
   #policy(allow: readonly RiskCategory[] | undefined): ApprovalPolicy {

@@ -106,10 +106,12 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
   });
 
   app.post("/:executionId/consent", zValidator("json", consentSchema), (c) => {
+    const userId = c.get("userId");
+    const executionId = c.req.param("executionId");
     const { requestId, granted } = c.req.valid("json");
-    const accepted = hub.respondToConsent(requestId, granted);
+    const accepted = hub.respondToConsent(userId, executionId, requestId, granted);
     if (!accepted) return c.json({ error: "Unknown or expired consent request" }, 404);
-    return c.json({ requestId, granted });
+    return c.json({ requestId, granted, executionId });
   });
 
   // Honest stubs: the engine exposes cancellation only today (AUDIT F2/F5);
