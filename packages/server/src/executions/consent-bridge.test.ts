@@ -51,12 +51,36 @@ describe("ConsentBridge", () => {
     expect(requestId).toBeTruthy();
 
     // Respond with granted
-    const accepted = consentBridge.respond(requestId, true);
+    const accepted = consentBridge.respond("exec-1", requestId, true);
     expect(accepted).toBe(true);
 
     // Provider should resolve to true
     const result = await resultPromise;
     expect(result).toBe(true);
+  });
+
+  test("respond rejects a requestId that belongs to another execution", async () => {
+    const events: unknown[] = [];
+    bridge.subscribe((e) => events.push(e));
+
+    const provider = consentBridge.createProvider(bridge, "exec-1");
+
+    const resultPromise = provider({
+      toolName: "bash",
+      category: "exec",
+      reason: "run test",
+    });
+
+    const event = events[0] as { type: string; payload: { requestId: string } };
+    const requestId = event.payload.requestId;
+
+    // Another execution id — must be rejected and leave the request pending.
+    const accepted = consentBridge.respond("exec-2", requestId, true);
+    expect(accepted).toBe(false);
+    expect(consentBridge.pendingCount).toBe(1);
+
+    consentBridge.respond("exec-1", requestId, true);
+    expect(await resultPromise).toBe(true);
   });
 
   test("respond resolves with granted=false when denied", async () => {
@@ -80,14 +104,14 @@ describe("ConsentBridge", () => {
     bridge.subscribe((e) => events2.push(e));
 
     // The requestId was already emitted. Let's test with a fresh request.
-    consentBridge.respond("nonexistent", false); // no-op
+    consentBridge.respond("exec-1", "nonexistent", false); // no-op
 
     // The original promise is still pending. Let's just verify the structure.
     expect(consentBridge.pendingCount).toBe(1);
   });
 
   test("respond returns false for unknown requestId", () => {
-    const accepted = consentBridge.respond("unknown-id", true);
+    const accepted = consentBridge.respond("exec-1", "unknown-id", true);
     expect(accepted).toBe(false);
   });
 
@@ -109,7 +133,7 @@ describe("ConsentBridge", () => {
     // Since we subscribed after the emits, let's just resolve via a fresh bridge
 
     // For now, verify the count decreases on respond (even with bad id)
-    consentBridge.respond("fake", true);
+    consentBridge.respond("exec-1", "fake", true);
     // fake id doesn't match, so count stays at 2
     expect(consentBridge.pendingCount).toBe(2);
   });
