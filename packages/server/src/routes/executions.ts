@@ -131,6 +131,15 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
    * replays buffered envelopes with `seq > lastEventId`, then stays live until
    * a terminal envelope is flushed (then the stream closes). Heartbeat comment
    * every 25s keeps idle proxies honest.
+   *
+   * CRITICAL: the stream callback must NOT resolve until the terminal envelope
+   * has actually been written. Hono's `stream()` runs its callback and calls
+   * `stream.close()` in a `finally` when the callback RETURNS. The old code
+   * `await pump()`-ed only the initial replay slice, so once that drained the
+   * callback returned, the body closed, and every later engine emission (the
+   * `execution.failed` that carries the CLIENT-SAFE ERROR) was silently dropped
+   * — the CLI saw the stream end after `execution.started` and never got a
+   * terminal, i.e. "no response". `done` below keeps the callback alive.
    */
   app.get("/:executionId/events", async (c) => {
     const userId = c.get("userId");
@@ -149,11 +158,16 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
       `id: ${e.seq}\nevent: execution\ndata: ${JSON.stringify(e)}\n\n`;
 
     return stream(c, async (stream) => {
+      let resolveDone: () => void = () => undefined;
+      const done = new Promise<void>((resolve) => {
+        resolveDone = resolve;
+      });
+
       // Subscribe first, then prime the queue from the buffer — both within
       // one synchronous block, so no engine emission can slip between them.
       listener = (e) => {
         queue.push(e);
-        void pump();
+        runPump();
       };
       entry.bridge.subscribe(listener);
       for (const e of entry.bridge.snapshot(from)) queue.push(e);
@@ -161,6 +175,7 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
       c.header("Cache-Control", "no-cache");
       c.header("Connection", "keep-alive");
       c.header("X-Accel-Buffering", "no");
+      c.header("Content-Type", "text/event-stream");
 
       const heartbeat = setInterval(() => {
         void stream.write(": ping\n\n");
@@ -168,34 +183,41 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
       const clean = () => {
         clearInterval(heartbeat);
         if (listener) entry.bridge.unsubscribe(listener);
+        resolveDone();
       };
       stream.onAbort(clean);
 
       // Single-writer pump: concurrent pushes funnel into one write loop so
       // frames can never interleave, and mid-write pushes are still drained.
-      async function pump(): Promise<void> {
-        if (pumping) return;
-        pumping = true;
-        try {
-          while (queue.length > 0) {
-            const e = queue.shift();
-            if (!e) break;
-            if (closed) return;
-            await stream.write(frame(e));
-            // Terminal event flushes last, then close — never two terminals.
-            if (isTerminal(e)) {
-              closed = true;
-              clean();
-              await stream.close();
-              return;
-            }
+      async function driveQueue(): Promise<void> {
+        while (queue.length > 0) {
+          const e = queue.shift();
+          if (!e) break;
+          if (closed) return;
+          await stream.write(frame(e));
+          // Terminal event flushes last, then close — never two terminals.
+          if (isTerminal(e)) {
+            closed = true;
+            clean();
+            await stream.close();
+            return;
           }
-        } finally {
-          pumping = false;
         }
       }
+      function runPump(): void {
+        if (pumping) return;
+        pumping = true;
+        void driveQueue().finally(() => {
+          pumping = false;
+        });
+      }
 
-      await pump();
+      runPump();
+
+      // Hold the callback open until a terminal was flushed (clean) or the
+      // client aborted (stream.onAbort). Only then may we return — Hono's
+      // finally-close is a guarded no-op after our explicit stream.close().
+      await done;
     });
   });
 
