@@ -6,6 +6,7 @@
 export * from "./types";
 export * from "./selector";
 export * from "./util";
+export * from "./errors";
 export * as direct from "./direct";
 export * as agentLoop from "./agent-loop";
 export * as subagents from "./subagents";

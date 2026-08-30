@@ -61,7 +61,7 @@ describe("direct strategy", () => {
     it("surfaces a model failure as an error event and still ends", async () => {
         const rt = fakeRuntime({ turns: [], failOnRun: true });
         const events = await collect(directStrategy.execute({ profile: task, runtime: rt }));
-        expect(events.some((e) => e.type === "error" && (e as { message: string }).message.includes("model failure"))).toBe(true);
+        expect(events.some((e) => e.type === "error" && (e as { error: { message: string } }).error.message.includes("model failure"))).toBe(true);
         expect(events.some((e) => e.type === "done")).toBe(true);
     });
 });

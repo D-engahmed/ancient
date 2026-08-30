@@ -10,6 +10,7 @@
 
 import type { RiskCategory } from "@ANCIENT/infrastructure/security";
 import type { ModeType } from "@ANCIENT/shared";
+import type { ErrorCode, PartialEffect } from "@ANCIENT/contracts";
 import type { z } from "zod";
 
 /** Per-execution context handed to every tool executor. */
@@ -56,6 +57,28 @@ export type ConsentProvider = (request: {
  * Outcome of one centrally-policed tool execution. `output` is the serialized,
  * redacted, budget-capped string the engine/stream should surface.
  */
+/**
+ * A TYPED capability failure (docs/05 §5.2, Layer 20 §1 projection). Every
+ * failure at the central edge is represented by a closed `ErrorCode` + retry
+ * classification instead of a free-text string, so the engine can decide
+ * retry-vs-compensate without parsing prose.
+ *
+ * `partialEffect` is the safety-critical field: any failure where a side
+ * effect may already have happened must NOT be blindly retried (Layer 5 §4).
+ */
+export type CapabilityFailure = {
+    /** Closed taxonomy code (Layer 20 §2). */
+    code: ErrorCode;
+    /** Human-readable failure; already localizable at the gateway. */
+    message: string;
+    /** Expected to succeed if retried unchanged? (Layer 20 §3). */
+    transient: boolean;
+    /** True only if the failing operation is idempotent. */
+    retryableAsIs: boolean;
+    /** Did a side effect occur before the failure? */
+    partialEffect: PartialEffect;
+};
+
 export type ExecutionResult = {
     ok: boolean;
     /** Serialized + redacted + budget-capped payload ("" when `ok === false`). */
@@ -66,7 +89,10 @@ export type ExecutionResult = {
     redacted: string[];
     /** The policy decision that permitted (or blocked) this call. */
     approval: string;
+    /** Free-text failure (kept for tool-result surfaces + model prompts). */
     error?: string;
+    /** Typed failure (docs/05 §5.2) — present iff `ok === false`. */
+    failure?: CapabilityFailure;
 };
 
 export const DEFAULT_MAX_RESULT_CHARS = 100_000;

@@ -51,7 +51,7 @@ describe("subagents strategy", () => {
     it("emits an error event when planning produces no subtasks", async () => {
         const rt = fakeRuntime({ turns: [turn("Sorry, I cannot decompose this.")] });
         const events = await collect(subagentsStrategy.execute({ profile: task, runtime: rt }));
-        expect(events.some((e) => e.type === "error" && (e as { message: string }).message.includes("planning failed"))).toBe(true);
+        expect(events.some((e) => e.type === "error" && (e as { error: { message: string } }).error.message.includes("planning failed"))).toBe(true);
         expect(events.at(-1)?.type).toBe("done");
     });
 

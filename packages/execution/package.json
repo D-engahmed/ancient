@@ -1,0 +1,35 @@
+{
+  "name": "@ANCIENT/execution",
+  "version": "1.0.0",
+  "description": "ANCIENT unified execution engine — lifecycle, context, cancellation, observability; implements the strategies StrategyRuntime port",
+  "type": "module",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./runner": "./src/engine.ts",
+    "./runtime": "./src/runtime.ts",
+    "./context": "./src/context.ts",
+    "./profiler": "./src/profiler.ts",
+    "./model": "./src/model.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@ANCIENT/shared": "workspace:*",
+    "@ANCIENT/contracts": "workspace:*",
+    "@ANCIENT/reliability": "workspace:*",
+    "@ANCIENT/infrastructure": "workspace:*",
+    "@ANCIENT/capabilities": "workspace:*",
+    "@ANCIENT/strategies": "workspace:*",
+    "ai": "^7.0.55",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  }
+}
