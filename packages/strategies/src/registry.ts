@@ -49,8 +49,8 @@ export const wiredStrategies: readonly ExecutionStrategy[] = strategyCatalog.fil
 export class StrategySelector {
     constructor(private readonly catalog: readonly ExecutionStrategy[] = strategyCatalog) {}
 
-    select(profile: TaskProfile): StrategySelection {
-        return selectStrategy(profile, this.catalog);
+    select(profile: TaskProfile, options?: { minRung?: StrategyRung }): StrategySelection {
+        return selectStrategy(profile, this.catalog, options);
     }
 
     listWired(): readonly ExecutionStrategy[] {

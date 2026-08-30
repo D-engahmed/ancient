@@ -79,6 +79,28 @@ describe("selectStrategy", () => {
         const onlyUnwired = strategyCatalog.filter((s) => !s.wired);
         expect(() => selectStrategy(profile({ description: "x" }), onlyUnwired)).toThrow("no wired strategies");
     });
+
+    it("honors the rung floor on re-selection (escalation)", () => {
+        // Even a "simple" profile must not re-run the same rung that just
+        // under-delivered — the floor forces the next heavier strategy.
+        const s = selector.select(profile({ description: "read the config", complexity: "simple" }), { minRung: 1 });
+        expect(s.id).toBe("agent-loop");
+        expect(s.rung).toBe(1);
+    });
+
+    it("jumps to subagents when the floor is rung 2", () => {
+        // moderate + floor 2: lower rungs are excluded and subagents wins the
+        // at-or-above fallback — the re-selection refuses to downgrade.
+        const s = selector.select(profile({ description: "x", complexity: "moderate" }), { minRung: 2 });
+        expect(s.id).toBe("subagents");
+        expect(s.rung).toBe(2);
+    });
+
+    it("direct no longer claims moderate work (moderate → agent-loop)", () => {
+        const s = selector.select(profile({ description: "wire the auth flow", complexity: "moderate" }));
+        expect(s.id).toBe("agent-loop");
+        expect(s.rung).toBe(1);
+    });
 });
 
 describe("catalog integrity", () => {

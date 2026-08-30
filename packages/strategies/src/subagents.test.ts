@@ -48,6 +48,31 @@ describe("subagents strategy", () => {
         expect(rt.calls[0]?.name).toBe("readFile");
     });
 
+    it("hands subtask findings to a final synthesis turn", async () => {
+        const rt = fakeRuntime({
+            turns: [
+                turn('{"subtasks":[{"goal":"scan pkg A"},{"goal":"scan pkg B"}]}'),
+                turn("A findings"),
+                turn("B findings"),
+                turn("FINAL REPORT: everything the task asked for"),
+            ],
+        });
+        const events = await collect(subagentsStrategy.execute({ profile: task, runtime: rt }));
+        const deltas = events
+            .filter((e) => e.type === "text-delta")
+            .map((e) => (e as { text: string }).text);
+        expect(deltas).toContain("FINAL REPORT: everything the task asked for");
+
+        // The synthesis delta lands AFTER the last subtask completed marker.
+        const lastCompleted = events
+            .map((e, i) => (e.type === "subtask" && e.status === "completed" ? i : -1))
+            .reduce((a, b) => Math.max(a, b), -1);
+        const finalAt = events.findIndex(
+            (e) => e.type === "text-delta" && (e as { text: string }).text === "FINAL REPORT: everything the task asked for",
+        );
+        expect(finalAt).toBeGreaterThan(lastCompleted);
+    });
+
     it("emits an error event when planning produces no subtasks", async () => {
         const rt = fakeRuntime({ turns: [turn("Sorry, I cannot decompose this.")] });
         const events = await collect(subagentsStrategy.execute({ profile: task, runtime: rt }));

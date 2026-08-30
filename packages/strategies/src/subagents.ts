@@ -65,6 +65,7 @@ export const subagentsStrategy: ExecutionStrategy = {
         }
 
         let subtaskIndex = 0;
+        const findings: string[] = [];
         for (const subtask of plan) {
             subtaskIndex += 1;
             const subtaskId = `st-${subtaskIndex}`;
@@ -80,11 +81,40 @@ export const subagentsStrategy: ExecutionStrategy = {
 
             for await (const event of agentLoopStrategy.execute({ profile: subProfile, runtime })) {
                 if (event.type === "tool-result") toolCount += 1;
+                if (event.type === "text-delta" && event.text.trim()) findings.push(event.text);
                 yield event;
                 if (event.type === "done" && event.usage) usage = sumUsage(usage, event.usage);
             }
 
             yield { type: "subtask", subtaskId, goal: subtask.goal, status: "completed" } as const;
+        }
+
+        // Final synthesis: one parent turn that turns N subtask findings into a
+        // single answer to the ORIGINAL task (Claude-Code-style subagent report
+        // hand-off). Without this, a subagents run ends as a pile of deltas with
+        // no report — the exact empty-final-message repro at rung 2.
+        if (findings.length > 0) {
+            const digest = findings.join("\n").slice(0, 8_000);
+            try {
+                const final = await runtime.runModel({
+                    system:
+                        "You are ANCIENT's report synthesizer. Finished subtasks explored the task and returned findings. " +
+                        "Now write the single, comprehensive final answer to the ORIGINAL task, organized from those findings. Do NOT call tools.",
+                    prompt: `Original task: ${profile.description}\n\nSubtasks completed: ${plan.length}\n\nFindings:\n${digest}\n\nWrite the final answer now.`,
+                });
+                usage = sumUsage(usage, final.usage);
+                if (final.text.trim()) {
+                    yield { type: "text-delta", text: final.text } as const;
+                }
+            } catch (err) {
+                // Synthesis is a quality improvement, never a run-killer: the
+                // subtask findings are already streamed, so a planner failure
+                // here degrades the report but does not fail the execution.
+                yield {
+                    type: "text-delta",
+                    text: `(subagents synthesis failed: ${err instanceof Error ? err.message : String(err)})\n`,
+                } as const;
+            }
         }
 
         yield { type: "done", turnCount: 1, toolCount, usage, summary: `${plan.length} subtask(s) completed` } as const;

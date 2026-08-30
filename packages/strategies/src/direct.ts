@@ -30,8 +30,8 @@ export const directStrategy: ExecutionStrategy = {
     wired: true,
     match: (profile) => {
         const c = profile.complexity ?? "simple";
-        if (c === "trivial" || c === "simple" || (c === "moderate" && !profile.parallelizable && !profile.tools?.length)) {
-            return "low complexity, no parallelism";
+        if (c === "trivial" || c === "simple") {
+            return "low complexity";
         }
         return null;
     },

@@ -176,6 +176,14 @@ export class ExecutionEventBridge {
           ...(event.payload?.waitMs !== undefined ? { waitMs: Number(event.payload.waitMs) } : {}),
         }));
         break;
+      case "degraded":
+        // A run that under-delivered (empty output after tools → strategy
+        // escalation, provider fallback, ...) degrades gracefully instead of
+        // failing — tell the CLI it happened.
+        this.#emit(this.#build("execution.degraded", {
+          reason: String(event.payload?.reason ?? "degraded"),
+        }));
+        break;
       default:
         // "created" is emitted by bridge.start(); "plan-updated" /
         // "tool-executed" / "artifact-created" / "checkpoint-saved" have no
