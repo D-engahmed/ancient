@@ -7,11 +7,13 @@
 
 import { TextAttributes } from "@opentui/core";
 import { useTheme } from "../providers/theme";
+import { EmptyBorder } from "./border";
 import type { TimelineEntry } from "../lib/execution-stream";
 
 type Props = {
   entries: TimelineEntry[];
   text?: string;
+  streaming?: boolean;
 };
 
 function formatToolName(name: string): string {
@@ -34,7 +36,7 @@ function statusSymbol(status: TimelineEntry["status"], colors: ReturnType<typeof
   }
 }
 
-export function ExecutionTimeline({ entries, text }: Props) {
+export function ExecutionTimeline({ entries, text, streaming }: Props) {
   const { colors } = useTheme();
 
   if (entries.length === 0 && !text) return null;
@@ -59,8 +61,21 @@ export function ExecutionTimeline({ entries, text }: Props) {
         </box>
       )}
       {text && (
-        <box paddingTop={entries.length > 0 ? 1 : 0} paddingLeft={2}>
-          <text attributes={TextAttributes.DIM}>{text}</text>
+        <box
+          paddingTop={entries.length > 0 ? 1 : 0}
+          paddingLeft={2}
+          paddingRight={2}
+          border={["left"]}
+          borderColor={colors.thinkingBorder}
+          customBorderChars={{
+            ...EmptyBorder,
+            vertical: "│",
+          }}
+        >
+          <text>
+            {text}
+            {streaming && <span attributes={TextAttributes.DIM}>▌</span>}
+          </text>
         </box>
       )}
     </box>

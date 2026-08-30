@@ -323,48 +323,50 @@ function SessionChat({
                 </box>
             )}
 
-            {/* Content area */}
-            <box flexGrow={1} flexDirection="column" paddingX={2} gap={1} overflow="hidden">
-                {isExecuting && timeline.length > 0 ? (
-                    /* Timeline view during execution */
-                    <box flexDirection="column" gap={1}>
-                        {lastUserMsg && (
-                            <UserMessage
-                                message={messageText(lastUserMsg)}
-                                mode={lastUserMsg.metadata?.mode ?? mode}
-                            />
-                        )}
-                        <ExecutionTimeline entries={timeline} text={liveText || undefined} />
-                        {inspectorVisible && (
-                            <ExecutionInspector entry={inspectedEntry} />
-                        )}
-                    </box>
-                ) : isExecuting ? (
-                    /* Early execution: request sent, first tool event not here yet.
-                       Show the prompt plus a working indicator so the screen never
-                       looks frozen. */
-                    <box flexDirection="column" gap={1}>
-                        {lastUserMsg && (
-                            <UserMessage
-                                message={messageText(lastUserMsg)}
-                                mode={lastUserMsg.metadata?.mode ?? mode}
-                            />
-                        )}
-                        <box flexDirection="row" gap={1} alignItems="center">
-                            <Spinner mode={mode} />
-                            <text attributes={TextAttributes.DIM}>Working…</text>
-                        </box>
-                    </box>
-                ) : (
-                    /* Full conversation view when not executing */
-                    <box flexGrow={1} overflow="hidden">
-                        {messages.map((msg) => (
+            {/* Content area - scrollable, keeps history visible during execution */}
+            <scrollbox flexGrow={1} width="100%" stickyScroll stickyStart="bottom" paddingX={2}>
+                <box flexDirection="column" gap={1}>
+                    {/* History: previous turns, always visible */}
+                    {(() => {
+                        const history = isExecuting
+                            ? (() => {
+                                const last = messages[messages.length - 1];
+                                const hasStreamingAssistant = !!lastAssistantMsg && last?.id === lastAssistantMsg.id;
+                                if (hasStreamingAssistant) return messages.slice(0, Math.max(0, messages.length - 2));
+                                if (last?.role === "user" && last?.id === lastUserMsg?.id) return messages.slice(0, Math.max(0, messages.length - 1));
+                                return messages;
+                            })()
+                            : messages;
+                        return history.map((msg) => (
                             <ChatMessage key={msg.id} msg={msg} />
-                        ))}
-                        {error && <ErrorMessage message={error.message} />}
-                    </box>
-                )}
-            </box>
+                        ));
+                    })()}
+                    {isExecuting ? (
+                        <box flexDirection="column" gap={1}>
+                            {lastUserMsg && (
+                                <UserMessage
+                                    message={messageText(lastUserMsg)}
+                                    mode={lastUserMsg.metadata?.mode ?? mode}
+                                />
+                            )}
+                            {timeline.length > 0 || liveText ? (
+                                <>
+                                    <ExecutionTimeline entries={timeline} text={liveText || undefined} streaming />
+                                    {inspectorVisible && (
+                                        <ExecutionInspector entry={inspectedEntry} />
+                                    )}
+                                </>
+                            ) : (
+                                <box flexDirection="row" gap={1} alignItems="center" paddingLeft={2}>
+                                    <Spinner mode={mode} />
+                                    <text attributes={TextAttributes.DIM}>Working…</text>
+                                </box>
+                            )}
+                        </box>
+                    ) : null}
+                    {!isExecuting && error && <ErrorMessage message={error.message} />}
+                </box>
+            </scrollbox>
 
             {/* Consent prompt (Phase 9) */}
             {pendingConsent && (
