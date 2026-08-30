@@ -51,6 +51,7 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
       task: entry.task,
       mode: entry.mode,
       userId: entry.userId,
+      modelRef: entry.modelRef,
       lastSeq: entry.bridge.lastSeq,
       terminal: entry.bridge.closed,
     };
@@ -74,6 +75,7 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
         status: entry.status,
         task: entry.task,
         mode: entry.mode,
+        modelRef: entry.modelRef,
         lastSeq: entry.bridge.lastSeq,
       },
       202,

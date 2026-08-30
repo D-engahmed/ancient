@@ -37,6 +37,9 @@ export type BridgeStart = {
   buffer: readonly ExecutionEventEnvelope[];
 };
 
+/** execution.fallback_engaged payload: the run's effective model was swapped. */
+export type BridgeFallbackDetail = { from: string; to: string; reason?: string };
+
 /**
  * Per-execution translation of engine emissions → wire envelopes. Both
  * `observe` (strategy events) and the bus listener funnel into one gapless
@@ -124,6 +127,17 @@ export class ExecutionEventBridge {
       requestId: detail.requestId,
       capability: detail.capability,
       ...(detail.prompt ? { prompt: detail.prompt } : {}),
+    }));
+  }
+
+  /** Emit execution.fallback_engaged — the run's model was swapped (cooldown
+   *  or failure fallback), so the CLI is honest about what actually ran. */
+  onFallbackEngaged(detail: BridgeFallbackDetail): void {
+    if (this.#closed) return;
+    this.#emit(this.#build("execution.fallback_engaged", {
+      from: detail.from,
+      to: detail.to,
+      ...(detail.reason ? { reason: detail.reason } : {}),
     }));
   }
 

@@ -34,7 +34,11 @@ import { MemoryEventBus } from "@ANCIENT/infrastructure/events";
 import { ApprovalPolicy, Redactor, type RiskCategory } from "@ANCIENT/infrastructure/security";
 import { DEFAULT_CHAT_MODEL_ID, type ChatModelSelection, type ModeType } from "@ANCIENT/shared";
 import { resolveChatModel } from "../lib/models";
-import { ExecutionEventBridge } from "./bridge";
+import { modelKey, checkCooldown, RateLimitCooldownError } from "../lib/rate-limit-breaker";
+import { selectHealthyFallbackModel } from "../lib/fallback";
+import { clientErrorFrom } from "../lib/error-mapper";
+import { loadSettings } from "../hooks/settings";
+import { ExecutionEventBridge, type BridgeFallbackDetail } from "./bridge";
 import { ConsentBridge } from "./consent-bridge";
 
 export type ExecutionStartRequest = {
@@ -57,6 +61,9 @@ export type ExecutionEntry = {
   task: string;
   mode: ModeType;
   status: "created" | "running" | "completed" | "failed" | "cancelled";
+  /** Effective model ref that ran (the user's selection, or the healthy
+   *  fallback adopted when the selection was on cooldown). */
+  modelRef?: string;
   session: {
     cancel(reason?: string): void;
     readonly done: Promise<unknown>;
@@ -111,7 +118,31 @@ export class ExecutionHub {
 
     try {
       const selection: ChatModelSelection = request.model ?? { modelKind: "builtin", modelId: DEFAULT_CHAT_MODEL_ID };
-      const resolved = await resolveChatModel(selection, request.userId);
+      let resolved = await resolveChatModel(selection, request.userId);
+      // Mirrors the chat stream's cooldown policy: if the selected model
+      // tripped an upstream rate limit recently, adopt a healthy fallback
+      // (free lane, then builtin default) instead of spending a retry cycle
+      // against a limit that hasn't reset. When NO healthy alternative exists
+      // the cooldown error surfaces — the user's explicit model choice wins
+      // over silent replacement.
+      const settings = await loadSettings(request.cwd ?? null);
+      const rlKey = modelKey(resolved.provider, resolved.modelId);
+      const cooldown = checkCooldown(rlKey);
+      let fallbackDetail: BridgeFallbackDetail | undefined;
+      if (cooldown.onCooldown) {
+        const fallback = selectHealthyFallbackModel(settings, rlKey);
+        if (fallback) {
+          const selectedWas = resolved.modelId;
+          fallbackDetail = {
+            from: selection.modelKind === "custom" ? selection.connectionId : selection.modelId,
+            to: fallback.resolved.modelId,
+            reason: `your selected model (${selectedWas}) is rate-limited (~${cooldown.retryAfterSeconds}s) — using ${fallback.resolved.modelId} for this run instead`,
+          };
+          resolved = fallback.resolved;
+        } else {
+          throw new RateLimitCooldownError(resolved.modelId, cooldown.retryAfterSeconds);
+        }
+      }
 
       const session = this.#engine.run({
         sessionId: executionId,
@@ -134,6 +165,7 @@ export class ExecutionHub {
       const entry: ExecutionEntry = {
         ...entryBase,
         status: toSurfaceStatus(session.status),
+        modelRef: fallbackDetail?.to ?? (selection.modelKind === "custom" ? selection.connectionId : selection.modelId),
         session: {
           cancel: (reason?: string) => session.cancel(reason),
           done: session.done,
@@ -141,6 +173,10 @@ export class ExecutionHub {
         bridge,
       };
       this.#executions.set(executionId, entry);
+
+      // Fallback is a completed fact — it lands AFTER execution.started (the
+      // engine's `started` event is emitted synchronously inside run()).
+      if (fallbackDetail) bridge.onFallbackEngaged(fallbackDetail);
 
       void session.done.then((result) => {
         const live = this.#executions.get(executionId);
@@ -151,12 +187,16 @@ export class ExecutionHub {
       return entry;
     } catch (err) {
       // Resolution failed before a session existed — surface a terminal
-      // `execution.failed` so no SSE consumer hangs on a silent execution.
-      const error = err instanceof Error ? err.message : String(err);
-      bridge.finish("failed", { error });
+      // `execution.failed` with a client-safe envelope so no SSE consumer
+      // hangs on a silent execution and the reason is actionable, not a
+      // blanket SYSTEM_UNKNOWN.
+      const traceId = String(crypto.randomUUID());
+      const { response } = clientErrorFrom(err, traceId);
+      bridge.finish("failed", { clientError: response });
       const entry: ExecutionEntry = {
         ...entryBase,
         status: "failed",
+        modelRef: request.model?.modelKind === "custom" ? request.model.connectionId : request.model?.modelId,
         session: {
           cancel: () => undefined,
           done: Promise.resolve({ status: "failed" as const }),

@@ -5,6 +5,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type { LanguageModel } from "ai";
+import { makeError } from "@ANCIENT/contracts";
 import { db } from "@ANCIENT/database/client";
 import { decryptApiKey } from "./connection-crypto";
 import { assertSafeBaseUrl } from "./safe-url";
@@ -93,7 +94,17 @@ type OpenAICompatibleProvider = keyof typeof OPENAI_COMPATIBLE_PROVIDERS;
 function resolveOpenAICompatibleModel(provider: OpenAICompatibleProvider, modelId: string): ResolvedModel {
     const entry = OPENAI_COMPATIBLE_PROVIDERS[provider];
     const apiKey = process.env[entry.envVar];
-    if (!apiKey) throw new Error(`${entry.envVar} is not set`);
+    if (!apiKey) {
+        // Typed envelope, not a bare Error: the hub/chat catch paths derive a
+        // client-safe code from it instead of a blanket SYSTEM_UNKNOWN.
+        throw makeError({
+            code: "PROVIDER_AUTH_FAILED",
+            domain: "provider",
+            message: `${entry.envVar} is not set`,
+            clientMessage: `No API key configured for ${entry.envVar}. Set it in .env and restart the server.`,
+            transient: false,
+        });
+    }
     const baseURL: string | undefined = "baseURL" in entry ? entry.baseURL : undefined;
     return {
         model: createOpenAI({ apiKey, baseURL }).chat(modelId) as unknown as LanguageModel,
@@ -104,7 +115,15 @@ function resolveOpenAICompatibleModel(provider: OpenAICompatibleProvider, modelI
 
 function resolveAnthropicModel(modelId: string): ResolvedModel {
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
+    if (!apiKey) {
+        throw makeError({
+            code: "PROVIDER_AUTH_FAILED",
+            domain: "provider",
+            message: "ANTHROPIC_API_KEY is not set",
+            clientMessage: "No API key configured for ANTHROPIC_API_KEY. Set it in .env and restart the server.",
+            transient: false,
+        });
+    }
     return {
         model: createAnthropic({ apiKey })(modelId),
         provider: "anthropic",
@@ -114,7 +133,15 @@ function resolveAnthropicModel(modelId: string): ResolvedModel {
 
 function resolveGoogleModel(modelId: string): ResolvedModel {
     const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) throw new Error("GOOGLE_API_KEY is not set");
+    if (!apiKey) {
+        throw makeError({
+            code: "PROVIDER_AUTH_FAILED",
+            domain: "provider",
+            message: "GOOGLE_API_KEY is not set",
+            clientMessage: "No API key configured for GOOGLE_API_KEY. Set it in .env and restart the server.",
+            transient: false,
+        });
+    }
     return {
         // Native Google provider, not the OpenAI-compat shim: Gemini's
         // OpenAI-compatible streaming format omits `index` on tool-call
@@ -142,7 +169,13 @@ function resolveSupportedChatModel(model: SupportedChatModel): ResolvedModel {
         case "lmstudio":
         case "vllm":
         case "custom":
-            throw new Error(`${model.provider} models require a BYOK connection. Add one via the model picker.`);
+            throw makeError({
+                code: "PROVIDER_AUTH_FAILED",
+                domain: "provider",
+                message: `${model.provider} models require a BYOK connection`,
+                clientMessage: `${model.provider} models require a BYOK connection. Add one via the model picker.`,
+                transient: false,
+            });
         default:
             throw new Error("Unsupported provider");
     }
@@ -208,9 +241,23 @@ export async function resolveChatModel(
     const conn = await db.providerConnection.findUnique({
         where: { id: selection.connectionId, userId },
     });
-    if (!conn) throw new Error("Connection not found");
+    if (!conn) {
+        throw makeError({
+            code: "PROVIDER_UNAVAILABLE",
+            domain: "gateway",
+            message: "Connection not found",
+            clientMessage: "Connection not found. Re-add it via the model picker.",
+            transient: false,
+        });
+    }
     if (!conn.isValid) {
-        throw new Error("This provider connection is invalid. Revalidate or rotate its API key before using it.");
+        throw makeError({
+            code: "PROVIDER_AUTH_FAILED",
+            domain: "provider",
+            message: "This provider connection is invalid",
+            clientMessage: "This provider connection is invalid. Revalidate or rotate its API key before using it.",
+            transient: false,
+        });
     }
 
     await assertSafeBaseUrl(conn.baseUrl);
