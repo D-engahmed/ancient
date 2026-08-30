@@ -17,6 +17,7 @@ import {
 
 import { createToolsAsync } from "../tools";
 import { buildSystemPrompt } from "../system-prompt";
+import { Redactor } from "@ANCIENT/infrastructure/security";
 import { resolveChatModel, resolveFreeModel, resolveBuiltinFallbackModel, type ResolvedModel } from "../lib/models";
 import { modelKey, checkCooldown, recordRateLimitFailure, isRateLimitError, RateLimitCooldownError } from "../lib/rate-limit-breaker";
 import { pickHealthyFallback, asFallbackCandidate } from "../lib/fallback";
@@ -33,6 +34,13 @@ import { createCheckpoint } from "../checkpoints/store";
 import { parseQuotaFromError, persistQuota } from "../lib/quota";
 
 const log = createLogger("chat");
+
+// R7: provider error bodies can echo the very credentials that failed (an
+// auth error repeating the Authorization header, a gateway echoing `api_key`)
+// and the shared logger's key-name redaction can't see inside a string field.
+// Every error surface below (log line + persisted ERROR message) passes
+// through this redactor first.
+const errorRedactor = new Redactor();
 
 const MAX_RESPONSE_CHARS = Number.parseInt(process.env.ANCIENT_MAX_RESPONSE_CHARS ?? "200000", 10);
 // Raised from 60s: subagent tasks and MCP tools legitimately run longer.
@@ -475,7 +483,10 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
     // richer detail silently failed to make it into this log line or the
     // persisted DB message.) Destructuring `{ error }` here fixes that.
     onError: async ({ error }) => {
-      const errMsg = sanitizeError(error);
+      // sanitizeError strips the exact apiKey from the text; the redactor
+      // additionally masks *patterned* secrets (bearer tokens, sk-…, labeled
+      // api_key=…) that survive inside wrapped provider messages.
+      const errMsg = errorRedactor.mask(sanitizeError(error));
       const modelKind = selection.modelKind;
       const modelRef = usedModelRef;
       const cause = (error as { cause?: unknown })?.cause;
@@ -503,7 +514,18 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
               responseBody: (unwrapped as { responseBody?: unknown }).responseBody,
             }
             : undefined;
-      log.warn("stream error", { sessionId, modelKind, modelRef, error: errMsg, ...apiError });
+      // R7: log the masked body — the raw one may embed the failed request's
+      // credentials. Quota learning below still reads the raw body.
+      const loggedApiError = apiError
+        ? {
+          ...apiError,
+          responseBody:
+            typeof apiError.responseBody === "string"
+              ? errorRedactor.mask(apiError.responseBody)
+              : apiError.responseBody,
+        }
+        : undefined;
+      log.warn("stream error", { sessionId, modelKind, modelRef, error: errMsg, ...loggedApiError });
 
       // Learn this connection's real quota, if the provider just told us
       // one, so the /usage graph reflects an actual reported limit instead
@@ -559,7 +581,7 @@ async function streamAIResponse(params: StreamParams): Promise<Response> {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
     },
-    onError: (error) => sanitizeError(error),
+    onError: (error) => errorRedactor.mask(sanitizeError(error)),
 
     messageMetadata: ({ part }) => {
       const turnModel = usedModelRef;
