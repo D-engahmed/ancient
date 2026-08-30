@@ -23,6 +23,8 @@ const app = new Hono<{ Variables: { traceId: string } }>();
 /** First-in-chain: every response (incl. onError) carries X-Trace-Id. */
 app.use("*", traceId);
 
+app.notFound((c) => guardJson(c, "Not found", 404));
+
 app.onError((error, c) => {
   if (error instanceof HTTPException) {
     return guardJson(c, error.message || "Request failed", error.status);

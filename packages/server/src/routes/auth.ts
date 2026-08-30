@@ -2,6 +2,7 @@
 // Proprietary and confidential. Unauthorized copying or distribution prohibited.
 
 import { Hono } from "hono";
+import { guardJson } from "../lib/error-mapper";
 
 const app = new Hono().get("/callback", (c) => {
   const code = c.req.query("code");
@@ -10,11 +11,11 @@ const app = new Hono().get("/callback", (c) => {
   const errorDescription = c.req.query("error_description");
 
   if (error) {
-    return c.text(errorDescription ?? error, 400);
+    return guardJson(c, errorDescription ?? error, 400);
   }
 
   if (!code || !state) {
-    return c.text("Missing authorization code or state", 400);
+    return guardJson(c, "Missing authorization code or state", 400);
   }
 
   try {
@@ -32,7 +33,7 @@ const app = new Hono().get("/callback", (c) => {
     const redirectUrl = `http://127.0.0.1:${port}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
     return c.redirect(redirectUrl);
   } catch {
-    return c.text("Invalid authentication state", 400);
+    return guardJson(c, "Invalid authentication state", 400);
   }
 });
 
