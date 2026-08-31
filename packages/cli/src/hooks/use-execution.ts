@@ -6,7 +6,8 @@
 // submit starts one execution via POST /executions and streams the typed wire
 // envelopes; the CLI renders what the server emits and never invents history
 // (audit F2). Session-chat history (persisted /sessions messages) is
-// display-only until Phase 6 wires the timeline.
+// display-only until Phase 6 wires the timeline.function submit(params: SubmitParams): boolean {
+
 //
 // Status surface: idle | submitted | streaming | ready | error.
 
