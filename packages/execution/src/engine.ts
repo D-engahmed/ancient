@@ -294,12 +294,32 @@ export class ExecutionEngine {
                     session.status = "running";
                 }
 
+                // If the run still has nothing to show after (possibly)
+                // escalating once, say so explicitly instead of resolving
+                // with a genuinely empty output — an empty `output` here
+                // renders as a silent blank turn with no error on the CLI
+                // (ExecutionMessageAssembler always emits a text part once
+                // the run is terminal). This is not a fabricated answer —
+                // it names exactly what happened so the user isn't left
+                // staring at nothing.
+                if (outcome.toolCount > 0 && outcome.output.trim().length === 0) {
+                    const escalatedNote = reselectionCount > 0 ? " even after escalating to a heavier strategy" : "";
+                    outcome = {
+                        ...outcome,
+                        output: `I ran ${outcome.toolCount} tool call${outcome.toolCount === 1 ? "" : "s"} for this but couldn't produce a final written answer${escalatedNote}. Try a narrower request — one file or directory at a time tends to get an actual answer instead of an empty one.`,
+                    };
+                }
+
                 // Graceful completion — terminal, written by the engine.
                 session.status = "completed";
                 session.publish("completed", {
                     turnCount: totalTurnCount,
                     toolCount: totalToolCount,
                     usage: totalUsage,
+                    // The final text rides the lifecycle event so the gateway
+                    // bridge can forward it — text-delta events alone miss the
+                    // engine-side quality-gate note (tools ran, no answer).
+                    ...(outcome.output ? { output: outcome.output } : {}),
                     ...(outcome.summary ? { summary: outcome.summary } : {}),
                 });
                 session.resolve({
