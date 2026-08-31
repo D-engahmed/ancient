@@ -1,0 +1,54 @@
+diff --git a/packages/cli/src/lib/execution-stream.ts b/packages/cli/src/lib/execution-stream.ts
+index 1a839a2..1124e28 100644
+--- a/packages/cli/src/lib/execution-stream.ts
++++ b/packages/cli/src/lib/execution-stream.ts
+@@ -231,7 +231,21 @@ export class ExecutionMessageAssembler {
+ 
+     const text = this.#text.join("");
+     if (text.length > 0 || this.#terminal === "completed") {
+-      parts.push({ type: "text", text: text || this.#terminalPayload.output || "" });
++      const resolvedText = text || this.#terminalPayload.output || "";
++      // Defense in depth: even with the engine's own quality gate, a
++      // terminal "completed" run can still resolve with nothing to show
++      // (e.g. zero tool calls, zero text deltas — the trivial-prompt case
++      // the quality gate doesn't cover since it only fires when
++      // toolCount > 0). Never render that as a silent blank bubble; the
++      // user should always be able to tell "it answered with nothing" apart
++      // from "it's still working" or "the UI is broken".
++      const finalText =
++        resolvedText.length > 0
++          ? resolvedText
++          : this.#terminal === "completed" && this.#tools.size === 0
++            ? "(No response. The model returned no output for this — try rephrasing, or check that the selected model is valid for your provider.)"
++            : resolvedText;
++      parts.push({ type: "text", text: finalText });
+     }
+ 
+     for (const [callId, tool] of this.#tools) {
+diff --git a/packages/execution/src/engine.ts b/packages/execution/src/engine.ts
+index 307db19..fb52556 100644
+--- a/packages/execution/src/engine.ts
++++ b/packages/execution/src/engine.ts
+@@ -294,6 +294,22 @@ export class ExecutionEngine {
+                     session.status = "running";
+                 }
+ 
++                // If the run still has nothing to show after (possibly)
++                // escalating once, say so explicitly instead of resolving
++                // with a genuinely empty output — an empty `output` here
++                // renders as a silent blank turn with no error on the CLI
++                // (ExecutionMessageAssembler always emits a text part once
++                // the run is terminal). This is not a fabricated answer —
++                // it names exactly what happened so the user isn't left
++                // staring at nothing.
++                if (outcome.toolCount > 0 && outcome.output.trim().length === 0) {
++                    const escalatedNote = reselectionCount > 0 ? " even after escalating to a heavier strategy" : "";
++                    outcome = {
++                        ...outcome,
++                        output: `I ran ${outcome.toolCount} tool call${outcome.toolCount === 1 ? "" : "s"} for this but couldn't produce a final written answer${escalatedNote}. Try a narrower request — one file or directory at a time tends to get an actual answer instead of an empty one.`,
++                    };
++                }
++
+                 // Graceful completion — terminal, written by the engine.
+                 session.status = "completed";
+                 session.publish("completed", {
