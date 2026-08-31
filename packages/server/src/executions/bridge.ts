@@ -166,6 +166,10 @@ export class ExecutionEventBridge {
           : undefined;
         this.finish("completed", {
           summary: typeof event.payload?.summary === "string" ? event.payload.summary : undefined,
+          // The engine's final text (incl. the quality-gate "ran tools but no
+          // answer" note) — without this the wire only carried text deltas and
+          // an engine-synthesized output silently never reached the CLI.
+          output: typeof event.payload?.output === "string" ? event.payload.output : undefined,
           usage,
         });
         break;

@@ -34,7 +34,7 @@ import { MemoryEventBus } from "@ANCIENT/infrastructure/events";
 import { ApprovalPolicy, Redactor, type RiskCategory } from "@ANCIENT/infrastructure/security";
 import { DEFAULT_CHAT_MODEL_ID, type ChatModelSelection, type ModeType } from "@ANCIENT/shared";
 import { resolveChatModel } from "../lib/models";
-import { modelKey, checkCooldown, RateLimitCooldownError } from "../lib/rate-limit-breaker";
+import { modelKey, checkCooldown, recordRateLimitFailure, RateLimitCooldownError } from "../lib/rate-limit-breaker";
 import { selectHealthyFallbackModel } from "../lib/fallback";
 import { clientErrorFrom } from "../lib/error-mapper";
 import { loadSettings } from "../hooks/settings";
@@ -126,7 +126,10 @@ export class ExecutionHub {
       // the cooldown error surfaces — the user's explicit model choice wins
       // over silent replacement.
       const settings = await loadSettings(request.cwd ?? null);
-      const rlKey = modelKey(resolved.provider, resolved.modelId);
+      // Tracks the model this run will ACTUALLY use (after any cooldown
+      // fallback swap) so a rate-limit failure below is recorded against the
+      // right breaker key.
+      let rlKey = modelKey(resolved.provider, resolved.modelId);
       const cooldown = checkCooldown(rlKey);
       let fallbackDetail: BridgeFallbackDetail | undefined;
       if (cooldown.onCooldown) {
@@ -139,6 +142,7 @@ export class ExecutionHub {
             reason: `your selected model (${selectedWas}) is rate-limited (~${cooldown.retryAfterSeconds}s) — using ${fallback.resolved.modelId} for this run instead`,
           };
           resolved = fallback.resolved;
+          rlKey = modelKey(resolved.provider, resolved.modelId);
         } else {
           throw new RateLimitCooldownError(resolved.modelId, cooldown.retryAfterSeconds);
         }
@@ -181,6 +185,20 @@ export class ExecutionHub {
       void session.done.then((result) => {
         const live = this.#executions.get(executionId);
         if (live) live.status = result.status;
+        // Learn rate-limit failures so the NEXT execution on this model fails
+        // fast (or adopts a healthy fallback) instead of replaying the same
+        // multi-attempt retry cycle against a quota that hasn't reset — the
+        // execution path previously never tripped the breaker, unlike /chat.
+        if (result.status === "failed") {
+          const code = result.lastError?.code;
+          const message = result.error ?? result.lastError?.message ?? "";
+          if (
+            code === "PROVIDER_RATE_LIMITED" ||
+            !code && /rate.?limit|quota exceeded|\b429\b/i.test(message)
+          ) {
+            recordRateLimitFailure(rlKey);
+          }
+        }
         unsubscribe();
       });
 
