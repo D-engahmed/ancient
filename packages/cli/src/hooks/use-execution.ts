@@ -50,7 +50,7 @@ type ActiveRun = {
   executionId: string;
   assembler: ExecutionMessageAssembler;
   controller: AbortController;
-  watchdog: ReturnType<typeof setTimeout>;
+  watchdog: ReturnType<typeof setTimeout> | null;
 };
 
 export function useExecution(initialMessages: Message[] = []) {
@@ -125,7 +125,7 @@ export function useExecution(initialMessages: Message[] = []) {
   function teardown(controller: AbortController) {
     const active = activeRef.current;
     if (active?.controller === controller) {
-      clearTimeout(active.watchdog);
+      if (active.watchdog) clearTimeout(active.watchdog);
       activeRef.current = null;
     }
     if (durationRef.current) {
@@ -149,15 +149,13 @@ export function useExecution(initialMessages: Message[] = []) {
         mode: params.mode,
         model: params.modelSelection,
       });
-      const watchdog = setTimeout(() => {
-        if (activeRef.current?.controller !== controller) return;
-        controller.abort();
-        teardown(controller);
-        setStatus("ready");
-      }, CANCEL_WATCHDOG_MS);
-      (watchdog as unknown as { unref?: () => void }).unref?.();
-
-      activeRef.current = { executionId: started.executionId, assembler, controller, watchdog };
+      // No watchdog here: a real model turn routinely takes longer than a few
+      // seconds, and a timer armed on every run cut the SSE stream mid-flight
+      // and landed in the `setStatus("ready")` path below — rendering a live
+      // (or failed) run as a green COMPLETED with whatever partial text had
+      // arrived. The cancel watchdog is armed in interrupt() instead, where a
+      // dropped stream is actually the intended fallback.
+      activeRef.current = { executionId: started.executionId, assembler, controller, watchdog: null };
       setStatus("streaming");
 
       for await (const event of streamExecutionEvents(started.executionId, {
@@ -222,7 +220,18 @@ export function useExecution(initialMessages: Message[] = []) {
     // false` and stops writing UI state — a cancelled run must never clobber
     // the "ready" status with a late terminal event.
     generationRef.current++;
-    teardown(active.controller);
+    // Cancel watchdog: if the server doesn't honour the cancel (and close the
+    // stream) within CANCEL_WATCHDOG_MS, drop the stream locally so the UI
+    // doesn't stay stuck on EXECUTING. Only armed here — never on a normal
+    // run, where a long-lived stream is the expected shape.
+    const controller = active.controller;
+    active.watchdog = setTimeout(() => {
+      if (activeRef.current?.controller !== controller) return;
+      controller.abort();
+      teardown(controller);
+      setStatus("ready");
+    }, CANCEL_WATCHDOG_MS);
+    (active.watchdog as unknown as { unref?: () => void }).unref?.();
     setStatus("ready");
     void apiClient.executions.cancel(active.executionId, "cancelled by user").catch(() => undefined);
   }, []);
