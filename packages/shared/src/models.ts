@@ -54,11 +54,14 @@ export const SUPPORTED_CHAT_MODELS = [
   { id: "claude-3-5-sonnet-20241022", provider: "anthropic", pricing: { inputUsdPerMillionTokens: 3, outputUsdPerMillionTokens: 15 } },
 
   // ---- Google Gemini ----
-  { id: "gemini-3.6-flash", provider: "google", pricing: { inputUsdPerMillionTokens: 0.15, outputUsdPerMillionTokens: 0.6 } },
+  // NOTE: keep this in sync with providers.ts's Gemini suggestion list.
+  // gemini-3.6-flash / 3.5-flash-lite / 3.1-pro-preview were removed there
+  // because they fail validation against the live API (see providers.ts) —
+  // they must not reappear here as if they were valid, priced models.
   { id: "gemini-3.7-flash", provider: "google", pricing: { inputUsdPerMillionTokens: 0.15, outputUsdPerMillionTokens: 0.6 } },
-  { id: "gemini-3.5-flash-lite", provider: "google", pricing: { inputUsdPerMillionTokens: 0.075, outputUsdPerMillionTokens: 0.3 } },
-  { id: "gemini-3.1-pro-preview", provider: "google", pricing: { inputUsdPerMillionTokens: 1.25, outputUsdPerMillionTokens: 5 } },
   { id: "gemini-2.5-flash", provider: "google", pricing: { inputUsdPerMillionTokens: 1.25, outputUsdPerMillionTokens: 5 } },
+  // TODO: add gemini-2.5-pro with real pricing — it's in providers.ts's
+  // suggestion list but has no entry (and therefore no cost tracking) here.
 
   // ---- DeepSeek ----
   { id: "deepseek-v4", provider: "deepseek", pricing: { inputUsdPerMillionTokens: 0.5, outputUsdPerMillionTokens: 2 } },
