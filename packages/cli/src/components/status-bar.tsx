@@ -73,10 +73,10 @@ export function StatusBar() {
         </>
       ) : null}
       {branch ? (
-        <text attributes={TextAttributes.DIM}>
-          {branch}
-          {dirty ? ` ${colors.error}●` : ""}
-        </text>
+        <>
+          <text attributes={TextAttributes.DIM}>{branch}</text>
+          {dirty ? <text fg={colors.error}> ●</text> : null}
+        </>
       ) : null}
       {serverStats.samples > 0 ? (
         <text attributes={TextAttributes.DIM} fg={serverStats.meetsTarget ? colors.success : colors.error}>
