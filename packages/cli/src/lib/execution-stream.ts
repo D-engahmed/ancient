@@ -295,6 +295,16 @@ export class ExecutionMessageAssembler {
     return this.#startedAt;
   }
 
+  /** Whether the execution is mid-tool-call (a legitimately event-free stretch:
+   *  a long bash/build emits nothing until its capability.completed lands, and
+   *  the recovery watchdog must not mistake that for a stall). */
+  get hasRunningTool(): boolean {
+    for (const tool of this.#tools.values()) {
+      if (tool.state === "running") return true;
+    }
+    return false;
+  }
+
   /** Whether the assembler has received any events. */
   get hasStarted(): boolean {
     return this.#startedAt !== null;
