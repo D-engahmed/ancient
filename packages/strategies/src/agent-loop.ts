@@ -10,9 +10,11 @@ import type { UsageTokens } from "@ANCIENT/infrastructure/providers";
 import { makeError } from "@ANCIENT/contracts";
 import { sumUsage, EMPTY_USAGE } from "./util";
 import { asEnvelope } from "./errors";
+import { streamModelTurn } from "./model-stream";
 import type {
     ExecutionStrategy,
     ModelToolCall,
+    ModelTurnResult,
     StrategyEvent,
     StrategyRuntime,
     TaskProfile,
@@ -51,45 +53,61 @@ export const agentLoopStrategy: ExecutionStrategy = {
 
         try {
             while (turnCount < maxTurns) {
-                const turn = await runtime.runModel({
+                // Stream the turn: partial deltas go to the engine live, the
+                // full result (text + tool calls + usage) settles at the end.
+                let turn: ModelTurnResult;
+                let turnText = "";
+                for await (const part of streamModelTurn(runtime, {
                     system: SYSTEM,
                     prompt: `Task: ${profile.description}\n${profile.tools?.length ? `Tools available as needed.` : ""}`,
                     history,
                     tools,
-                });
-
-                turnCount += 1;
-                usage = sumUsage(usage, turn.usage);
-                if (turn.text.trim()) {
-                    producedText = true;
-                    history.push({ role: "assistant", text: turn.text });
-                    yield { type: "text-delta", text: turn.text } as const;
+                })) {
+                    if (part.type === "delta") {
+                        turnText += part.text;
+                        producedText = true;
+                        yield { type: "text-delta", text: part.text } as const;
+                    } else {
+                        turn = part.result;
+                    }
                 }
 
-                if (turn.toolCalls.length === 0) {
+                turnCount += 1;
+                usage = sumUsage(usage, turn!.usage);
+                if (turnText.trim()) {
+                    history.push({ role: "assistant", text: turnText });
+                }
+
+                if (turn!.toolCalls.length === 0) {
                     if (toolCount > 0 && !producedText) {
                         // The model ran tools but produced no prose — land the
                         // answer explicitly so a loop that went quiet is never
                         // "complete" without contactable output (the repro for
                         // empty final messages — docs/03 AS-BUILT fix).
-                        const closing = await runtime.runModel({
+                        let closing: ModelTurnResult;
+                        for await (const part of streamModelTurn(runtime, {
                             system: "You are ANCIENT's agent loop. You already ran tools and observed their results in the conversation. Write the final answer to the task now. Do NOT call any tools.",
                             prompt: `Task: ${profile.description}\n\nTool results are in the history above. Produce the final answer.`,
                             history,
-                        });
+                        })) {
+                            if (part.type === "delta") {
+                                producedText = true;
+                                yield { type: "text-delta", text: part.text } as const;
+                            } else {
+                                closing = part.result;
+                            }
+                        }
                         turnCount += 1;
-                        usage = sumUsage(usage, closing.usage);
-                        if (closing.text.trim()) {
-                            producedText = true;
-                            history.push({ role: "assistant", text: closing.text });
-                            yield { type: "text-delta", text: closing.text } as const;
+                        usage = sumUsage(usage, closing!.usage);
+                        if (closing!.text.trim()) {
+                            history.push({ role: "assistant", text: closing!.text });
                         }
                     }
                     yield { type: "done", turnCount, toolCount, usage } as const;
                     return;
                 }
 
-                for (const call of turn.toolCalls) {
+                for (const call of turn!.toolCalls) {
                     yield { type: "tool-call", call } as const;
                     toolCount += 1;
                     const res = await executeSafe(runtime, call);

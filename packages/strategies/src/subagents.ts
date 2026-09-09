@@ -10,6 +10,7 @@ import type { UsageTokens } from "@ANCIENT/infrastructure/providers";
 import { makeError } from "@ANCIENT/contracts";
 import { extractJson, sumUsage, EMPTY_USAGE } from "./util";
 import { agentLoopStrategy } from "./agent-loop";
+import { streamModelTurn } from "./model-stream";
 import type { ExecutionStrategy, ModelToolCall, StrategyEvent, StrategyRuntime, TaskProfile } from "./types";
 
 export const RUNG = 2 as const;
@@ -96,15 +97,17 @@ export const subagentsStrategy: ExecutionStrategy = {
         if (findings.length > 0) {
             const digest = findings.join("\n").slice(0, 8_000);
             try {
-                const final = await runtime.runModel({
+                for await (const part of streamModelTurn(runtime, {
                     system:
                         "You are ANCIENT's report synthesizer. Finished subtasks explored the task and returned findings. " +
                         "Now write the single, comprehensive final answer to the ORIGINAL task, organized from those findings. Do NOT call tools.",
                     prompt: `Original task: ${profile.description}\n\nSubtasks completed: ${plan.length}\n\nFindings:\n${digest}\n\nWrite the final answer now.`,
-                });
-                usage = sumUsage(usage, final.usage);
-                if (final.text.trim()) {
-                    yield { type: "text-delta", text: final.text } as const;
+                })) {
+                    if (part.type === "delta") {
+                        yield { type: "text-delta", text: part.text } as const;
+                    } else {
+                        usage = sumUsage(usage, part.result.usage);
+                    }
                 }
             } catch (err) {
                 // Synthesis is a quality improvement, never a run-killer: the

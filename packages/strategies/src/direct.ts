@@ -7,11 +7,12 @@
 // (A-STRAT-001).
 
 import type { UsageTokens } from "@ANCIENT/infrastructure/providers";
-import { makeError, type ErrorEnvelope } from "@ANCIENT/contracts";
 import { sumUsage, EMPTY_USAGE } from "./util";
 import { asEnvelope } from "./errors";
+import { streamModelTurn } from "./model-stream";
 import type {
     ExecutionStrategy,
+    ModelToolCall,
     ModelTurnResult,
     StrategyEvent,
     StrategyRuntime,
@@ -44,58 +45,59 @@ export const directStrategy: ExecutionStrategy = {
         let usage: UsageTokens = EMPTY_USAGE();
         const history: TurnMessage[] = [];
 
-        // Pass 1 — the whole task in one turn.
-        const pass1 = await safeTurn(runtime, {
-            system: "You are ANCIENT's direct executor. Complete the task using the tools, then give the final answer with no further tool calls.",
-            prompt: `Task: ${profile.description}`,
-            tools,
-            history,
-        });
+        try {
+            // Pass 1 — the whole task in one turn. Deltas stream live to the
+            // engine as the model generates; the full result lands after.
+            let pass1: ModelTurnResult;
+            for await (const part of streamModelTurn(runtime, {
+                system: "You are ANCIENT's direct executor. Complete the task using the tools, then give the final answer with no further tool calls.",
+                prompt: `Task: ${profile.description}`,
+                tools,
+                history,
+            })) {
+                if (part.type === "delta") yield { type: "text-delta", text: part.text } as const;
+                else pass1 = part.result;
+            }
 
-        if (!pass1.ok) {
-            yield { type: "error", error: pass1.error } as const;
-            yield { type: "done", turnCount, toolCount, usage } as const;
-            return;
-        }
-
-        turnCount += 1;
-        usage = sumUsage(usage, pass1.result.usage);
-        yield { type: "text-delta", text: pass1.result.text } as const;
-
-        for (const call of pass1.result.toolCalls) {
-            yield { type: "tool-call", call } as const;
-            toolCount += 1;
-            const res = await executeSafe(runtime, call);
-            history.push({ role: "assistant", text: `${call.name} → ${res.text}` });
-            yield {
-                type: "tool-result",
-                callId: call.id,
-                result: res.text,
-                ...(res.failure ? { error: res.text, failure: res.failure } : {}),
-            } as const;
-        }
-
-        // Pass 2 — one continuation to land the answer after observing tools.
-        // Skipped entirely when pass 1 needed no tools: the task is already
-        // complete and a second turn would only re-answer pointlessly (the
-        // honesty rule — never mint turns you don't need).
-        if (pass1.result.toolCalls.length === 0) {
-            yield { type: "done", turnCount, toolCount, usage } as const;
-            return;
-        }
-
-        const pass2 = await safeTurn(runtime, {
-            system: "You are ANCIENT's direct executor. Land the final answer now.",
-            prompt: `Task: ${profile.description}`,
-            tools,
-            history: [...history, { role: "user", text: "Tool results observed above. Give the final answer." }],
-        });
-
-        if (pass2.ok) {
             turnCount += 1;
-            usage = sumUsage(usage, pass2.result.usage);
-            yield { type: "text-delta", text: pass2.result.text } as const;
-            for (const call of pass2.result.toolCalls) {
+            usage = sumUsage(usage, pass1!.usage);
+
+            for (const call of pass1!.toolCalls) {
+                yield { type: "tool-call", call } as const;
+                toolCount += 1;
+                const res = await executeSafe(runtime, call);
+                history.push({ role: "assistant", text: `${call.name} → ${res.text}` });
+                yield {
+                    type: "tool-result",
+                    callId: call.id,
+                    result: res.text,
+                    ...(res.failure ? { error: res.text, failure: res.failure } : {}),
+                } as const;
+            }
+
+            // Pass 2 — one continuation to land the answer after observing
+            // tools. Skipped entirely when pass 1 needed no tools: the task is
+            // already complete and a second turn would only re-answer
+            // pointlessly (the honesty rule — never mint turns you don't need).
+            if (pass1!.toolCalls.length === 0) {
+                yield { type: "done", turnCount, toolCount, usage } as const;
+                return;
+            }
+
+            let pass2: ModelTurnResult;
+            for await (const part of streamModelTurn(runtime, {
+                system: "You are ANCIENT's direct executor. Land the final answer now.",
+                prompt: `Task: ${profile.description}`,
+                tools,
+                history: [...history, { role: "user", text: "Tool results observed above. Give the final answer." }],
+            })) {
+                if (part.type === "delta") yield { type: "text-delta", text: part.text } as const;
+                else pass2 = part.result;
+            }
+
+            turnCount += 1;
+            usage = sumUsage(usage, pass2!.usage);
+            for (const call of pass2!.toolCalls) {
                 yield { type: "tool-call", call } as const;
                 toolCount += 1;
                 const res = await executeSafe(runtime, call);
@@ -106,33 +108,21 @@ export const directStrategy: ExecutionStrategy = {
                     ...(res.failure ? { error: res.text, failure: res.failure } : {}),
                 } as const;
             }
-        } else {
-            yield { type: "error", error: pass2.error } as const;
-        }
 
-        yield { type: "done", turnCount, toolCount, usage } as const;
+            yield { type: "done", turnCount, toolCount, usage } as const;
+        } catch (err) {
+            yield {
+                type: "error",
+                error: asEnvelope(err, {
+                    code: "STRATEGY_UNRECOVERABLE",
+                    domain: "strategy",
+                    message: `direct: ${err instanceof Error ? err.message : String(err)}`,
+                }),
+            } as const;
+            yield { type: "done", turnCount, toolCount, usage } as const;
+        }
     },
 };
-
-async function safeTurn(
-    runtime: StrategyRuntime,
-    input: Parameters<StrategyRuntime["runModel"]>[0],
-): Promise<{ ok: true; result: ModelTurnResult } | { ok: false; error: ErrorEnvelope }> {
-    try {
-        return { ok: true, result: await runtime.runModel(input) };
-    } catch (err) {
-        // A typed envelope (e.g. PROVIDER_RATE_LIMITED from the model port)
-        // keeps its classification; a generic throw is conservatively terminal.
-        return {
-            ok: false,
-            error: asEnvelope(err, {
-                code: "STRATEGY_UNRECOVERABLE",
-                domain: "strategy",
-                message: `direct: ${err instanceof Error ? err.message : String(err)}`,
-            }),
-        };
-    }
-}
 
 async function executeSafe(runtime: StrategyRuntime, call: { id: string; name: string; args: unknown }): Promise<ToolResult> {
     try {
