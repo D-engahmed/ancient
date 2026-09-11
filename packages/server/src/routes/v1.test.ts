@@ -5,6 +5,7 @@ import type { AuthenticatedEnv } from "../middleware/require-auth";
 import { createV1Routes, platformModelCatalog } from "./v1";
 import { PLATFORM_API_USER } from "../middleware/require-api-key";
 import type { ExecutionHub, ExecutionEntry } from "../executions/hub";
+import { CostLedger } from "../lib/cost-ledger";
 import { DEFAULT_CHAT_MODEL_ID } from "@ANCIENT/shared";
 
 process.env.ANCIENT_PLATFORM_API_KEY = "test-platform-key";
@@ -40,6 +41,7 @@ function buildApp(key: string) {
         list: () => [entry],
         get: (_userId: string, id: string) => (id === entry.executionId ? entry : undefined),
         cancel: (_userId: string, id: string) => (id === entry.executionId ? { ...entry, status: "cancelled" } : undefined),
+        ledger: new CostLedger({ ceilingUsd: 100 }),
     } as unknown as ExecutionHub;
 
     const app = new Hono<AuthenticatedEnv>();
@@ -85,6 +87,19 @@ describe("GET /v1/models", () => {
         expect(noKey.available).toBe("unavailable");
         const local = models.find((m) => m.provider === "ollama")!;
         expect(local.available).toBe("byok");
+    });
+});
+
+describe("GET /v1/platform/usage (A-025)", () => {
+    it("reports company spend against the ceiling under the platform key", async () => {
+        const { request } = buildApp("test-platform-key");
+        const res = await request("/v1/platform/usage");
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { spendUsd: number; ceilingUsd: number; active: boolean; over: boolean };
+        expect(body.ceilingUsd).toBe(100);
+        expect(body.active).toBe(true);
+        expect(body.over).toBe(false);
+        expect(body.spendUsd).toBe(0);
     });
 });
 

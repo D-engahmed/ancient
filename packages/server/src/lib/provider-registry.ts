@@ -24,6 +24,10 @@ export type ResolvedModel = {
     provider: SupportedProvider | "custom";
     modelId: string;
     apiKey?: string;
+    /** How the credentials were obtained; set by the resolution adapters
+     *  (env = platform-billed, connection = user BYOK). Absent on raw plugin
+     *  results — billing layers rely on the adapter-set value. */
+    provenance?: Provenance;
 };
 
 /** How the credentials were obtained for this resolution. */

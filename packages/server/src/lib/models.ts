@@ -19,11 +19,14 @@ export type { ResolvedModel } from "./provider-registry";
 // switch branch. The functions below are thin provenance adapters.
 
 function resolveSupportedChatModel(model: SupportedChatModel): ResolvedModel {
-    return defaultProviderRegistry.resolve({
+    return {
+        ...defaultProviderRegistry.resolve({
+            provenance: "env",
+            protocol: model.provider,
+            modelId: model.id,
+        }),
         provenance: "env",
-        protocol: model.provider,
-        modelId: model.id,
-    });
+    };
 }
 
 // ---- Fallback helper (after a rate limit) ----
@@ -60,13 +63,16 @@ export function resolveFreeModel(cfg?: FreeModelConfig): ResolvedModel | null {
     const keyEnv = cfg?.apiKeyEnv ?? "ANCIENT_FREE_MODEL_API_KEY";
     const apiKey = process.env[keyEnv];
 
-    return defaultProviderRegistry.resolve({
+    return {
+        ...defaultProviderRegistry.resolve({
+            provenance: "connection",
+            protocol: "custom",
+            baseUrl,
+            apiKey,
+            modelId,
+        }),
         provenance: "connection",
-        protocol: "custom",
-        baseUrl,
-        apiKey,
-        modelId,
-    });
+    };
 }
 
 // ---- BYOK connection resolver ----
@@ -136,11 +142,14 @@ async function resolveByokConnection(
     });
 
     // anthropic / gemini / openai(+local) all resolve via registered plugins.
-    return defaultProviderRegistry.resolve({
+    return {
+        ...defaultProviderRegistry.resolve({
+            provenance: "connection",
+            protocol: conn.protocol,
+            baseUrl: conn.baseUrl,
+            apiKey,
+            modelId: conn.modelId,
+        }),
         provenance: "connection",
-        protocol: conn.protocol,
-        baseUrl: conn.baseUrl,
-        apiKey,
-        modelId: conn.modelId,
-    });
+    };
 }

@@ -26,6 +26,7 @@ import type { ErrorCode, ErrorEnvelope } from "@ANCIENT/contracts";
 import type { ClientSafeError } from "@ANCIENT/shared";
 import { RateLimitCooldownError } from "./rate-limit-breaker";
 import { ProviderConnectionValidationError } from "./provider-connection-validation";
+import { CostCeilingExceededError } from "./cost-ledger";
 
 /** The wire shape every error response body spells (docs/02 §F). */
 export type GatewayErrorResponse = { error: ClientSafeError };
@@ -76,6 +77,7 @@ const GENERIC_MESSAGES: Partial<Record<ErrorCode, string>> = {
     INFRA_SECRETS_UNAVAILABLE: "The secrets store is unavailable.",
     CONFLICT_VERSION_MISMATCH: "The resource changed since it was read. Reload and retry.",
     CONFLICT_DUPLICATE_IDEMPOTENCY_KEY: "A request with this idempotency key was already processed.",
+    BILLING_COST_CEILING_EXCEEDED: "The platform cost ceiling has been reached. Contact the administrator to increase the budget.",
     SYSTEM_UNKNOWN: "Something went wrong on our side. Please retry or check the trace id.",
 };
 
@@ -101,6 +103,7 @@ export function statusForCode(code: ErrorCode, fallback = 500): number {
             return 413;
         case "EDGE_ABUSE_SIGNATURE":
         case "POLICY_DENIED":
+        case "BILLING_COST_CEILING_EXCEEDED":
             return 403;
         case "AUTH_UNAUTHENTICATED":
         case "AUTH_TOKEN_EXPIRED":
@@ -150,6 +153,18 @@ export function clientErrorFrom(err: unknown, traceId: string): { response: Clie
                 traceId,
             },
             status: 422,
+        };
+    }
+
+    if (err instanceof CostCeilingExceededError) {
+        return {
+            response: {
+                code: err.envelope.code,
+                message: err.envelope.clientMessage ?? err.envelope.message,
+                retryable: false,
+                traceId: err.envelope.traceId,
+            },
+            status: 403,
         };
     }
 

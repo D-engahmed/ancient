@@ -66,6 +66,8 @@ export type ErrorCode =
   // CONFLICT: state conflicts.
   | "CONFLICT_VERSION_MISMATCH"
   | "CONFLICT_DUPLICATE_IDEMPOTENCY_KEY"
+  // BILLING: platform spend controls (the company's cost ceiling, A-025).
+  | "BILLING_COST_CEILING_EXCEEDED"
   // SYSTEM: last resort; every occurrence is a bug ticket, not steady-state.
   | "SYSTEM_UNKNOWN";
 
@@ -107,6 +109,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "INFRA_SECRETS_UNAVAILABLE",
   "CONFLICT_VERSION_MISMATCH",
   "CONFLICT_DUPLICATE_IDEMPOTENCY_KEY",
+  "BILLING_COST_CEILING_EXCEEDED",
   "SYSTEM_UNKNOWN",
 ] as const;
 

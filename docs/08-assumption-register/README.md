@@ -76,6 +76,12 @@ What future condition requires reviewing this decision?
   A-023   A versioned public `/v1` API is the surface a white-label product (Coding/Design/Cowork) builds on  Validate
   A-024   Experiences are thin adapters translating product actions into one canonical `ExperienceRequest`    Validate
 
+## Assumptions added by the Cost Ceiling (Phase 5)
+
+  ID      Assumption                                                                                       Initial status
+  ------- ------------------------------------------------------------------------------------------------- ------------------------
+  A-025   A per-deployment cost ceiling on platform-billed spend (single-deploy company budget)             Validate
+
 ## Decision gates
 
 No major layer should be implemented without:
@@ -492,3 +498,65 @@ for Coding/Design/Cowork follow as thin mappings.
 - Any experience needs a capability outside the single execution surface
   (e.g. real-time co-editing) → design that capability into the engine, never
   a fork (A-002).
+
+---
+
+## ASSUMPTION-025 — A per-deployment cost ceiling bounds platform-billed spend
+
+## Statement
+Each ANCIENT deployment (one company, A-022) may set a hard cost ceiling on
+platform-billed spend: every run that rides the deployment's env default key
+(`provenance: "env"`) settles into a `CostLedger` on completion, and the
+start gate refuses new platform-billed runs once spend meets the ceiling —
+rejected with the closed code `BILLING_COST_CEILING_EXCEEDED` as a terminal
+`execution.failed`. User BYOK runs bill the user's own provider account and
+never count against the ceiling. The ledger is in-memory (a restart resets it)
+until the durable accounting table lands with the durable execution store.
+
+## Why do we believe it?
+- Single-deploy white-label (A-022) makes "the company" a deployment boundary,
+  so a per-deployment ledger is the honest spending control for a platform
+  whose company key is the default model credential.
+- Cost math already exists in exactly one place (`infrastructure/providers/cost.ts`
+  over the shared pricing catalog); the ledger is a thin accumulator on it,
+  and unpriced models (local) settle at 0 without being counted as free.
+- The engine already ships `usage` on the terminal lifecycle event, so
+  settlement needs no new instrumentation — only a cost computation.
+
+## What fails if it is wrong?
+- In-memory ledger loses history on restart → the ceiling guards spend since
+  restart, not cumulative billing; a company needing accurate cumulative cost
+  must wait for the durable accounting table.
+- Executions in flight when spend crosses the ceiling still complete (the gate
+  guards starts, not running costs) → ceiling overshoot = one in-flight run.
+
+## Blast radius
+- New `packages/server/src/lib/cost-ledger.ts` (+ error-mapper branch and the
+  `BILLING_COST_CEILING_EXCEEDED` ErrorCode in the closed taxonomy), hub
+  start-gate + settlement, `execution.completed` carries a real `costUsd` when
+  the platform can price the model, `GET /v1/platform/usage` for operator
+  visibility. No engine/strategy/capability change.
+
+## Alternatives
+- Per-model budgets: rejected for now — a single company ceiling is the
+  smallest control that answers "why is my platform bill growing?"; per-model
+  floors/splits are a data extension of the same ledger.
+- Count BYOK spend against the ceiling: rejected — BYOK is the user's own
+  account (A-022) and metering it would require the tenant billing the
+  platform doesn't do.
+
+## Decision
+Keep. Ship the in-memory per-deployment `CostLedger` with a start-gate and
+completion settlement; expose spend via `/v1/platform/usage`.
+
+## Validation
+- `cost-ledger.test.ts`: ceiling parsing, spend accumulation for priced +
+  unpriced models, gate behavior at/over the ceiling, typed error envelope.
+- `/v1/platform/usage` route test under the platform key.
+- Typecheck green; existing suite stays green.
+
+## Revisit trigger
+- A company asks for cumulative (non-restart-reset) accounting or per-user/
+  per-model budget splits → wire the durable ledger in the storage layer.
+- The platform starts metering tenant usage (multitenant deploy) → reopen
+  A-022 first.

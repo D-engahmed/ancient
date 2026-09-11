@@ -54,6 +54,11 @@ export function createV1Routes(hub: ExecutionHub) {
 
     app.get("/models", (c) => c.json({ models: platformModelCatalog() }));
 
+    // Company spend visibility (A-025): platform-billed usage against the
+    // deployment's cost ceiling. `over: true` means new platform-billed runs
+    // are rejected at the gate with BILLING_COST_CEILING_EXCEEDED.
+    app.get("/platform/usage", (c) => c.json(hub.ledger.snapshot()));
+
     // Experiences (A-024): thin adapters over the one execution surface.
     app.get("/experiences", (c) =>
         c.json({
