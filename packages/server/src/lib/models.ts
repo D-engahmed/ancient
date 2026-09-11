@@ -6,6 +6,7 @@ import { db } from "@ANCIENT/database/client";
 import { decryptApiKey } from "./connection-crypto";
 import { assertSafeBaseUrl } from "./safe-url";
 import { defaultProviderRegistry, type ResolvedModel } from "./provider-registry";
+import { preferUserByok, type UserByokConnection } from "./credential-policy";
 import type { ChatModelSelection, SupportedChatModel } from "@ANCIENT/shared";
 import { findSupportedChatModel, DEFAULT_CHAT_MODEL_ID } from "@ANCIENT/shared";
 
@@ -76,11 +77,36 @@ export async function resolveChatModel(
     if (selection.modelKind === "builtin") {
         const model = findSupportedChatModel(selection.modelId);
         if (!model) throw new Error(`Unsupported built‑in model: ${selection.modelId}`);
+
+        // A-022 precedence: the user's own key beats the platform default for
+        // the same provider brand. A DB failure degrades to the platform
+        // default rather than failing resolution — precedence is an
+        // optimization, not a hard dependency.
+        let connections: UserByokConnection[] = [];
+        try {
+            connections = await db.providerConnection.findMany({
+                where: { userId, isValid: true },
+                select: { id: true, protocol: true, modelId: true, baseUrl: true, isValid: true },
+            });
+        } catch {
+            connections = [];
+        }
+        const preferred = preferUserByok(selection, connections);
+        if (preferred.modelKind === "custom") {
+            return resolveByokConnection(preferred.connectionId, userId);
+        }
         return resolveSupportedChatModel(model);
     }
 
+    return resolveByokConnection(selection.connectionId, userId);
+}
+
+async function resolveByokConnection(
+    connectionId: string,
+    userId: string,
+): Promise<ResolvedModel> {
     const conn = await db.providerConnection.findUnique({
-        where: { id: selection.connectionId, userId },
+        where: { id: connectionId, userId },
     });
     if (!conn) {
         throw makeError({

@@ -32,8 +32,9 @@ import { fetchUrlTool } from "@ANCIENT/capabilities/browser";
 import { ExecutionEngine, createAiModelChat, type ExecutionStatus } from "@ANCIENT/execution";
 import { MemoryEventBus } from "@ANCIENT/infrastructure/events";
 import { ApprovalPolicy, Redactor, type RiskCategory } from "@ANCIENT/infrastructure/security";
-import { DEFAULT_CHAT_MODEL_ID, type ChatModelSelection, type ModeType } from "@ANCIENT/shared";
+import type { ChatModelSelection, ModeType } from "@ANCIENT/shared";
 import { resolveChatModel } from "../lib/models";
+import { platformDefaultSelection } from "../lib/credential-policy";
 import { modelKey, checkCooldown, recordRateLimitFailure, RateLimitCooldownError } from "../lib/rate-limit-breaker";
 import { selectHealthyFallbackModel } from "../lib/fallback";
 import { clientErrorFrom } from "../lib/error-mapper";
@@ -117,7 +118,7 @@ export class ExecutionHub {
     };
 
     try {
-      const selection: ChatModelSelection = request.model ?? { modelKind: "builtin", modelId: DEFAULT_CHAT_MODEL_ID };
+      const selection: ChatModelSelection = request.model ?? platformDefaultSelection();
       let resolved = await resolveChatModel(selection, request.userId);
       // Mirrors the chat stream's cooldown policy: if the selected model
       // tripped an upstream rate limit recently, adopt a healthy fallback
