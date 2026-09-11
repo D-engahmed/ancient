@@ -27,6 +27,7 @@ import {
 } from "@ANCIENT/shared";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 import { requireApiKey } from "../middleware/require-api-key";
+import { byokRateLimit } from "../middleware/byok-rate-limit";
 import { envApiKeyForProtocol } from "../lib/provider-registry";
 import { guardJson } from "../lib/error-mapper";
 import { ExecutionHub } from "../executions/hub";
@@ -51,6 +52,10 @@ export function platformModelCatalog() {
 export function createV1Routes(hub: ExecutionHub) {
     const app = new Hono<AuthenticatedEnv>();
     app.use("*", requireApiKey);
+    // The single platform key is one identity; the existing per-user rate
+    // limiter gives it one shared request budget so a leaked key can't
+    // monopolize the upstream provider pool.
+    app.use("*", byokRateLimit);
 
     app.get("/models", (c) => c.json({ models: platformModelCatalog() }));
 
