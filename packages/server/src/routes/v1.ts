@@ -15,10 +15,20 @@
 //   POST /v1/executions/:id/cancel         request cancellation
 
 import { Hono } from "hono";
-import { SUPPORTED_CHAT_MODELS, type SupportedProvider } from "@ANCIENT/shared";
+import { zValidator } from "@hono/zod-validator";
+import {
+    SUPPORTED_CHAT_MODELS,
+    EXPERIENCE_REGISTRY,
+    experienceActionSchema,
+    experienceToExecution,
+    findExperience,
+    type ExperienceId,
+    type SupportedProvider,
+} from "@ANCIENT/shared";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 import { requireApiKey } from "../middleware/require-api-key";
 import { envApiKeyForProtocol } from "../lib/provider-registry";
+import { guardJson } from "../lib/error-mapper";
 import { ExecutionHub } from "../executions/hub";
 import { createExecutionsRoutes } from "./executions";
 
@@ -43,6 +53,47 @@ export function createV1Routes(hub: ExecutionHub) {
     app.use("*", requireApiKey);
 
     app.get("/models", (c) => c.json({ models: platformModelCatalog() }));
+
+    // Experiences (A-024): thin adapters over the one execution surface.
+    app.get("/experiences", (c) =>
+        c.json({
+            experiences: EXPERIENCE_REGISTRY.map((e) => ({
+                id: e.id,
+                label: e.label,
+                description: e.description,
+                defaultMode: e.defaultMode,
+                defaultAllow: [...e.defaultAllow],
+            })),
+        }),
+    );
+
+    app.post(
+        "/experiences/:id",
+        zValidator("json", experienceActionSchema),
+        async (c) => {
+            const experienceId = c.req.param("id") as ExperienceId;
+            const exp = findExperience(experienceId);
+            if (!exp) return guardJson(c, "Unknown experience", 404);
+
+            const body = c.req.valid("json");
+            const entry = await hub.start({
+                userId: c.get("userId"),
+                ...experienceToExecution({ ...body, experienceId }),
+            });
+            return c.json(
+                {
+                    executionId: entry.executionId,
+                    experienceId,
+                    status: entry.status,
+                    task: entry.task,
+                    mode: entry.mode,
+                    modelRef: entry.modelRef,
+                    lastSeq: entry.bridge.lastSeq,
+                },
+                202,
+            );
+        },
+    );
 
     // The execution surface maps 1:1 onto the interactive hub contract —
     // same envelopes, same SSE framing, same validation.

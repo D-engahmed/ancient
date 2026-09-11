@@ -31,8 +31,12 @@ function buildEntry(executionId: string): ExecutionEntry {
 
 function buildApp(key: string) {
     const entry = buildEntry("PLATFORM-EXEC-1");
+    const startCalls: Array<Record<string, unknown>> = [];
     const stubHub = {
-        start: async () => entry,
+        start: async (req: Record<string, unknown>) => {
+            startCalls.push(req);
+            return entry;
+        },
         list: () => [entry],
         get: (_userId: string, id: string) => (id === entry.executionId ? entry : undefined),
         cancel: (_userId: string, id: string) => (id === entry.executionId ? { ...entry, status: "cancelled" } : undefined),
@@ -51,7 +55,7 @@ function buildApp(key: string) {
             headers: { Authorization: `Bearer ${key}`, ...init?.headers },
         });
     }
-    return { request, entry };
+    return { request, entry, startCalls };
 }
 
 describe("GET /v1/models", () => {
@@ -116,5 +120,73 @@ describe("/v1/executions surface", () => {
         const body = (await res.json()) as { executions: Array<{ executionId: string }> };
         expect(body.executions).toHaveLength(1);
         expect(body.executions[0]!.executionId).toBe("PLATFORM-EXEC-1");
+    });
+});
+
+describe("/v1/experiences surface (A-024)", () => {
+    it("lists the shipped experiences with their defaults", async () => {
+        const { request } = buildApp("test-platform-key");
+        const res = await request("/v1/experiences");
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as {
+            experiences: Array<{ id: string; defaultMode: string; defaultAllow: string[] }>;
+        };
+        const ids = body.experiences.map((e) => e.id);
+        expect(ids).toEqual(["coding", "design", "cowork", "general"]);
+        const coding = body.experiences.find((e) => e.id === "coding")!;
+        expect(coding.defaultAllow).toContain("exec");
+        const cowork = body.experiences.find((e) => e.id === "cowork")!;
+        expect(cowork.defaultMode).toBe("PLAN");
+    });
+
+    it("starts a coding experience pre-authorized with the coding allow set", async () => {
+        const { request, startCalls } = buildApp("test-platform-key");
+        const res = await request("/v1/experiences/coding", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ task: "Add pagination to the list view." }),
+        });
+        expect(res.status).toBe(202);
+        const body = (await res.json()) as { executionId: string; experienceId: string };
+        expect(body.executionId).toBe("PLATFORM-EXEC-1");
+        expect(body.experienceId).toBe("coding");
+        const start = startCalls[0]!;
+        expect(start.userId).toBe(PLATFORM_API_USER);
+        expect(start.task).toBe("Add pagination to the list view.");
+        expect(start.mode).toBe("BUILD");
+        expect(start.allow).toContain("exec");
+    });
+
+    it("honors an explicit allow override for a general experience", async () => {
+        const { request, startCalls } = buildApp("test-platform-key");
+        const res = await request("/v1/experiences/general", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ task: "Audit the deploy scripts.", allow: ["read", "exec"] }),
+        });
+        expect(res.status).toBe(202);
+        const start = startCalls[0]!;
+        expect(start.allow).toEqual(["read", "exec"]);
+    });
+
+    it("404s an unknown experience id", async () => {
+        const { request } = buildApp("test-platform-key");
+        const res = await request("/v1/experiences/arena", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ task: "Anything." }),
+        });
+        expect(res.status).toBe(404);
+    });
+
+    it("rejects an empty task before reaching the hub", async () => {
+        const { request, startCalls } = buildApp("test-platform-key");
+        const res = await request("/v1/experiences/coding", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ task: "" }),
+        });
+        expect(res.status).toBe(400);
+        expect(startCalls).toHaveLength(0);
     });
 });
