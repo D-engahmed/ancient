@@ -58,6 +58,10 @@ export type ModelChat = (input: {
     prompt?: string;
     history?: TurnMessage[];
     tools?: { name: string; description: string; inputSchema: unknown }[];
+    /** Called with each partial text chunk as it arrives, so strategies can
+     *  yield live `text-delta` events instead of one batch after the turn.
+     *  Optional — ports may ignore it. */
+    onTextDelta?: (text: string) => void;
 }) => Promise<ModelTurnResult>;
 
 /**

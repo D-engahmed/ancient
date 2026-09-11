@@ -47,11 +47,25 @@ const CANCEL_WATCHDOG_MS = 5_000;
 /** How often to update the live duration display. */
 const DURATION_TICK_MS = 200;
 
+/** How long to wait for the start POST before recovering input (hung submit). */
+const SUBMIT_TIMEOUT_MS = 90_000;
+
+/** No envelope for this long while running ⇒ the stream is presumed stale. */
+const STALE_STREAM_MS = 300_000;
+
+/** Absolute ceiling for one execution before forcing recovery. */
+const MAX_RUN_MS = 1_800_000;
+
+/** Recovery watchdog sampling period. */
+const WATCHDOG_TICK_MS = 5_000;
+
 type ActiveRun = {
   executionId: string;
   assembler: ExecutionMessageAssembler;
   controller: AbortController;
   watchdog: ReturnType<typeof setTimeout> | null;
+  /** Timestamp of the last envelope received (watchdog liveness probe). */
+  lastEventAt: number;
 };
 
 export function useExecution(initialMessages: Message[] = []) {
@@ -65,6 +79,7 @@ export function useExecution(initialMessages: Message[] = []) {
   const activeRef = useRef<ActiveRun | null>(null);
   const generationRef = useRef(0);
   const durationRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const submitStartedAtRef = useRef(0);
 
   // Live duration ticker — updates every 200ms while execution is active.
   useEffect(() => {
@@ -87,6 +102,60 @@ export function useExecution(initialMessages: Message[] = []) {
     };
   }, [status]);
 
+  // Recovery watchdog — keeps the terminal from staying stuck at
+  // "submitted"/"streaming" (where InputBar is disabled and the next question
+  // is silently dropped) when the transport dies: the start POST hangs, the
+  // SSE stream produces no envelope for a long stretch, or a run exceeds the
+  // absolute ceiling. Unlike the old removed watchdog it NEVER fakes a
+  // COMPLETED — recovery surfaces an honest error, bumps the generation so any
+  // late stream resolution is a no-op, and re-enables the next question.
+  useEffect(() => {
+    if (status !== "submitted" && status !== "streaming") return;
+
+    const id = setInterval(() => {
+      const run = activeRef.current;
+
+      if (!run) {
+        // Still waiting on the start POST itself. Nothing is abortable here
+        // (the fetch is in flight), but the bumped generation makes any late
+        // resolution a silent no-op, so clearing status un-sticks input.
+        if (
+          status === "submitted" &&
+          submitStartedAtRef.current !== 0 &&
+          Date.now() - submitStartedAtRef.current > SUBMIT_TIMEOUT_MS
+        ) {
+          generationRef.current++;
+          setStatus("error");
+          setError(new Error("The server did not respond to the start request. Please check the server and try again."));
+        }
+        return;
+      }
+
+      const now = Date.now();
+      // A live tool call is legitimate event-free time (long bash/build);
+      // both recovery triggers are waived while one is in flight — the user
+      // still has ESC/interrupt to cancel it themselves.
+      const toolRunning = run.assembler.hasRunningTool;
+      const stalled = !toolRunning && now - run.lastEventAt > STALE_STREAM_MS;
+      const overBudget =
+        !toolRunning && run.assembler.startedAt != null && now - run.assembler.startedAt > MAX_RUN_MS;
+      if (!stalled && !overBudget) return;
+
+      generationRef.current++;
+      run.controller.abort();
+      teardown(run.controller);
+      setStatus("error");
+      setError(
+        new Error(
+          stalled
+            ? "No response for 5 minutes — the execution is presumed stuck; the partial answer may be incomplete. You can ask a new question."
+            : "The execution exceeded 30 minutes. You can ask a new question.",
+        ),
+      );
+    }, WATCHDOG_TICK_MS);
+    return () => clearInterval(id);
+  }, [status]);
+
   function upsertAssistant(message: ExecutionMessage) {
     setMessages((prev) => {
       const next = [...prev];
@@ -100,6 +169,7 @@ export function useExecution(initialMessages: Message[] = []) {
   function submit(params: SubmitParams): boolean {
     if (status === "submitted" || status === "streaming") return false;
     const generation = ++generationRef.current;
+    submitStartedAtRef.current = Date.now();
 
     setError(null);
     setTimeline([]);
@@ -156,13 +226,15 @@ export function useExecution(initialMessages: Message[] = []) {
       // (or failed) run as a green COMPLETED with whatever partial text had
       // arrived. The cancel watchdog is armed in interrupt() instead, where a
       // dropped stream is actually the intended fallback.
-      activeRef.current = { executionId: started.executionId, assembler, controller, watchdog: null };
+      activeRef.current = { executionId: started.executionId, assembler, controller, watchdog: null, lastEventAt: Date.now() };
       setStatus("streaming");
 
       for await (const event of streamExecutionEvents(started.executionId, {
         signal: controller.signal,
       })) {
         if (!isCurrent(generation, controller)) return;
+        const active = activeRef.current;
+        if (active) active.lastEventAt = Date.now();
 
         // Handle approval.requested: surface to UI, don't feed to assembler.
         if (event.type === "approval.requested") {
@@ -196,6 +268,13 @@ export function useExecution(initialMessages: Message[] = []) {
               : "Execution failed",
           ),
         );
+        setStatus("error");
+      } else if (assembler.terminal === null) {
+        // The SSE stream ended without a terminal envelope — the transport
+        // dropped before the server's completion/failure reached us. Never
+        // claim success on a partial answer; surface it honestly so the user
+        // knows the run didn't truly finish, and re-enable the next question.
+        setError(new Error("The connection to the server was lost before the execution finished. The partial answer above may be incomplete."));
         setStatus("error");
       } else {
         setStatus("ready");

@@ -55,6 +55,14 @@ export class ExecutionEventBridge {
   #textChunks: string[] = [];
   #closed = false;
 
+  /**
+   * Optional cost attribution hook set by the hub once the effective model is
+   * resolved: given a usage rollup, return US dollars or undefined when
+   * unknown (BYOK, unpriced local). Lets the terminal envelope carry a real
+   * costUsd instead of "Cost unavailable" whenever the platform can price it.
+   */
+  usdFor: ((usage: { inputTokens: number; outputTokens: number }) => number | undefined) | undefined;
+
   /** seq of the last buffered event (0 before any). */
   get lastSeq(): number {
     return this.#seq;
@@ -99,6 +107,10 @@ export class ExecutionEventBridge {
     if (this.#closed) return;
     const output = detail?.output ?? this.#textChunks.join("");
     const usage = detail?.usage;
+    const costUsd =
+      usage && this.usdFor
+        ? this.usdFor({ inputTokens: usage.inputTokens, outputTokens: usage.outputTokens })
+        : undefined;
 
     if (status === "cancelled") {
       this.#emit(this.#build("execution.cancelled", { ...(detail?.error ? { reason: detail.error } : {}) }));
@@ -112,10 +124,12 @@ export class ExecutionEventBridge {
         },
       }));
     } else {
+      const effectiveCostUsd = usage ? (usage.costUsd ?? costUsd) : costUsd;
       this.#emit(this.#build("execution.completed", {
         ...(detail?.summary ? { summary: detail.summary } : {}),
         ...(output ? { output } : {}),
-        ...(usage ? { usage: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, ...(usage.costUsd !== undefined ? { costUsd: usage.costUsd } : {}) } } : {}),
+        ...(usage ? { usage: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, ...(effectiveCostUsd !== undefined ? { costUsd: effectiveCostUsd } : {}) } } : {}),
+        ...(effectiveCostUsd !== undefined && !usage ? { costUsd: effectiveCostUsd } : {}),
       }));
     }
   }

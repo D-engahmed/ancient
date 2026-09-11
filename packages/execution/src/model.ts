@@ -8,7 +8,7 @@
 // StrategyRuntime, which owns the central capability edge (approval/consent/
 // budget/redaction) — the SDK never executes a tool itself.
 
-import { generateText, stepCountIs, APICallError, RetryError } from "ai";
+import { streamText, stepCountIs, APICallError, RetryError } from "ai";
 import type { LanguageModel, ModelMessage, Tool, ToolSet } from "ai";
 import { makeError, type ErrorEnvelope } from "@ANCIENT/contracts";
 import type { ModelChat } from "./types";
@@ -87,31 +87,49 @@ export function createAiModelChat(model: LanguageModel): ModelChat {
             // attempts × the engine's budget before anyone saw an error.
             maxRetries: 0,
         };
-        // generateText discriminates on messages vs prompt; pick one arm explicitly.
+        // streamText discriminates on messages vs prompt; pick one arm explicitly.
         const hasHistory = messages.length > 0;
-        let result;
         try {
-            result = hasHistory
-                ? await generateText({ ...base, messages })
-                : await generateText({ ...base, prompt: input.prompt ?? "" });
+            const result = hasHistory
+                ? streamText({ ...base, messages })
+                : streamText({ ...base, prompt: input.prompt ?? "" });
+
+            // Live deltas: forward each partial chunk to the strategy (which
+            // yields text-delta events to the engine/bridge) as it arrives,
+            // instead of buffering the whole turn and emitting one batch then.
+            // This is the actual token stream the CLI renders — the wire
+            // contract already carries text.delta; only the source was batch.
+            let text = "";
+            for await (const chunk of result.textStream) {
+                if (!chunk) continue;
+                text += chunk;
+                input.onTextDelta?.(chunk);
+            }
+
+            // The SDK v7 result exposes the settled fields as PromiseLike
+            // getters; awaiting them after the stream drained yields the full
+            // rollup (text, tool calls, usage).
+            const finalText = await result.text;
+            const toolCalls: { toolCallId: string; toolName: string; input?: unknown }[] = await result.toolCalls;
+            const usage = await result.usage;
+
+            return {
+                text: finalText ?? text,
+                toolCalls: toolCalls.map((call) => ({
+                    id: call.toolCallId,
+                    name: call.toolName,
+                    args: call.input ?? {},
+                })),
+                usage: {
+                    inputTokens: usage?.inputTokens ?? 0,
+                    outputTokens: usage?.outputTokens ?? 0,
+                },
+            };
         } catch (err) {
             const envelope = envelopeFromModelError(err);
             if (envelope) throw envelope;
             throw err;
         }
-
-        return {
-            text: result.text ?? "",
-            toolCalls: result.toolCalls.map((call) => ({
-                id: call.toolCallId,
-                name: call.toolName,
-                args: (call as { input: unknown }).input ?? {},
-            })),
-            usage: {
-                inputTokens: result.usage?.inputTokens ?? 0,
-                outputTokens: result.usage?.outputTokens ?? 0,
-            },
-        };
     };
 }
 

@@ -32,11 +32,14 @@ import { fetchUrlTool } from "@ANCIENT/capabilities/browser";
 import { ExecutionEngine, createAiModelChat, type ExecutionStatus } from "@ANCIENT/execution";
 import { MemoryEventBus } from "@ANCIENT/infrastructure/events";
 import { ApprovalPolicy, Redactor, type RiskCategory } from "@ANCIENT/infrastructure/security";
-import { DEFAULT_CHAT_MODEL_ID, type ChatModelSelection, type ModeType } from "@ANCIENT/shared";
+import type { ChatModelSelection, ModeType } from "@ANCIENT/shared";
 import { resolveChatModel } from "../lib/models";
+import { platformDefaultSelection } from "../lib/credential-policy";
 import { modelKey, checkCooldown, recordRateLimitFailure, RateLimitCooldownError } from "../lib/rate-limit-breaker";
 import { selectHealthyFallbackModel } from "../lib/fallback";
 import { clientErrorFrom } from "../lib/error-mapper";
+import { CostLedger, CostCeilingExceededError } from "../lib/cost-ledger";
+import { costFor } from "@ANCIENT/infrastructure/providers";
 import { loadSettings } from "../hooks/settings";
 import { ExecutionEventBridge, type BridgeFallbackDetail } from "./bridge";
 import { ConsentBridge } from "./consent-bridge";
@@ -79,9 +82,20 @@ export class ExecutionHub {
   // is handed a redactor — without this, secrets printed by a tool (env dumps,
   // git remotes with embedded tokens, …) stream to the client unmasked.
   #redactor = new Redactor();
+  // Per-deployment cost ledger (A-025): platform-billed runs settle here.
+  #ledger: CostLedger;
+
+  constructor(options: { ledger?: CostLedger } = {}) {
+    this.#ledger = options.ledger ?? new CostLedger();
+  }
 
   get engine() {
     return this.#engine;
+  }
+
+  /** Company spend visibility for the /v1 platform-usage endpoint. */
+  get ledger(): CostLedger {
+    return this.#ledger;
   }
 
   list(userId: string): ExecutionEntry[] {
@@ -117,7 +131,7 @@ export class ExecutionHub {
     };
 
     try {
-      const selection: ChatModelSelection = request.model ?? { modelKind: "builtin", modelId: DEFAULT_CHAT_MODEL_ID };
+      const selection: ChatModelSelection = request.model ?? platformDefaultSelection();
       let resolved = await resolveChatModel(selection, request.userId);
       // Mirrors the chat stream's cooldown policy: if the selected model
       // tripped an upstream rate limit recently, adopt a healthy fallback
@@ -146,6 +160,26 @@ export class ExecutionHub {
         } else {
           throw new RateLimitCooldownError(resolved.modelId, cooldown.retryAfterSeconds);
         }
+      }
+
+      // Cost ceiling (A-025): only platform-billed runs (the deployment's env
+      // default key) count against the company budget; BYOK runs bill the
+      // user's own provider and never hit this gate. Rejected runs emit a
+      // terminal `execution.failed` with the BILLING code via the catch below.
+      if (resolved.provenance === "env" && !this.#ledger.withinCeiling()) {
+        const snap = this.#ledger.snapshot();
+        throw new CostCeilingExceededError(snap.spendUsd, snap.ceilingUsd ?? 0);
+      }
+
+      // Cost attribution on the wire: when the platform prices the effective
+      // model, the terminal envelope carries a real costUsd ("Cost unavailable"
+      // only for unpriced/local models).
+      if (resolved.provenance === "env") {
+        const effectiveModel = resolved.modelId;
+        bridge.usdFor = (usage) => {
+          const breakdown = costFor(effectiveModel, usage);
+          return breakdown.pricing ? breakdown.totalUsd : undefined;
+        };
       }
 
       const session = this.#engine.run({
@@ -198,6 +232,11 @@ export class ExecutionHub {
           ) {
             recordRateLimitFailure(rlKey);
           }
+        }
+        // Settle platform-billed spend on completion (A-025): the company's
+        // cost ledger only counts runs that rode the deployment's env key.
+        if (result.status === "completed" && resolved.provenance === "env") {
+          this.#ledger.record(resolved.modelId, result.usage);
         }
         unsubscribe();
       });

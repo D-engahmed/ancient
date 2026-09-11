@@ -46,4 +46,17 @@ export {
   type ClientSafeError,
 } from "./execution-events";
 
+export {
+  EXPERIENCE_REGISTRY,
+  experienceIdSchema,
+  experienceRequestSchema,
+  experienceActionSchema,
+  findExperience,
+  experienceToExecution,
+  type ExperienceId,
+  type ExperienceDefaults,
+  type ExperienceRequest,
+  type RiskCategory,
+} from "./experience";
+
 export { createLogger } from "./logger";

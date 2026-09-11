@@ -66,6 +66,22 @@ What future condition requires reviewing this decision?
   A-016   Compensation actions can be modeled generically instead of per-capability special cases                                        Refine
   A-017   Bounded retry counts (not time-based backoff alone) are the right circuit-breaker trigger for capabilities                      Benchmark
 
+## Assumptions added by the Platform Program (Provider microkernel → white-label base)
+
+  ID      Assumption                                                                                    Initial status
+  ------- ----------------------------------------------------------------------------------------------- ------------------------
+  A-021   A provider registry whose plugins produce AI-SDK LanguageModels is the right migration step      Validate
+          toward the Layer 19 canonical `ModelProviderPlugin` contract
+  A-022   Each company deploys its own ANCIENT; the platform default key + user BYOK cover all credentials   Keep
+  A-023   A versioned public `/v1` API is the surface a white-label product (Coding/Design/Cowork) builds on  Validate
+  A-024   Experiences are thin adapters translating product actions into one canonical `ExperienceRequest`    Validate
+
+## Assumptions added by the Cost Ceiling (Phase 5)
+
+  ID      Assumption                                                                                       Initial status
+  ------- ------------------------------------------------------------------------------------------------- ------------------------
+  A-025   A per-deployment cost ceiling on platform-billed spend (single-deploy company budget)             Validate
+
 ## Decision gates
 
 No major layer should be implemented without:
@@ -264,3 +280,283 @@ categories client-side as an explicit placeholder; wire consent UX in Phase 9.
 - Phase 9 approval UX lands (replace `CLI_ALLOW` with real consent events).
 - Durable execution store wired (replace in-memory hub state; pause/resume;
   restart-safe replay via `Last-Event-ID`).
+
+---
+
+## ASSUMPTION-021 — Provider registry as the migration step toward the Layer 19 plugin contract
+
+## Statement
+Model resolution degrades to a registry: a `ModelResolvingPlugin` (owned by
+`packages/server`, where the AI SDK lives) turns `(protocol, modelId,
+baseUrl?, apiKey?, provenance)` into a `ResolvedModel` whose handle is an
+AI-SDK `LanguageModel`. Every existing branch of `resolveChatModel` — env-key
+builtins (openai/deepseek/mistral/groq/together/anthropic/google) and BYOK
+connections (openai-compat base URLs, anthropic, gemini) — becomes a
+registered plugin. Adding a provider means registering a plugin, never
+touching the resolver or the engine. The canonical Layer 19
+`ModelProviderPlugin` (`complete(): AsyncIterable<CompletionEvent>`,
+`packages/contracts/src/model.ts`) stays the target contract; the registry is
+the honest as-built bridge because the engine consumes `LanguageModel` today.
+
+## Why do we believe it?
+- The engine (`packages/execution`) only ever sees a `LanguageModel` via
+  `createAiModelChat`; strategies/capabilities never see a provider. Keeping
+  that port unchanged means the migration is mechanical and zero-risk.
+- The audit pattern is proven in this codebase: `models.ts:84`
+  (OPENAI_COMPATIBLE_PROVIDERS table) already expressed provider differences
+  as data; the registry generalizes that to behavior.
+- `docs/19` invariant #2 demands "a provider is a plugin, not a special case
+  in the core"; every future platform company plugs in exactly one plugin.
+
+## What fails if it is wrong?
+- If plugins need capabilities the `LanguageModel` port can't express (e.g.
+  reasoning-effort, embeddings), we must extend `ResolvedModel` — visible on
+  the first such provider, not silently.
+- If the registry grows provider-specific branches to preserve old quirks
+  (Gemini's baseUrl no-op, OpenRouter model-fallback), it re-creates the
+  if/else chain it replaced.
+
+## Blast radius
+- `packages/server/src/lib/models.ts` (resolver delegates to registry),
+  `packages/server/src/lib/provider-registry.ts` (new), hub/task/extensions/
+  chat (importers of `resolveChatModel`/`resolveFreeModel` — unchanged API).
+- `ResolvedModel` relocates to the registry module and is re-exported from
+  `models.ts`, so `fallback.ts` and route importers stay untouched.
+
+## Alternatives
+- Implement the full canonical `CompletionEvent` contract now: rejected for
+  this phase — it rewrites the engine/strategies model port before any
+  provider lands on it (big blast radius, no near-term consumer).
+- Keep the if/else chain: rejected — it is exactly the antipattern Layer 19
+  outlaws and the platform program is built on plugin-installable providers.
+
+## Decision
+Keep. Ship the registry (`ModelResolvingPlugin` → `LanguageModel`) now;
+migrate the resolver branches onto it; keep the canonical Layer 19 contract
+as the documented target.
+
+## Validation
+- `bun test` (server package): registry tests prove env resolution, BYOK
+  resolution, local-providers-require-connection, and the plugin-install
+  invariant (test registers a bespoke plugin and resolves through it).
+- Full repo typecheck exit 0; CLI build exit 0; existing suite stays green.
+
+## Revisit trigger
+- A provider needs a capability `LanguageModel` cannot carry → open the
+  canonical `CompletionEvent` path (A-011).
+- The engine's `ModelChat` port exposes a `complete()`-style async-iterable
+  contract → switch the registry's plugin surface to match.
+
+---
+
+## ASSUMPTION-022 — One deployment per company; platform default key + user BYOK cover all credentials
+
+## Statement
+"ANCIENT as a base platform for any AI company" means each company deploys
+its own ANCIENT (white-label), not a shared multitenant SaaS. That company's
+own model key is the platform default (env-configurable, e.g. OpenAI/Anthropic/
+OpenRouter), and each of its end users may BYOK on top. Resolution order:
+user's BYOK key first, platform default next, free/local last. No tenant
+tables, no metering at the platform boundary.
+
+## Why do we believe it?
+- BYOK already exists per-user (`ProviderConnection` + AES-256-GCM at rest);
+  builtin env-key resolution already exists (OPENAI_COMPATIBLE_PROVIDERS et
+  al.) — those two are literally "end-user first, platform default second"
+  with no schema change.
+- Single-deploy keeps isolation, outbound SSRF guard (`assertSafeBaseUrl`),
+  and rate limits simple; true multitenancy multiplies every security surface
+  before a company has shipped.
+
+## What fails if it is wrong?
+- A company needs per-end-user metering/billing on shared infra → would
+  require tenant tables after all (defer, don't build now).
+- "Company adds its own model" is more than an env var (e.g. a fine-tuned
+  model behind a private endpoint) → the plugin registry (A-021) is the
+  escape hatch: the company provider is just another plugin.
+
+## Blast radius
+- Config/docs only (`.env` variables, settings.json `modelRouting`), plus the
+  registry's env-credential convention. No schema change.
+
+## Alternatives
+- Multitenant SaaS now: rejected — heavy (tenant isolation, metering, quota
+  enforcement) before any product exists on the base.
+- Reverse precedence (platform default wins over user BYOK): rejected — the
+  user's own key is cheaper to the company and already policy-preferred in
+  `docs/19`'s routing flowchart.
+
+## Decision
+Keep. Single-deploy white-label; explicit precedence user-BYOK → platform
+default → free/local.
+
+## Validation
+- Phase 2 ships a documented `PLATFORM_MODEL`/env-key default and the
+  precedence logic, covered by registry/env tests where meaningful; the
+  existing chat/hub fallback order already implements the tail end.
+
+## Revisit trigger
+- A real company asks for shared-infrastructure multitenancy or cross-tenant
+  usage billing → reopen A-022 and design tenant scoping.
+
+---
+
+## ASSUMPTION-023 — A versioned `/v1` API is the surface a white-label product builds on
+
+## Statement
+The public integration point for products built on ANCIENT is a versioned
+`/v1` API — models catalogue, execution start/stream/cancel, usage — secured
+by a platform API key (`ANCIENT_PLATFORM_API_KEY`), independent of the
+interactive user routes (`/executions` requires `requireAuth`). The typed wire
+contracts (`@ANCIENT/shared` envelopes) are the same ones the CLI uses, so a
+Coding/Design/Cowork experience is a client of the API, not a fork.
+
+## Why do we believe it?
+- The CLI-V2 execution surface already IS that contract (ASSUMPTION-019/020);
+  `/v1` is an auth + versioning shim over the same hub, so it inherits tested
+  semantics rather than inventing a parallel API.
+- `docs/01-experiences` already forces experiences to go through the Gateway;
+  a stable `/v1` is that gateway's public face.
+
+## What fails if it is wrong?
+- Public API keys leak or are unrotatable → OpSec regression; mitigation is
+  env-based single key with documented rotation, and per-process `requireAuth`
+  stays for interactive routes.
+- The versioned surface diverges from the internal wire envelopes → two
+  contracts to maintain; the build rule is "map `/v1` onto `@ANCIENT/shared`
+  types, always".
+
+## Blast radius
+- New `packages/server/src/routes/v1.ts` + `require-api-key` middleware,
+  mounted in `src/index.ts`; the hub stays the single execution authority.
+- `/executions` interactive routes unchanged.
+
+## Alternatives
+- Expose the internal routes and call them "the API": rejected — no version
+  contract, breaking changes become silent, and the interactive auth
+  (Clerk OAuth) is not a platform-auth story.
+- Build a separate SDK-first server package: rejected — duplicates the hub/
+  engine lifecycle the base platform is supposed to centralize.
+
+## Decision
+Keep. Ship `/v1` as a thin, versioned, API-key-guarded projection of the hub
+onto the shared wire envelopes.
+
+## Validation
+- Route-level tests: 401 without the platform key, 200 catalog, execution
+  start/cancel round-trip, SSE stream framing matches the CLI's parsers.
+- Typecheck green; CLI build unaffected.
+
+## Revisit trigger
+- A product needs resource scoping below "one execution per request" (realms,
+  projects) → extend `/v1` with scoping fields, still on shared envelopes.
+
+---
+
+## ASSUMPTION-024 — Experiences are thin adapters over a canonical `ExperienceRequest`
+
+## Statement
+Coding, Design, Cowork, and General are not engines (Layer 1 rule: one engine,
+many experiences). Each is a thin adapter that maps product actions (a task, a
+scope/home, a mode, an allow-set, an optional model) onto a canonical
+`ExperienceRequest` that the `/v1` API consumes. The adapter registry lives in
+`packages/shared` (pure types) with server-side validation, so a new
+experience is a one-file registration, not a new execution path.
+
+## Why do we believe it?
+- CLI-V2 proved a single execution surface can power a product; Coding/Design
+  add only policy differences (which tools, which risk allow-set), all of
+  which already exist in `ExecutionStartRequest`.
+- `docs/01-experiences` names the exact failure ("must not create
+  CodingEngine/DesignEngine forks"); a type + registry makes that a compile
+  boundary instead of a review nit.
+
+## What fails if it is wrong?
+- If experiences need genuinely different capabilities (Design drawing canvas,
+  Cowork presence), the adapter model leaks and the registry becomes a
+  drawer of stringly-typed options.
+
+## Blast radius
+- New types in `packages/shared` (used by `/v1`); optional server infra to
+  validate/route by experience id. No engine change.
+
+## Alternatives
+- Per-experience engines (status quo of the industry): rejected — duplicates
+  tool-binding, policies, streaming, and recovery per product.
+- Adapters live in each product's repo: rejected — the platform must ship the
+  boundary, else every company reinvents it.
+
+## Decision
+Keep. Ship `ExperienceRequest` + registry as shared contracts now; adapters
+for Coding/Design/Cowork follow as thin mappings.
+
+## Validation
+- Typecheck + unit tests on the schema/registry (round-trip, unknown
+  experience rejection); no engine or hub change.
+
+## Revisit trigger
+- Any experience needs a capability outside the single execution surface
+  (e.g. real-time co-editing) → design that capability into the engine, never
+  a fork (A-002).
+
+---
+
+## ASSUMPTION-025 — A per-deployment cost ceiling bounds platform-billed spend
+
+## Statement
+Each ANCIENT deployment (one company, A-022) may set a hard cost ceiling on
+platform-billed spend: every run that rides the deployment's env default key
+(`provenance: "env"`) settles into a `CostLedger` on completion, and the
+start gate refuses new platform-billed runs once spend meets the ceiling —
+rejected with the closed code `BILLING_COST_CEILING_EXCEEDED` as a terminal
+`execution.failed`. User BYOK runs bill the user's own provider account and
+never count against the ceiling. The ledger is in-memory (a restart resets it)
+until the durable accounting table lands with the durable execution store.
+
+## Why do we believe it?
+- Single-deploy white-label (A-022) makes "the company" a deployment boundary,
+  so a per-deployment ledger is the honest spending control for a platform
+  whose company key is the default model credential.
+- Cost math already exists in exactly one place (`infrastructure/providers/cost.ts`
+  over the shared pricing catalog); the ledger is a thin accumulator on it,
+  and unpriced models (local) settle at 0 without being counted as free.
+- The engine already ships `usage` on the terminal lifecycle event, so
+  settlement needs no new instrumentation — only a cost computation.
+
+## What fails if it is wrong?
+- In-memory ledger loses history on restart → the ceiling guards spend since
+  restart, not cumulative billing; a company needing accurate cumulative cost
+  must wait for the durable accounting table.
+- Executions in flight when spend crosses the ceiling still complete (the gate
+  guards starts, not running costs) → ceiling overshoot = one in-flight run.
+
+## Blast radius
+- New `packages/server/src/lib/cost-ledger.ts` (+ error-mapper branch and the
+  `BILLING_COST_CEILING_EXCEEDED` ErrorCode in the closed taxonomy), hub
+  start-gate + settlement, `execution.completed` carries a real `costUsd` when
+  the platform can price the model, `GET /v1/platform/usage` for operator
+  visibility. No engine/strategy/capability change.
+
+## Alternatives
+- Per-model budgets: rejected for now — a single company ceiling is the
+  smallest control that answers "why is my platform bill growing?"; per-model
+  floors/splits are a data extension of the same ledger.
+- Count BYOK spend against the ceiling: rejected — BYOK is the user's own
+  account (A-022) and metering it would require the tenant billing the
+  platform doesn't do.
+
+## Decision
+Keep. Ship the in-memory per-deployment `CostLedger` with a start-gate and
+completion settlement; expose spend via `/v1/platform/usage`.
+
+## Validation
+- `cost-ledger.test.ts`: ceiling parsing, spend accumulation for priced +
+  unpriced models, gate behavior at/over the ceiling, typed error envelope.
+- `/v1/platform/usage` route test under the platform key.
+- Typecheck green; existing suite stays green.
+
+## Revisit trigger
+- A company asks for cumulative (non-restart-reset) accounting or per-user/
+  per-model budget splits → wire the durable ledger in the storage layer.
+- The platform starts metering tenant usage (multitenant deploy) → reopen
+  A-022 first.

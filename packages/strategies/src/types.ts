@@ -107,6 +107,11 @@ export type StrategyRuntime = {
         prompt?: string;
         history?: TurnMessage[];
         tools?: RuntimeTool[];
+        /** Called with each partial text chunk as it arrives, for live
+         *  streaming. Optional: ports that ignore it (scripted test fakes)
+         *  still produce the full text when the turn settles — strategies
+         *  fall back to a single post-hoc delta. */
+        onTextDelta?: (text: string) => void;
     }): Promise<ModelTurnResult>;
     executeTool(call: ModelToolCall): Promise<ToolResult>;
 };
