@@ -282,6 +282,14 @@ export function createGooglePlugin(): ModelResolvingPlugin {
 /** The default wiring: every built-in env provider plus BYOK protocols. */
 export const defaultProviderRegistry = new ProviderRegistry();
 
+/** The env var backing a builtin provider, if one exists (catalogue availability). */
+export function envApiKeyForProtocol(protocol: string): string | undefined {
+    if (protocol === "anthropic") return process.env.ANTHROPIC_API_KEY;
+    if (protocol === "google") return process.env.GOOGLE_API_KEY;
+    const entry = OPENAI_COMPATIBLE_PROVIDERS[protocol as keyof typeof OPENAI_COMPATIBLE_PROVIDERS];
+    return entry ? process.env[entry.envVar] : undefined;
+}
+
 function registerDefaults(): void {
     defaultProviderRegistry.register(createOpenAICompatiblePlugin());
     defaultProviderRegistry.register(createAnthropicPlugin());

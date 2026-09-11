@@ -16,12 +16,17 @@ import extensions from "./routes/extensions";
 import usage from "./routes/usage";
 import agent from "./routes/agent";
 import pipeline from "./routes/pipeline";
-import executions from "./routes/executions";
+import { createExecutionsRoutes } from "./routes/executions";
+import { createV1Routes } from "./routes/v1";
+import { ExecutionHub } from "./executions/hub";
 
 const app = new Hono<{ Variables: { traceId: string } }>();
 
 /** First-in-chain: every response (incl. onError) carries X-Trace-Id. */
 app.use("*", traceId);
+
+/** One live hub backs both the interactive and the public /v1 surface. */
+const hub = new ExecutionHub();
 
 app.notFound((c) => guardJson(c, "Not found", 404));
 
@@ -67,7 +72,8 @@ const routes = app
   .route("/usage", usage)
   .route("/agent", agent)
   .route("/pipeline", pipeline)
-  .route("/executions", executions);
+  .route("/executions", createExecutionsRoutes(hub))
+  .route("/v1", createV1Routes(hub));
 
 export type AppType = typeof routes;
 export default { port: 3000, fetch: app.fetch, idleTimeout: 255 };
