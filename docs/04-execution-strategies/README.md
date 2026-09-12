@@ -186,7 +186,11 @@ interface StrategyContext {
 > the loop sharpens its termination: a completion turn that ran tools but
 > produces no prose is never "done" without one forced closing turn, so the
 > strategy-level half of the no-fake-completion rule holds even when earlier
-> turns narrated.
+> turns narrated. The loop also bounds identical repeats: a call that failed
+> with `retryableAsIs=false` is never re-executed with the same args — the
+> model gets an observable suppression notice instead (strategy-level half
+> of I5, no uncontrolled retries); retryable-as-is failures stay executable
+> so transient faults can be retried.
 
 ## Selection policy
 
