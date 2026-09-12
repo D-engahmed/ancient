@@ -1,0 +1,36 @@
+{
+  "name": "@ANCIENT/benchmark",
+  "version": "1.0.0",
+  "description": "ANCIENT 100-task execution reliability benchmark — drives the REAL engine, strategies, tools, and models against a repository and asserts the six execution invariants",
+  "type": "module",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "benchmark": "bun run src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ANCIENT/capabilities": "workspace:*",
+    "@ANCIENT/contracts": "workspace:*",
+    "@ANCIENT/execution": "workspace:*",
+    "@ANCIENT/infrastructure": "workspace:*",
+    "@ANCIENT/reliability": "workspace:*",
+    "@ANCIENT/shared": "workspace:*",
+    "@ANCIENT/strategies": "workspace:*",
+    "@ai-sdk/anthropic": "^4.0.27",
+    "@ai-sdk/google": "^4.0.36",
+    "@ai-sdk/openai": "^4.0.0",
+    "ai": "^7.0.55",
+    "dotenv": "^16.4.7",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  }
+}
