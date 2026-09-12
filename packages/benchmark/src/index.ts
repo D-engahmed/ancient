@@ -34,6 +34,8 @@ type CliArgs = {
   probe: string | undefined;
 };
 
+const VALUE_FLAGS = new Set(["repo", "tasks", "offset", "model", "allow", "timeout-ms", "max-attempts", "out", "probe"]);
+
 function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {
     repo: process.cwd(),
@@ -46,11 +48,16 @@ function parseArgs(argv: string[]): CliArgs {
     out: undefined,
     probe: undefined,
   };
-  for (const raw of argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const raw = argv[i]!;
     const match = /^--([^=]+)(?:=(.*))?$/.exec(raw);
     if (!match) continue;
     const key = match[1]!;
-    const value = match[2];
+    let value = match[2];
+    // Support the space form `--flag value` alongside `--flag=value`.
+    if (value === undefined && VALUE_FLAGS.has(key) && i + 1 < argv.length) {
+      value = argv[++i]!;
+    }
     switch (key) {
       case "repo":
         if (value) args.repo = value;
