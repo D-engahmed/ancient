@@ -181,7 +181,12 @@ interface StrategyContext {
 > (ASSUMPTION-026). The engine adapter replays those as native
 > SDK `tool-call`/`tool-result` message parts, so the model reasons in the
 > tool protocol it was trained on instead of concatenated `"tool → output"`
-> text.
+> text. Failed calls additionally carry the typed classification
+> (`code/transient/retryableAsIs/partialEffect`) in the feedback text, and
+> the loop sharpens its termination: a completion turn that ran tools but
+> produces no prose is never "done" without one forced closing turn, so the
+> strategy-level half of the no-fake-completion rule holds even when earlier
+> turns narrated.
 
 ## Selection policy
 
