@@ -7,7 +7,7 @@
 // (A-STRAT-001).
 
 import type { UsageTokens } from "@ANCIENT/infrastructure/providers";
-import { sumUsage, EMPTY_USAGE } from "./util";
+import { sumUsage, toolFeedbackText, EMPTY_USAGE } from "./util";
 import { asEnvelope } from "./errors";
 import { streamModelTurn } from "./model-stream";
 import type {
@@ -74,7 +74,7 @@ export const directStrategy: ExecutionStrategy = {
                 yield { type: "tool-call", call } as const;
                 toolCount += 1;
                 const res = await executeSafe(runtime, call);
-                history.push({ role: "tool", toolCallId: call.id, toolName: call.name, text: res.text });
+                history.push({ role: "tool", toolCallId: call.id, toolName: call.name, text: toolFeedbackText(res) });
                 yield {
                     type: "tool-result",
                     callId: call.id,

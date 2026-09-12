@@ -4,6 +4,7 @@
 // Strategy utilities (strategies) — shared helpers for the wired strategies.
 
 import type { UsageTokens } from "@ANCIENT/infrastructure/providers";
+import type { ToolResult } from "./types";
 
 export function EMPTY_USAGE(): UsageTokens {
     return { inputTokens: 0, outputTokens: 0 };
@@ -15,6 +16,19 @@ export function sumUsage(a: UsageTokens, b?: UsageTokens): UsageTokens {
         inputTokens: a.inputTokens + (b.inputTokens ?? 0),
         outputTokens: a.outputTokens + (b.outputTokens ?? 0),
     };
+}
+
+/**
+ * The text a strategy hands the model for one executed call. Success: the
+ * serialized, redacted output as-is. Failure: the typed ToolFailure
+ * (code / transient / retryableAsIs / partialEffect) is prepended so the
+ * model's retry-vs-abandon decision is driven by the SAME classification the
+ * engine uses — not by guessing from a bare error message.
+ */
+export function toolFeedbackText(res: ToolResult): string {
+    if (!res.failure) return res.text;
+    const f = res.failure;
+    return `error: [${f.code} · transient=${f.transient} · retryableAsIs=${f.retryableAsIs} · partialEffect=${f.partialEffect}] ${f.message}`;
 }
 
 /** Extracts a JSON object from model text that may be wrapped in a code fence. */

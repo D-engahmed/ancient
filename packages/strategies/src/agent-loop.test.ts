@@ -92,4 +92,31 @@ describe("agent-loop strategy", () => {
         // No tool result is ever recorded as user/assistant prose anymore.
         expect(seen!.every((m) => !("toolCallId" in m) || m.role === "tool")).toBe(true);
     });
+
+    it("feeds typed failure metadata into the model's history, not into the public events", async () => {
+        let seen: TurnMessage[] | null = null;
+        const rt = fakeRuntime({
+            turns: [
+                turn("boom", [call("writeFile", { path: "/", content: "x" }, "c1")]),
+                (history) => {
+                    seen = history;
+                    return turn("recovered");
+                },
+            ],
+            exec: () => {
+                throw new Error("denied by policy");
+            },
+        });
+        const events = await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
+
+        const toolMsg = seen!.find((m) => m.role === "tool" && m.toolCallId === "c1");
+        expect(toolMsg).toBeDefined();
+        expect((toolMsg as { text: string }).text).toBe(
+            "error: [CAPABILITY_EXECUTION_FAILED · transient=false · retryableAsIs=false · partialEffect=unknown] denied by policy",
+        );
+        // The public event keeps the plain sanitized message — the metadata is
+        // decision context for the model, not display text for the UI.
+        const bad = events.find((e) => e.type === "tool-result");
+        expect(bad).toMatchObject({ result: "error: denied by policy", error: "error: denied by policy" });
+    });
 });
