@@ -7,6 +7,7 @@ import { describe, expect, it } from "bun:test";
 import { collect } from "./test-collect";
 import { call, fakeRuntime, turn } from "./test-fakes";
 import { agentLoopStrategy } from "./agent-loop";
+import type { TurnMessage } from "./types";
 
 const task = { description: "port the helper", complexity: "moderate" as const };
 
@@ -64,5 +65,31 @@ describe("agent-loop strategy", () => {
         const events = await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
         expect(events.some((e) => e.type === "error")).toBe(true);
         expect(events.at(-1)?.type).toBe("done");
+    });
+
+    it("records structured history: assistant with its calls, then tool results attributed by id", async () => {
+        let seen: TurnMessage[] | null = null;
+        const rt = fakeRuntime({
+            turns: [
+                turn("reading", [call("glob", { pattern: "**/*.ts" }, "c1")]),
+                (history) => {
+                    seen = history;
+                    return turn("done");
+                },
+            ],
+        });
+        await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
+
+        expect(seen).not.toBeNull();
+        const assistant = seen!.find((m) => m.role === "assistant");
+        const tool = seen!.find((m) => m.role === "tool");
+        expect(assistant).toMatchObject({
+            role: "assistant",
+            toolCalls: [{ id: "c1", name: "glob", args: { pattern: "**/*.ts" } }],
+        });
+        expect(tool).toMatchObject({ role: "tool", toolCallId: "c1", toolName: "glob" });
+        expect((tool as { text: string }).text).toBe("ok:glob");
+        // No tool result is ever recorded as user/assistant prose anymore.
+        expect(seen!.every((m) => !("toolCallId" in m) || m.role === "tool")).toBe(true);
     });
 });

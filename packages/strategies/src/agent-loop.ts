@@ -74,7 +74,13 @@ export const agentLoopStrategy: ExecutionStrategy = {
 
                 turnCount += 1;
                 usage = sumUsage(usage, turn!.usage);
-                if (turnText.trim()) {
+                // Record the assistant turn with the calls it issued — the
+                // tool results below become tool-role messages attributed to
+                // those call ids, so the provider sees a native tool sequence
+                // at the next turn (ASSUMPTION-026), not concatenated text.
+                if (turn!.toolCalls.length > 0) {
+                    history.push({ role: "assistant", text: turnText, toolCalls: turn!.toolCalls });
+                } else if (turnText.trim()) {
                     history.push({ role: "assistant", text: turnText });
                 }
 
@@ -111,7 +117,7 @@ export const agentLoopStrategy: ExecutionStrategy = {
                     yield { type: "tool-call", call } as const;
                     toolCount += 1;
                     const res = await executeSafe(runtime, call);
-                    history.push({ role: "user", text: `${call.name} → ${truncateForHistory(res.text)}` });
+                    history.push({ role: "tool", toolCallId: call.id, toolName: call.name, text: truncateForHistory(res.text) });
                     yield {
                         type: "tool-result",
                         callId: call.id,

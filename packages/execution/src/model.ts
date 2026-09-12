@@ -11,6 +11,7 @@
 import { streamText, stepCountIs } from "ai";
 import type { LanguageModel, ModelMessage, Tool, ToolSet } from "ai";
 import { makeError, type ErrorEnvelope } from "@ANCIENT/contracts";
+import type { TurnMessage } from "@ANCIENT/strategies";
 import type { ModelChat } from "./types";
 
 type ChatTool = { name: string; description: string; inputSchema: unknown };
@@ -75,13 +76,53 @@ export function envelopeFromModelError(err: unknown): ErrorEnvelope | undefined 
     });
 }
 
+/**
+ * Replay recorded turns as native provider messages (ASSUMPTION-026).
+ * Assistant turns that requested tools carry their tool-call parts; each
+ * executed result becomes a `tool` message whose `tool-result` part is
+ * attributed to the call id it answered. Plain user/assistant turns stay
+ * text parts. This is the model's own tool protocol — providers were trained
+ * on call→result attribution, so retry/abandon and output-reuse decisions
+ * are better than with concatenated `"tool → output"` text.
+ */
+export function historyToModelMessages(history: readonly TurnMessage[]): ModelMessage[] {
+    const messages: ModelMessage[] = [];
+    for (const m of history) {
+        if (m.role === "tool") {
+            messages.push({
+                role: "tool",
+                content: [
+                    {
+                        type: "tool-result",
+                        toolCallId: m.toolCallId,
+                        toolName: m.toolName,
+                        output: { type: "text", value: m.text },
+                    },
+                ],
+            });
+            continue;
+        }
+        if (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0) {
+            const content: Array<
+                | { type: "text"; text: string }
+                | { type: "tool-call"; toolCallId: string; toolName: string; input: unknown }
+            > = [];
+            if (m.text) content.push({ type: "text", text: m.text });
+            for (const call of m.toolCalls) {
+                content.push({ type: "tool-call", toolCallId: call.id, toolName: call.name, input: call.args ?? {} });
+            }
+            messages.push({ role: "assistant", content });
+            continue;
+        }
+        messages.push({ role: m.role, content: [{ type: "text", text: m.text }] });
+    }
+    return messages;
+}
+
 /** One model step returning raw text + tool calls + usage (never executes tools). */
 export function createAiModelChat(model: LanguageModel): ModelChat {
     return async (input) => {
-        const messages: ModelMessage[] = (input.history ?? []).map((m) => ({
-            role: m.role,
-            content: [{ type: "text", text: m.text }],
-        }));
+        const messages = historyToModelMessages(input.history ?? []);
 
         if (input.history && input.history.length > 0) {
             messages.push({ role: "user", content: [{ type: "text", text: input.prompt ?? "" }] });

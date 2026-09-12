@@ -72,7 +72,17 @@ export type ModelTurnResult = {
     usage?: UsageTokens;
 };
 
-export type TurnMessage = { role: "user" | "assistant"; text: string };
+/**
+ * One recorded turn. History is NOT flat text: an assistant turn that
+ * requested tools carries the calls it made, and each executed call's result
+ * is recorded as a `tool` message attributed to the call's id (ASSUMPTION-026)
+ * so the adapter can replay the model's native tool protocol instead of
+ * concatenated "tool → output" strings.
+ */
+export type TurnMessage =
+    | { role: "user"; text: string }
+    | { role: "assistant"; text: string; toolCalls?: ModelToolCall[] }
+    | { role: "tool"; toolCallId: string; toolName: string; text: string };
 
 /** Typed tool-failure projection (docs/04; upstream: capabilities §5.2). */
 export type ToolFailure = {
