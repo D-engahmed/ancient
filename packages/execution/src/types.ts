@@ -154,6 +154,8 @@ export type ExecutionSession = {
     status: ExecutionStatus;
     /** Events published onto the engine bus as the run progresses. */
     publish(type: LifecycleEventType, payload?: Record<string, unknown>): void;
+    /** First lifecycle-publish failure, if the injected bus misbehaved (Phase A). */
+    publishError: unknown;
     /** Record a strategy event for this session (replay). */
     record(event: StrategyEvent): void;
     /** Snapshot of recorded strategy events so far. */

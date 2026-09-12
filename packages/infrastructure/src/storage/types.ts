@@ -51,6 +51,8 @@ export type ExecutionRecord = {
 export type LifecycleEventType =
     | "created"
     | "started"
+    | "queued"
+    | "waiting_approval"
     | "plan-updated"
     | "tool-executed"
     | "artifact-created"
@@ -60,7 +62,8 @@ export type LifecycleEventType =
     | "retrying"
     | "degraded"
     | "completed"
-    | "failed";
+    | "failed"
+    | "cancelled";
 
 export type ExecutionEvent = {
     /** Unique event id within the store. */
