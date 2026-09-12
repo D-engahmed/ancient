@@ -7,7 +7,7 @@ import { describe, expect, it } from "bun:test";
 import { collect } from "./test-collect";
 import { call, fakeRuntime, turn } from "./test-fakes";
 import { directStrategy } from "./direct";
-import type { StrategyEvent } from "./types";
+import type { StrategyEvent, TurnMessage } from "./types";
 
 const task = { description: "write the README", complexity: "simple" as const };
 
@@ -63,5 +63,30 @@ describe("direct strategy", () => {
         const events = await collect(directStrategy.execute({ profile: task, runtime: rt }));
         expect(events.some((e) => e.type === "error" && (e as { error: { message: string } }).error.message.includes("model failure"))).toBe(true);
         expect(events.some((e) => e.type === "done")).toBe(true);
+    });
+
+    it("records a tool failure with typed metadata in the continuation history", async () => {
+        let seen: TurnMessage[] | null = null;
+        const rt = fakeRuntime({
+            turns: [
+                turn("reading", [call("readFile", { path: "x.md" }, "c1")]),
+                (history) => {
+                    seen = history;
+                    return turn("done now");
+                },
+            ],
+            exec: () => {
+                throw new Error("permission denied");
+            },
+        });
+        await collect(directStrategy.execute({ profile: task, runtime: rt }));
+
+        const toolMsg = seen!.find((m) => m.role === "tool" && m.toolCallId === "c1");
+        expect(toolMsg).toBeDefined();
+        expect((toolMsg as { text: string }).text).toContain("CAPABILITY_EXECUTION_FAILED");
+        expect((toolMsg as { text: string }).text).toContain("retryableAsIs=false");
+        // The pass-2 user pointer still follows the tool messages in order.
+        const index = seen!.findIndex((m) => m.role === "user" && m.text.includes("final answer"));
+        expect(index).toBeGreaterThan(seen!.findIndex((m) => m.role === "tool"));
     });
 });

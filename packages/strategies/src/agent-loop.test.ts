@@ -7,6 +7,7 @@ import { describe, expect, it } from "bun:test";
 import { collect } from "./test-collect";
 import { call, fakeRuntime, turn } from "./test-fakes";
 import { agentLoopStrategy } from "./agent-loop";
+import type { StrategyEvent, TurnMessage } from "./types";
 
 const task = { description: "port the helper", complexity: "moderate" as const };
 
@@ -64,5 +65,126 @@ describe("agent-loop strategy", () => {
         const events = await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
         expect(events.some((e) => e.type === "error")).toBe(true);
         expect(events.at(-1)?.type).toBe("done");
+    });
+
+    it("records structured history: assistant with its calls, then tool results attributed by id", async () => {
+        let seen: TurnMessage[] | null = null;
+        const rt = fakeRuntime({
+            turns: [
+                turn("reading", [call("glob", { pattern: "**/*.ts" }, "c1")]),
+                (history) => {
+                    seen = history;
+                    return turn("done");
+                },
+            ],
+        });
+        await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
+
+        expect(seen).not.toBeNull();
+        const assistant = seen!.find((m) => m.role === "assistant");
+        const tool = seen!.find((m) => m.role === "tool");
+        expect(assistant).toMatchObject({
+            role: "assistant",
+            toolCalls: [{ id: "c1", name: "glob", args: { pattern: "**/*.ts" } }],
+        });
+        expect(tool).toMatchObject({ role: "tool", toolCallId: "c1", toolName: "glob" });
+        expect((tool as { text: string }).text).toBe("ok:glob");
+        // No tool result is ever recorded as user/assistant prose anymore.
+        expect(seen!.every((m) => !("toolCallId" in m) || m.role === "tool")).toBe(true);
+    });
+
+    it("feeds typed failure metadata into the model's history, not into the public events", async () => {
+        let seen: TurnMessage[] | null = null;
+        const rt = fakeRuntime({
+            turns: [
+                turn("boom", [call("writeFile", { path: "/", content: "x" }, "c1")]),
+                (history) => {
+                    seen = history;
+                    return turn("recovered");
+                },
+            ],
+            exec: () => {
+                throw new Error("denied by policy");
+            },
+        });
+        const events = await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
+
+        const toolMsg = seen!.find((m) => m.role === "tool" && m.toolCallId === "c1");
+        expect(toolMsg).toBeDefined();
+        expect((toolMsg as { text: string }).text).toBe(
+            "error: [CAPABILITY_EXECUTION_FAILED · transient=false · retryableAsIs=false · partialEffect=unknown] denied by policy",
+        );
+        // The public event keeps the plain sanitized message — the metadata is
+        // decision context for the model, not display text for the UI.
+        const bad = events.find((e) => e.type === "tool-result");
+        expect(bad).toMatchObject({ result: "error: denied by policy", error: "error: denied by policy" });
+    });
+
+    it("forces one closing turn when the completion turn goes quiet despite earlier prose", async () => {
+        const rt = fakeRuntime({
+            turns: [
+                turn("planning", [call("glob", { pattern: "**/*.ts" }, "c1")]),
+                turn(""),
+                () => turn("the final answer"),
+            ],
+        });
+        const events = await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
+        const done = events.find((e) => e.type === "done");
+        expect(done).toMatchObject({ turnCount: 3, toolCount: 1 });
+        expect(events.filter((e) => e.type === "text-delta").map((e) => (e as { text: string }).text)).toContain(
+            "the final answer",
+        );
+    });
+
+    it("does not force a closing turn when the completion turn already answered", async () => {
+        const rt = fakeRuntime({
+            turns: [turn("saw the file", [call("glob", { pattern: "*" }, "c1")]), turn("answer")],
+        });
+        const events = await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
+        const done = events.find((e) => e.type === "done");
+        expect(done).toMatchObject({ turnCount: 2, toolCount: 1 });
+    });
+
+    it("suppresses an identical repeat of a non-retryable failed call, but not a retryable one", async () => {
+        const executes: string[] = [];
+        const rt = fakeRuntime({
+            turns: [
+                turn("a", [call("glob", { pattern: "*" }, "c1")]),
+                turn("b", [call("glob", { pattern: "*" }, "c2")]),
+                turn("c", [call("rescan", { path: "/" }, "c3")]),
+                turn("d", [call("rescan", { path: "/" }, "c4")]),
+                turn("done"),
+            ],
+            exec: (c) => {
+                executes.push(c.name);
+                if (c.name === "rescan") {
+                    return {
+                        text: "error: transient blip",
+                        ok: false,
+                        failure: {
+                            code: "CAPABILITY_EXECUTION_FAILED",
+                            message: "transient blip",
+                            transient: true,
+                            retryableAsIs: true,
+                            partialEffect: "none",
+                        },
+                    };
+                }
+                throw new Error("boom");
+            },
+        });
+
+        const events = await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
+
+        // glob failed non-retryable → second identical glob is NOT executed.
+        // rescan failed retryable-as-is → second identical rescan IS executed.
+        expect(executes).toEqual(["glob", "rescan", "rescan"]);
+        const results = events.filter((e) => e.type === "tool-result");
+        expect(results).toHaveLength(4);
+        const suppressed = results[1] as Extract<StrategyEvent, { type: "tool-result" }>;
+        expect(suppressed.result).toContain("duplicate call (glob) suppressed");
+        expect(suppressed).not.toHaveProperty("failure");
+        const done = events.find((e) => e.type === "done");
+        expect(done).toMatchObject({ turnCount: 5, toolCount: 4 });
     });
 });

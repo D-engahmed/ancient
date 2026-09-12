@@ -7,7 +7,7 @@
 // (A-STRAT-001).
 
 import type { UsageTokens } from "@ANCIENT/infrastructure/providers";
-import { sumUsage, EMPTY_USAGE } from "./util";
+import { sumUsage, toolFeedbackText, EMPTY_USAGE } from "./util";
 import { asEnvelope } from "./errors";
 import { streamModelTurn } from "./model-stream";
 import type {
@@ -62,11 +62,19 @@ export const directStrategy: ExecutionStrategy = {
             turnCount += 1;
             usage = sumUsage(usage, pass1!.usage);
 
+            // Record the pass-1 assistant turn with its tool calls so the tool
+            // results below are call-attributed tool-role messages at pass 2
+            // (ASSUMPTION-026), instead of text labeled as the assistant's own
+            // prose — the status-quo bug this replaces.
+            if (pass1!.toolCalls.length > 0 || pass1!.text.trim()) {
+                history.push({ role: "assistant", text: pass1!.text, toolCalls: pass1!.toolCalls });
+            }
+
             for (const call of pass1!.toolCalls) {
                 yield { type: "tool-call", call } as const;
                 toolCount += 1;
                 const res = await executeSafe(runtime, call);
-                history.push({ role: "assistant", text: `${call.name} → ${res.text}` });
+                history.push({ role: "tool", toolCallId: call.id, toolName: call.name, text: toolFeedbackText(res) });
                 yield {
                     type: "tool-result",
                     callId: call.id,

@@ -8,7 +8,7 @@
 
 import type { UsageTokens } from "@ANCIENT/infrastructure/providers";
 import { makeError } from "@ANCIENT/contracts";
-import { sumUsage, EMPTY_USAGE } from "./util";
+import { sumUsage, toolFeedbackText, EMPTY_USAGE } from "./util";
 import { asEnvelope } from "./errors";
 import { streamModelTurn } from "./model-stream";
 import type {
@@ -48,8 +48,11 @@ export const agentLoopStrategy: ExecutionStrategy = {
         const history: TurnMessage[] = [];
         let turnCount = 0;
         let toolCount = 0;
-        let producedText = false;
         let usage: UsageTokens = EMPTY_USAGE();
+        // Key → last failure observed for that exact call (name + args). The
+        // bounded-repeat guard: a call that already failed non-retryable-as-is
+        // is not re-executed identically (strategy-level half of I5).
+        const failedCalls = new Map<string, ToolFailure>();
 
         try {
             while (turnCount < maxTurns) {
@@ -65,7 +68,6 @@ export const agentLoopStrategy: ExecutionStrategy = {
                 })) {
                     if (part.type === "delta") {
                         turnText += part.text;
-                        producedText = true;
                         yield { type: "text-delta", text: part.text } as const;
                     } else {
                         turn = part.result;
@@ -74,24 +76,32 @@ export const agentLoopStrategy: ExecutionStrategy = {
 
                 turnCount += 1;
                 usage = sumUsage(usage, turn!.usage);
-                if (turnText.trim()) {
+                // Record the assistant turn with the calls it issued — the
+                // tool results below become tool-role messages attributed to
+                // those call ids, so the provider sees a native tool sequence
+                // at the next turn (ASSUMPTION-026), not concatenated text.
+                if (turn!.toolCalls.length > 0) {
+                    history.push({ role: "assistant", text: turnText, toolCalls: turn!.toolCalls });
+                } else if (turnText.trim()) {
                     history.push({ role: "assistant", text: turnText });
                 }
 
                 if (turn!.toolCalls.length === 0) {
-                    if (toolCount > 0 && !producedText) {
-                        // The model ran tools but produced no prose — land the
-                        // answer explicitly so a loop that went quiet is never
-                        // "complete" without contactable output (the repro for
-                        // empty final messages — docs/03 AS-BUILT fix).
+                    // Termination sharpening: the model signals completion by
+                    // requesting no tools. If it ran tools earlier but its
+                    // COMPLETION turn produced no prose, a bare stop is not a
+                    // contactable final answer — force one closing turn so a
+                    // loop that went quiet is never "complete" without output
+                    // (the strategy-level half of the no-fake-completion rule;
+                    // docs/03 AS-BUILT fix extended to cover earlier narration).
+                    if (toolCount > 0 && !turnText.trim()) {
                         let closing: ModelTurnResult;
                         for await (const part of streamModelTurn(runtime, {
-                            system: "You are ANCIENT's agent loop. You already ran tools and observed their results in the conversation. Write the final answer to the task now. Do NOT call any tools.",
+                            system: CLOSING_SYSTEM,
                             prompt: `Task: ${profile.description}\n\nTool results are in the history above. Produce the final answer.`,
                             history,
                         })) {
                             if (part.type === "delta") {
-                                producedText = true;
                                 yield { type: "text-delta", text: part.text } as const;
                             } else {
                                 closing = part.result;
@@ -110,8 +120,8 @@ export const agentLoopStrategy: ExecutionStrategy = {
                 for (const call of turn!.toolCalls) {
                     yield { type: "tool-call", call } as const;
                     toolCount += 1;
-                    const res = await executeSafe(runtime, call);
-                    history.push({ role: "user", text: `${call.name} → ${truncateForHistory(res.text)}` });
+                    const res = await maybeExecute(runtime, call, failedCalls);
+                    history.push({ role: "tool", toolCallId: call.id, toolName: call.name, text: truncateForHistory(toolFeedbackText(res)) });
                     yield {
                         type: "tool-result",
                         callId: call.id,
@@ -148,7 +158,13 @@ export const agentLoopStrategy: ExecutionStrategy = {
 
 const SYSTEM =
     "You are ANCIENT's agent loop. Work toward the task across turns. To inspect or change anything, call the tools. " +
+    "When a tool call fails, its result states the failure class: retryableAsIs=false means re-calling the same thing will not help — change the approach; " +
+    "transient=true failures can be retried as-is. Before declaring the task done, confirm the observable outcome is actually verified. " +
     "Stop requesting tools and give the final answer when the task is complete.";
+
+const CLOSING_SYSTEM =
+    "You are ANCIENT's agent loop. You already ran tools and observed their results in the conversation. " +
+    "Write the final answer to the task now. Do NOT call any tools.";
 
 function truncateForHistory(text: string): string {
     return text.length > 2_000 ? text.slice(0, 2_000) + "…" : text;
@@ -169,4 +185,34 @@ async function executeSafe(runtime: StrategyRuntime, call: ModelToolCall): Promi
         };
         return { text: `error: ${failure.message}`, ok: false, failure };
     }
+}
+
+/**
+ * Bounded-repeat guard for the loop. An identical call (name + serialized
+ * args) that previously failed with `retryableAsIs=false` is never executed
+ * again — the engine's own classification said re-running it will not help,
+ * so the loop refuses and feeds the model an observable reason instead of
+ * burning a tool execution (strategy-level half of I5, no uncontrolled
+ * retries). A call that succeeded clears its record; retryable-as-is
+ * failures stay executable so the model can retry transient faults.
+ */
+async function maybeExecute(
+    runtime: StrategyRuntime,
+    call: ModelToolCall,
+    failedCalls: Map<string, ToolFailure>,
+): Promise<ToolResult> {
+    const signature = `${call.name} ${JSON.stringify(call.args ?? {})}`;
+    const prior = failedCalls.get(signature);
+    if (prior && prior.retryableAsIs === false) {
+        const message = `duplicate call (${call.name}) suppressed — a prior identical call failed with ${prior.code} (retryableAsIs=false); ` +
+            "re-running it identically cannot succeed. Change the arguments or the approach.";
+        return { text: `error: ${message}`, ok: false };
+    }
+    const res = await executeSafe(runtime, call);
+    if (res.ok) {
+        failedCalls.delete(signature);
+    } else if (res.failure) {
+        failedCalls.set(signature, res.failure);
+    }
+    return res;
 }

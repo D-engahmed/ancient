@@ -105,6 +105,28 @@ describe("trimHistory", () => {
     it("handles empty history", () => {
         expect(trimHistory([], 100)).toEqual([]);
     });
+
+    it("trims structured tool-protocol history by its text, never dropping the newest message", () => {
+        const history: TurnMessage[] = [
+            { role: "user", text: "a".repeat(5_000) },
+            { role: "assistant", text: "", toolCalls: [{ id: "c1", name: "glob", args: { pattern: "*" } }] },
+            { role: "tool", toolCallId: "c1", toolName: "glob", text: "b".repeat(5_000) },
+            { role: "assistant", text: "c".repeat(100) },
+        ];
+        const kept = trimHistory(history, 40); // 160 chars — only the last turn fits
+        expect(kept).toHaveLength(1);
+        expect(kept[0]).toEqual({ role: "assistant", text: "c".repeat(100) });
+    });
+
+    it("counts a tool message's text toward the budget", () => {
+        const history: TurnMessage[] = [
+            { role: "assistant", text: "calls", toolCalls: [{ id: "c1", name: "grep", args: { pattern: "x" } }] },
+            { role: "tool", toolCallId: "c1", toolName: "grep", text: "z".repeat(400) },
+        ];
+        const kept = trimHistory(history, 25); // 100 chars — only the tool result fits
+        expect(kept).toHaveLength(1);
+        expect(kept[0]).toMatchObject({ role: "tool", toolCallId: "c1" });
+    });
 });
 
 describe("createContext + runModel semantics", () => {

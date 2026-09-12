@@ -173,6 +173,24 @@ interface StrategyContext {
 > catalogued-but-unwired (`wired:false`), so the selector can never pick
 > them. `failurePolicy`/`StrategyFailurePolicy` above are represented by
 > the engine's retry classification, not yet a standalone service.
+>
+> **AS-BUILT (Phase B, 2026-09-12):** the loop's turn history is a
+> discriminated union, not flat text — an assistant turn that requested
+> tools is recorded with its `toolCalls`, and each result is recorded as a
+> `role: "tool"` message attributed to the call's `toolCallId`
+> (ASSUMPTION-026). The engine adapter replays those as native
+> SDK `tool-call`/`tool-result` message parts, so the model reasons in the
+> tool protocol it was trained on instead of concatenated `"tool → output"`
+> text. Failed calls additionally carry the typed classification
+> (`code/transient/retryableAsIs/partialEffect`) in the feedback text, and
+> the loop sharpens its termination: a completion turn that ran tools but
+> produces no prose is never "done" without one forced closing turn, so the
+> strategy-level half of the no-fake-completion rule holds even when earlier
+> turns narrated. The loop also bounds identical repeats: a call that failed
+> with `retryableAsIs=false` is never re-executed with the same args — the
+> model gets an observable suppression notice instead (strategy-level half
+> of I5, no uncontrolled retries); retryable-as-is failures stay executable
+> so transient faults can be retried.
 
 ## Selection policy
 
