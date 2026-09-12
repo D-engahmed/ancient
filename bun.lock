@@ -34,6 +34,29 @@
         "typescript": "^5.4.0",
       },
     },
+    "packages/benchmark": {
+      "name": "@ANCIENT/benchmark",
+      "version": "1.0.0",
+      "dependencies": {
+        "@ANCIENT/capabilities": "workspace:*",
+        "@ANCIENT/contracts": "workspace:*",
+        "@ANCIENT/execution": "workspace:*",
+        "@ANCIENT/infrastructure": "workspace:*",
+        "@ANCIENT/reliability": "workspace:*",
+        "@ANCIENT/shared": "workspace:*",
+        "@ANCIENT/strategies": "workspace:*",
+        "@ai-sdk/anthropic": "^4.0.27",
+        "@ai-sdk/google": "^4.0.36",
+        "@ai-sdk/openai": "^4.0.0",
+        "ai": "^7.0.55",
+        "dotenv": "^16.4.7",
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.4.0",
+      },
+    },
     "packages/capabilities": {
       "name": "@ANCIENT/capabilities",
       "version": "1.0.0",
@@ -195,6 +218,8 @@
   },
   "packages": {
     "@ANCIENT/agent": ["@ANCIENT/agent@workspace:packages/agent"],
+
+    "@ANCIENT/benchmark": ["@ANCIENT/benchmark@workspace:packages/benchmark"],
 
     "@ANCIENT/capabilities": ["@ANCIENT/capabilities@workspace:packages/capabilities"],
 
