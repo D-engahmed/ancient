@@ -82,6 +82,69 @@ What future condition requires reviewing this decision?
   ------- ------------------------------------------------------------------------------------------------- ------------------------
   A-025   A per-deployment cost ceiling on platform-billed spend (single-deploy company budget)             Validate
 
+## ASSUMPTION-026 — The agent loop replays prior turns as native provider tool messages
+
+## Statement
+The strategy loop conditions each new model turn on the previous turns in
+the model's own tool protocol: the assistant turn that requested tools is
+replayed as an assistant message whose parts include the `tool-call` parts
+(the call IDs it issued), and each executed tool result is replayed as a
+`tool` message whose `tool-result` part is attributed to that call ID — not
+flattened into `user`/`assistant` text like `"tool → output"`. The turn
+history the `ModelChat` port receives becomes a discriminated union
+(`user` | `assistant` with `toolCalls` | `tool` with `toolCallId`), and
+`createAiModelChat` maps it onto AI-SDK `ModelMessage` shapes.
+
+## Why do we believe it?
+- Tool-use instruction tuning (OpenAI/Anthropic/Google) is built around
+  call→result attribution as first-class message roles; presenting a
+  concatenated text string breaks that grammar and loses which result
+  belongs to which call (the model can no longer "retry that exact call").
+- The AI SDK already renders tool history natively; the cost is a mapping
+  in the adapter, not new surface.
+- Phase B is measured via the benchmark loop: attribution is the largest
+  single deterministic context-quality change we can make without touching
+  capabilities.
+
+## What fails if it is wrong?
+- A provider that rejects well-formed historical tool sequences (strict
+  call-ID bookkeeping) turns every such turn into a provider error — a new
+  failure mode the reliability suite (Phase A invariants) would catch as an
+  unexplained failure. Mainline OpenAI/Anthropic/Gemini accept these
+  sequences.
+- Text-only models (rare local/scripted chats) see structured history only
+  where their SDK handles it; the strategies' text fallback (doc
+  fix) covers non-tool turns unchanged.
+
+## Blast radius
+- `packages/strategies` (`TurnMessage` union; `agent-loop`/`direct` push
+  sites), `packages/execution` (`model.ts` adapter mapping; context
+  trim already text-based and unchanged), tests for both packages.
+
+## Alternatives
+- Keep flattened text (status quo): rejected — no call attribution, worse
+  retry/abandon decisions and tool-output reuse.
+- Emit results as text that embeds the call ID: rejected — half-measure
+  that still lacks native tool parts.
+
+## Decision
+Keep. Structure the history union and map to SDK tool parts.
+
+## Validation
+- Adapter unit tests prove the SDK message shapes (tool-result parts use
+  `output.type: "text"`, assistant parts carry real `toolCallId`s, tool
+  messages reference exactly the IDs issued).
+- Strategy tests prove the loop records assistant-with-calls then tool-role
+  results; context trim still counts text.
+- Full repo `bun test` green; per-package typecheck exit 0.
+
+## Revisit trigger
+- A provider error class appears whose root cause is the historical
+  tool-sequence replay (classify it; if unavoidable, degrade that model's
+  history to the text fallback via the adapter).
+- Subagents (rung 2) needs cross-subtask tool context → re-open the type
+  instead of string-concatenating subtask transcripts.
+
 ## Decision gates
 
 No major layer should be implemented without:

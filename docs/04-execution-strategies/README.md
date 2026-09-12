@@ -173,6 +173,15 @@ interface StrategyContext {
 > catalogued-but-unwired (`wired:false`), so the selector can never pick
 > them. `failurePolicy`/`StrategyFailurePolicy` above are represented by
 > the engine's retry classification, not yet a standalone service.
+>
+> **AS-BUILT (Phase B, 2026-09-12):** the loop's turn history is a
+> discriminated union, not flat text — an assistant turn that requested
+> tools is recorded with its `toolCalls`, and each result is recorded as a
+> `role: "tool"` message attributed to the call's `toolCallId`
+> (ASSUMPTION-026). The engine adapter replays those as native
+> SDK `tool-call`/`tool-result` message parts, so the model reasons in the
+> tool protocol it was trained on instead of concatenated `"tool → output"`
+> text.
 
 ## Selection policy
 
