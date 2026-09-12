@@ -9,11 +9,12 @@ import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 import { makeError } from "@ANCIENT/contracts";
 import { CapabilityRegistry } from "@ANCIENT/capabilities/core";
-import { MemoryEventBus } from "@ANCIENT/infrastructure/events";
+import { MemoryEventBus, type EventBus } from "@ANCIENT/infrastructure/events";
 import { ApprovalPolicy } from "@ANCIENT/infrastructure/security";
 import type { ModelTurnResult } from "@ANCIENT/strategies";
+import { StrategySelector } from "@ANCIENT/strategies";
 import { ExecutionEngine } from "./engine";
-import type { ModelChat, RunRequest } from "./types";
+import type { ModelChat, RunRequest, RunResult } from "./types";
 
 function registry(): CapabilityRegistry {
     return new CapabilityRegistry()
@@ -84,7 +85,8 @@ describe("ExecutionEngine", () => {
         expect(result.status).toBe("completed");
         expect(result.strategy.id).toBe("direct");
         expect(result.output).toContain("typo fixed");
-        expect(lifecycle).toEqual(["created", "started", "completed"]);
+        // Created → Queued → Started → Completed, all published durably.
+        expect(lifecycle).toEqual(["created", "queued", "started", "completed"]);
 
         const types = session.events().map((e) => e.type);
         expect(types).toEqual(["strategy-selected", "text-delta", "done"]);
@@ -308,6 +310,99 @@ describe("ExecutionEngine", () => {
         expect(lifecycle).not.toContain("retrying");
     });
 
+    it("settles terminal even when the drive loop crashes before a typed outcome (no hung session)", async () => {
+        // A selector with an EMPTY catalog throws synchronously inside #drive
+        // (before any strategy runs) — the engine must still settle the session
+        // as a typed failed run instead of leaving `session.done` pending.
+        const engine = new ExecutionEngine({
+            registry: registry(),
+            selector: new StrategySelector([]),
+            bus: new MemoryEventBus(),
+        });
+
+        const session = engine.run(
+            request({ task: "fix my widgets", model: scripted([turn("done.")]) }),
+        );
+
+        const result = await Promise.race([
+            session.done,
+            new Promise<RunResult>((_, reject) => setTimeout(() => reject(new Error("session.done never settled")), 2_000)),
+        ]);
+        expect(result.status).toBe("failed");
+        expect(result.lastError?.code).toBe("STRATEGY_UNRECOVERABLE");
+        expect(session.status).toBe("failed");
+    });
+
+    it("records a misbehaving lifecycle bus but still settles the session", async () => {
+        const engine = new ExecutionEngine({ registry: registry(), bus: new MemoryEventBus() });
+        const throwing: EventBus = new Proxy(new MemoryEventBus(), {
+            get(target, prop) {
+                if (prop === "publish") return () => {
+                    throw new Error("broker is down");
+                };
+                return Reflect.get(target, prop);
+            },
+        });
+
+        const session = engine.run(
+            request({ task: "fix my widgets", model: scripted([turn("done.")]), bus: throwing }),
+        );
+
+        const result = await Promise.race([
+            session.done,
+            new Promise<RunResult>((_, reject) => setTimeout(() => reject(new Error("session.done never settled")), 2_000)),
+        ]);
+        // The run itself completes — the failed publish is recorded, never a hang.
+        expect(result.status).toBe("completed");
+        expect(session.publishError).toBeDefined();
+        expect(String(session.publishError)).toContain("broker is down");
+    });
+
+    it("publishes the queued transitions durably and settles cancelled mid-backoff", async () => {
+        const bus = new MemoryEventBus();
+        const engine = new ExecutionEngine({ registry: registry(), bus });
+        const lifecycle: string[] = [];
+        bus.subscribe((e) => {
+            lifecycle.push(e.type);
+        });
+
+        // Cancel while the run sits in retry backoff (status queued): the
+        // queued event must be on the bus and the run must settle cancelled —
+        // never a failed marker — so the durable projection matches the wire.
+        let releaseModel!: () => void;
+        const gate = new Promise<void>((r) => (releaseModel = r));
+        let calls = 0;
+        const flaky: ModelChat = async () => {
+            calls += 1;
+            if (calls === 2) await gate;
+            throw makeError({
+                code: "PROVIDER_RATE_LIMITED",
+                domain: "provider",
+                message: "429 on anthropic",
+                transient: true,
+                retryableAsIs: true,
+            });
+        };
+        const interval = 50;
+        const session = engine.run(
+            request({
+                task: "fix my widgets",
+                model: flaky,
+                retryBudget: { maxAttempts: 3, baseDelayMs: interval, maxDelayMs: interval, jitter: false, backoffMultiplier: 1 },
+            }),
+        );
+        await tick();
+        // First attempt failed → queued retry backoff began.
+        expect(lifecycle).toContain("queued");
+        expect(lifecycle).toContain("retrying");
+        session.cancel("enough");
+        releaseModel();
+
+        const result = await session.done;
+        expect(result.status).toBe("cancelled");
+        expect(lifecycle.at(-1)).toBe("cancelled");
+    });
+
     it("cancels a hung run deterministically", async () => {
         const bus = new MemoryEventBus();
         const engine = new ExecutionEngine({ registry: registry(), bus });
@@ -336,7 +431,7 @@ describe("ExecutionEngine", () => {
         expect(session.status).toBe("cancelled");
         expect(lifecycle).toContain("started");
         expect(lifecycle).not.toContain("completed");
-        expect(lifecycle.at(-1)).toBe("failed"); // cancelled published as failed{reason:cancelled}
+        expect(lifecycle.at(-1)).toBe("cancelled"); // real cancelled event, not failed{terminal:cancelled}
     });
 
     it("ballots runs get distinct sessions correlated by executionId", async () => {

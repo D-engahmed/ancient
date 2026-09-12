@@ -89,6 +89,30 @@ describe("applyEvent", () => {
         rec = applyEvent(rec, { id: "4", executionId: "x", seq: 3, type: "resumed", timestamp: new Date() });
         expect(rec.status).toBe("running");
     });
+
+    it("projects the engine's queued transitions faithfully", () => {
+        let rec = applyEvent(undefined, { id: "1", executionId: "x", seq: 0, type: "created", timestamp: new Date() });
+        rec = applyEvent(rec, { id: "2", executionId: "x", seq: 1, type: "queued", timestamp: new Date() });
+        expect(rec.status).toBe("queued");
+        rec = applyEvent(rec, { id: "3", executionId: "x", seq: 2, type: "started", timestamp: new Date() });
+        expect(rec.status).toBe("running");
+        rec = applyEvent(rec, { id: "4", executionId: "x", seq: 3, type: "queued", timestamp: new Date() });
+        expect(rec.status).toBe("queued");
+        rec = applyEvent(rec, { id: "5", executionId: "x", seq: 4, type: "retrying", timestamp: new Date() });
+        expect(rec.status).toBe("running");
+    });
+
+    it("projects waiting_approval and a real cancelled terminal", () => {
+        let rec = applyEvent(undefined, { id: "1", executionId: "x", seq: 0, type: "created", timestamp: new Date() });
+        rec = applyEvent(rec, { id: "2", executionId: "x", seq: 1, type: "started", timestamp: new Date() });
+        rec = applyEvent(rec, { id: "3", executionId: "x", seq: 2, type: "waiting_approval", timestamp: new Date() });
+        expect(rec.status).toBe("waiting_approval");
+        const ts = new Date("2026-01-01T00:00:01Z");
+        rec = applyEvent(rec, { id: "4", executionId: "x", seq: 3, type: "cancelled", timestamp: ts, payload: { message: "user aborted" } });
+        expect(rec.status).toBe("cancelled");
+        expect(rec.completedAt?.getTime()).toBe(ts.getTime());
+        expect(rec.error).toBe("user aborted");
+    });
 });
 
 describe("shouldCheckpoint", () => {

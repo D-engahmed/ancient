@@ -67,6 +67,12 @@ export function applyEvent(record: ExecutionRecord | undefined, event: Execution
             next.status = "running";
             next.startedAt = event.timestamp;
             break;
+        case "queued":
+            next.status = "queued";
+            break;
+        case "waiting_approval":
+            next.status = "waiting_approval";
+            break;
         case "plan-updated":
         case "tool-executed":
             if (typeof p?.tokensIn === "number") next.tokensIn += p.tokensIn;
@@ -97,6 +103,11 @@ export function applyEvent(record: ExecutionRecord | undefined, event: Execution
             next.status = "failed";
             next.completedAt = event.timestamp;
             if (typeof p?.error === "string") next.error = p.error;
+            break;
+        case "cancelled":
+            next.status = "cancelled";
+            next.completedAt = event.timestamp;
+            if (typeof p?.message === "string") next.error = p.message;
             break;
     }
     return next;

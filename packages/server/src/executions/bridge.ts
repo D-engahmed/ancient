@@ -191,7 +191,9 @@ export class ExecutionEventBridge {
       case "failed": {
         // The engine publishes the terminal ErrorEnvelope (Layer 20) on the
         // lifecycle event; pass its code/retryability through instead of the
-        // blanket SYSTEM_UNKNOWN the wire used to fabricate.
+        // blanket SYSTEM_UNKNOWN the wire used to fabricate. The
+        // `terminal: "cancelled"` marker is legacy (the engine now emits a real
+        // `cancelled` event) — kept as a fallback for old producers.
         const cancelled = event.payload?.reason === "cancelled" || event.payload?.terminal === "cancelled";
         const envelope = event.payload?.error as ErrorEnvelope | undefined;
         this.finish(cancelled ? "cancelled" : "failed", {
@@ -200,6 +202,14 @@ export class ExecutionEventBridge {
         });
         break;
       }
+      case "cancelled":
+        // Real cancelled lifecycle event (Phase A): the engine publishes it as
+        // its own terminal type instead of smuggling a marker on `failed`, so
+        // the durable projection and the wire agree on terminal state.
+        this.finish("cancelled", {
+          error: typeof event.payload?.message === "string" ? event.payload.message : "cancelled",
+        });
+        break;
       case "retrying":
         // Failed → Queued for transient errors (docs/03): surface the bounded
         // retry so the CLI is honest about why the run is still alive.

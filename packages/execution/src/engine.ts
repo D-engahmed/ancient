@@ -75,11 +75,51 @@ export class ExecutionEngine {
     }
 
     /** Start a run. The returned session is live immediately; `session.done`
-     *  settles when the run completes, fails, or is cancelled. */
+     *  settles when the run completes, fails, or is cancelled.
+     *
+     *  Settle guarantee (Phase A): whatever happens inside `#drive`, the
+     *  session ALWAYS reaches a terminal state — if it throws before a typed
+     *  outcome exists, we settle `failed` with a STRATEGY_UNRECOVERABLE
+     *  envelope; if it returns without settling (a structural bug), the same
+     *  guard catches it. A consumer awaiting `session.done` can never hang on
+     *  a silently dead run. */
     run(request: RunRequest): ExecutionSession {
         const session = new EngineSession(request.bus ?? this.#bus, request, request.sessionId);
-        void this.#drive(session, request);
+        void this.#drive(session, request)
+            .catch((err) => this.#settleUnexpected(session, request, err))
+            .then(() => {
+                if (!session.settled) {
+                    this.#settleUnexpected(
+                        session,
+                        request,
+                        new Error("engine finished the drive loop without settling terminal state"),
+                    );
+                }
+            });
         return session;
+    }
+
+    /** Terminal-failed settle for a drive-loop crash (a throw outside the typed
+     *  strategy stream). The engine is the ONLY writer of terminal status, so
+     *  an internal failure still settles as a typed, client-safe `failed`.
+     *  This path itself must be crash-proof: if even deriving a best-effort
+     *  selection throws (e.g. an injected empty catalog), we fall back to a
+     *  hardcoded one so the session ALWAYS resolves. */
+    #settleUnexpected(session: EngineSession, request: RunRequest, err: unknown): void {
+        if (session.settled) return;
+        const envelope = asEnvelope(err, {
+            code: "STRATEGY_UNRECOVERABLE",
+            domain: "engine",
+            message: `engine: internal drive failure — ${err instanceof Error ? err.message : String(err)}`,
+        });
+        let selection: StrategySelection;
+        try {
+            const profile: TaskProfile = inferProfile(request.task, request.mode ?? "BUILD", request.profile);
+            selection = this.selector.select(profile);
+        } catch {
+            selection = { id: "direct", rung: 0 as StrategyRung, reason: "engine-internal failure" };
+        }
+        this.#fail(session, selection, 0, envelope, EMPTY_OUTCOME);
     }
 
     /** Rollup produced by consuming one strategy stream (one attempt). */
@@ -179,6 +219,7 @@ export class ExecutionEngine {
         const { task, scope, policy, model, mode = "BUILD" } = request;
         session.publish("created", { task: task.slice(0, 240), mode });
         session.status = "queued"; // Created → Queued → Running (docs/03 state diagram)
+        session.publish("queued", { reason: "awaiting-strategy" });
 
         const profile: TaskProfile = inferProfile(task, mode, request.profile);
         let selection = this.selector.select(profile);
@@ -255,6 +296,7 @@ export class ExecutionEngine {
                 if (emptyAfterTools && reselectionCount < RESELECTION_LIMIT) {
                     reselectionCount += 1;
                     session.status = "queued";
+                    session.publish("queued", { reason: "escalating" });
                     session.publish("degraded", {
                         reason: "empty-output",
                         reselection: reselectionCount,
@@ -345,6 +387,7 @@ export class ExecutionEngine {
                 const waitMs = nextDelay(attempt, budget);
                 retryCount = attempt;
                 session.status = "queued";
+                session.publish("queued", { reason: "retrying", code: outcome.error.code });
                 session.publish("retrying", {
                     attempt: attempt + 1,
                     waitMs,
@@ -364,7 +407,7 @@ export class ExecutionEngine {
         if (session.cancelled) {
             const cancelMessage = session.cancelReason ?? "cancelled";
             session.status = "cancelled";
-            session.publish("failed", { reason: "cancelled", message: cancelMessage, terminal: "cancelled" });
+            session.publish("cancelled", { reason: "cancelled", message: cancelMessage });
             session.resolve({
                 sessionId: session.id,
                 status: "cancelled",
@@ -411,6 +454,8 @@ export class EngineSession implements ExecutionSession {
     #seq = 0;
     #log: StrategyEvent[] = [];
     #cancelRequested = false;
+    #settled = false;
+    #publishError: unknown;
     cancelReason: string | undefined;
     #resolve!: (result: RunResult) => void;
 
@@ -430,14 +475,27 @@ export class EngineSession implements ExecutionSession {
     }
 
     publish(type: LifecycleEventType, payload?: Record<string, unknown>): void {
-        this.bus.publish({
-            id: createId(),
-            executionId: this.id,
-            seq: ++this.#seq,
-            type,
-            timestamp: new Date(),
-            payload,
-        });
+        try {
+            this.bus.publish({
+                id: createId(),
+                executionId: this.id,
+                seq: ++this.#seq,
+                type,
+                timestamp: new Date(),
+                payload,
+            });
+        } catch (err) {
+            // The default MemoryEventBus already isolates listener errors, so a
+            // throw here means a non-conforming injected bus. Recording it (not
+            // dying on it) is what keeps `session.done` guaranteed to settle —
+            // a lifecycle publish failure must never hang a consumer on a run
+            // that has already reached a terminal (or live) state.
+            this.#publishError ??= err;
+        }
+    }
+
+    get publishError(): unknown {
+        return this.#publishError;
     }
 
     record(event: StrategyEvent): void {
@@ -457,7 +515,12 @@ export class EngineSession implements ExecutionSession {
         }
     }
 
+    get settled(): boolean {
+        return this.#settled;
+    }
+
     resolve(result: RunResult): void {
+        this.#settled = true;
         this.#resolve(result);
     }
 }
