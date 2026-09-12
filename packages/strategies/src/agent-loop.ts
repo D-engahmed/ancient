@@ -49,6 +49,10 @@ export const agentLoopStrategy: ExecutionStrategy = {
         let turnCount = 0;
         let toolCount = 0;
         let usage: UsageTokens = EMPTY_USAGE();
+        // Key → last failure observed for that exact call (name + args). The
+        // bounded-repeat guard: a call that already failed non-retryable-as-is
+        // is not re-executed identically (strategy-level half of I5).
+        const failedCalls = new Map<string, ToolFailure>();
 
         try {
             while (turnCount < maxTurns) {
@@ -116,7 +120,7 @@ export const agentLoopStrategy: ExecutionStrategy = {
                 for (const call of turn!.toolCalls) {
                     yield { type: "tool-call", call } as const;
                     toolCount += 1;
-                    const res = await executeSafe(runtime, call);
+                    const res = await maybeExecute(runtime, call, failedCalls);
                     history.push({ role: "tool", toolCallId: call.id, toolName: call.name, text: truncateForHistory(toolFeedbackText(res)) });
                     yield {
                         type: "tool-result",
@@ -181,4 +185,34 @@ async function executeSafe(runtime: StrategyRuntime, call: ModelToolCall): Promi
         };
         return { text: `error: ${failure.message}`, ok: false, failure };
     }
+}
+
+/**
+ * Bounded-repeat guard for the loop. An identical call (name + serialized
+ * args) that previously failed with `retryableAsIs=false` is never executed
+ * again — the engine's own classification said re-running it will not help,
+ * so the loop refuses and feeds the model an observable reason instead of
+ * burning a tool execution (strategy-level half of I5, no uncontrolled
+ * retries). A call that succeeded clears its record; retryable-as-is
+ * failures stay executable so the model can retry transient faults.
+ */
+async function maybeExecute(
+    runtime: StrategyRuntime,
+    call: ModelToolCall,
+    failedCalls: Map<string, ToolFailure>,
+): Promise<ToolResult> {
+    const signature = `${call.name} ${JSON.stringify(call.args ?? {})}`;
+    const prior = failedCalls.get(signature);
+    if (prior && prior.retryableAsIs === false) {
+        const message = `duplicate call (${call.name}) suppressed — a prior identical call failed with ${prior.code} (retryableAsIs=false); ` +
+            "re-running it identically cannot succeed. Change the arguments or the approach.";
+        return { text: `error: ${message}`, ok: false };
+    }
+    const res = await executeSafe(runtime, call);
+    if (res.ok) {
+        failedCalls.delete(signature);
+    } else if (res.failure) {
+        failedCalls.set(signature, res.failure);
+    }
+    return res;
 }

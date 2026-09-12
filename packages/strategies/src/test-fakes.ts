@@ -10,7 +10,8 @@ export type FakeTurn = ModelTurnResult | ((history: TurnMessage[]) => ModelTurnR
 /** A scriptable StrategyRuntime: consume pre-arranged turns, record calls. */
 export function fakeRuntime(opts: {
     turns: FakeTurn[];
-    exec?: (call: { name: string; args: unknown }) => string | Promise<string>;
+    /** Return a serialized result (string) or a fully-shaped ToolResult. */
+    exec?: (call: { name: string; args: unknown }) => string | ToolResult | Promise<string | ToolResult>;
     tools?: RuntimeTool[];
     failOnRun?: boolean;
 }): StrategyRuntime & { calls: { name: string; args: unknown }[] } {
@@ -46,7 +47,10 @@ export function fakeRuntime(opts: {
         },
         async executeTool(call) {
             calls.push(call);
-            if (opts.exec) return resultOf(await opts.exec(call));
+            if (opts.exec) {
+                const out = await opts.exec(call);
+                return typeof out === "string" ? resultOf(out) : out;
+            }
             return { text: `ok:${call.name}`, ok: true };
         },
     };

@@ -7,7 +7,7 @@ import { describe, expect, it } from "bun:test";
 import { collect } from "./test-collect";
 import { call, fakeRuntime, turn } from "./test-fakes";
 import { agentLoopStrategy } from "./agent-loop";
-import type { TurnMessage } from "./types";
+import type { StrategyEvent, TurnMessage } from "./types";
 
 const task = { description: "port the helper", complexity: "moderate" as const };
 
@@ -143,5 +143,48 @@ describe("agent-loop strategy", () => {
         const events = await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
         const done = events.find((e) => e.type === "done");
         expect(done).toMatchObject({ turnCount: 2, toolCount: 1 });
+    });
+
+    it("suppresses an identical repeat of a non-retryable failed call, but not a retryable one", async () => {
+        const executes: string[] = [];
+        const rt = fakeRuntime({
+            turns: [
+                turn("a", [call("glob", { pattern: "*" }, "c1")]),
+                turn("b", [call("glob", { pattern: "*" }, "c2")]),
+                turn("c", [call("rescan", { path: "/" }, "c3")]),
+                turn("d", [call("rescan", { path: "/" }, "c4")]),
+                turn("done"),
+            ],
+            exec: (c) => {
+                executes.push(c.name);
+                if (c.name === "rescan") {
+                    return {
+                        text: "error: transient blip",
+                        ok: false,
+                        failure: {
+                            code: "CAPABILITY_EXECUTION_FAILED",
+                            message: "transient blip",
+                            transient: true,
+                            retryableAsIs: true,
+                            partialEffect: "none",
+                        },
+                    };
+                }
+                throw new Error("boom");
+            },
+        });
+
+        const events = await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
+
+        // glob failed non-retryable → second identical glob is NOT executed.
+        // rescan failed retryable-as-is → second identical rescan IS executed.
+        expect(executes).toEqual(["glob", "rescan", "rescan"]);
+        const results = events.filter((e) => e.type === "tool-result");
+        expect(results).toHaveLength(4);
+        const suppressed = results[1] as Extract<StrategyEvent, { type: "tool-result" }>;
+        expect(suppressed.result).toContain("duplicate call (glob) suppressed");
+        expect(suppressed).not.toHaveProperty("failure");
+        const done = events.find((e) => e.type === "done");
+        expect(done).toMatchObject({ turnCount: 5, toolCount: 4 });
     });
 });
