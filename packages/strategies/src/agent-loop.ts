@@ -48,7 +48,6 @@ export const agentLoopStrategy: ExecutionStrategy = {
         const history: TurnMessage[] = [];
         let turnCount = 0;
         let toolCount = 0;
-        let producedText = false;
         let usage: UsageTokens = EMPTY_USAGE();
 
         try {
@@ -65,7 +64,6 @@ export const agentLoopStrategy: ExecutionStrategy = {
                 })) {
                     if (part.type === "delta") {
                         turnText += part.text;
-                        producedText = true;
                         yield { type: "text-delta", text: part.text } as const;
                     } else {
                         turn = part.result;
@@ -85,19 +83,21 @@ export const agentLoopStrategy: ExecutionStrategy = {
                 }
 
                 if (turn!.toolCalls.length === 0) {
-                    if (toolCount > 0 && !producedText) {
-                        // The model ran tools but produced no prose — land the
-                        // answer explicitly so a loop that went quiet is never
-                        // "complete" without contactable output (the repro for
-                        // empty final messages — docs/03 AS-BUILT fix).
+                    // Termination sharpening: the model signals completion by
+                    // requesting no tools. If it ran tools earlier but its
+                    // COMPLETION turn produced no prose, a bare stop is not a
+                    // contactable final answer — force one closing turn so a
+                    // loop that went quiet is never "complete" without output
+                    // (the strategy-level half of the no-fake-completion rule;
+                    // docs/03 AS-BUILT fix extended to cover earlier narration).
+                    if (toolCount > 0 && !turnText.trim()) {
                         let closing: ModelTurnResult;
                         for await (const part of streamModelTurn(runtime, {
-                            system: "You are ANCIENT's agent loop. You already ran tools and observed their results in the conversation. Write the final answer to the task now. Do NOT call any tools.",
+                            system: CLOSING_SYSTEM,
                             prompt: `Task: ${profile.description}\n\nTool results are in the history above. Produce the final answer.`,
                             history,
                         })) {
                             if (part.type === "delta") {
-                                producedText = true;
                                 yield { type: "text-delta", text: part.text } as const;
                             } else {
                                 closing = part.result;
@@ -154,7 +154,13 @@ export const agentLoopStrategy: ExecutionStrategy = {
 
 const SYSTEM =
     "You are ANCIENT's agent loop. Work toward the task across turns. To inspect or change anything, call the tools. " +
+    "When a tool call fails, its result states the failure class: retryableAsIs=false means re-calling the same thing will not help — change the approach; " +
+    "transient=true failures can be retried as-is. Before declaring the task done, confirm the observable outcome is actually verified. " +
     "Stop requesting tools and give the final answer when the task is complete.";
+
+const CLOSING_SYSTEM =
+    "You are ANCIENT's agent loop. You already ran tools and observed their results in the conversation. " +
+    "Write the final answer to the task now. Do NOT call any tools.";
 
 function truncateForHistory(text: string): string {
     return text.length > 2_000 ? text.slice(0, 2_000) + "…" : text;

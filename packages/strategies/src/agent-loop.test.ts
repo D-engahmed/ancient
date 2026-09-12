@@ -119,4 +119,29 @@ describe("agent-loop strategy", () => {
         const bad = events.find((e) => e.type === "tool-result");
         expect(bad).toMatchObject({ result: "error: denied by policy", error: "error: denied by policy" });
     });
+
+    it("forces one closing turn when the completion turn goes quiet despite earlier prose", async () => {
+        const rt = fakeRuntime({
+            turns: [
+                turn("planning", [call("glob", { pattern: "**/*.ts" }, "c1")]),
+                turn(""),
+                () => turn("the final answer"),
+            ],
+        });
+        const events = await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
+        const done = events.find((e) => e.type === "done");
+        expect(done).toMatchObject({ turnCount: 3, toolCount: 1 });
+        expect(events.filter((e) => e.type === "text-delta").map((e) => (e as { text: string }).text)).toContain(
+            "the final answer",
+        );
+    });
+
+    it("does not force a closing turn when the completion turn already answered", async () => {
+        const rt = fakeRuntime({
+            turns: [turn("saw the file", [call("glob", { pattern: "*" }, "c1")]), turn("answer")],
+        });
+        const events = await collect(agentLoopStrategy.execute({ profile: task, runtime: rt }));
+        const done = events.find((e) => e.type === "done");
+        expect(done).toMatchObject({ turnCount: 2, toolCount: 1 });
+    });
 });
