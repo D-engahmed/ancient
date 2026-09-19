@@ -121,6 +121,13 @@ export class ExecutionHub {
     const bus = new MemoryEventBus();
     const bridge = new ExecutionEventBridge();
     const durable = new DurableExecutionRecorder(this.#store, request.userId);
+    const mode = request.mode ?? "BUILD";
+    const entryBase = {
+      executionId,
+      userId: request.userId,
+      task: request.task,
+      mode,
+    };
 
     // Persist the execution head before starting model/tool work. If the
     // database is unavailable, fail closed rather than running an execution
@@ -148,14 +155,6 @@ export class ExecutionHub {
       bridge.onLifecycleEvent(event);
       durable.record(event);
     });
-
-    const mode = request.mode ?? "BUILD";
-    const entryBase = {
-      executionId,
-      userId: request.userId,
-      task: request.task,
-      mode,
-    };
 
     try {
       const selection: ChatModelSelection = request.model ?? platformDefaultSelection();
