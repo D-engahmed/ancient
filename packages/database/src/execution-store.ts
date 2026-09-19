@@ -30,14 +30,17 @@ const KNOWN_TYPES = new Set<string>([
 function toRecord(row: {
   id: string;
   executionId: string;
+  userId?: string;
   seq: number;
   type: string;
   timestamp: Date;
   payload: unknown;
+  userId?: string;
 }): ExecutionEvent {
   return {
     id: row.id,
     executionId: row.executionId,
+    ...(row.userId ? { userId: row.userId } : {}),
     seq: row.seq,
     type: row.type as ExecutionEvent["type"],
     timestamp: row.timestamp,
@@ -72,6 +75,7 @@ export class PostgresExecutionStore implements ExecutionStore {
         data: {
           id: event.id,
           executionId: event.executionId,
+          ...(event.userId ? { userId: event.userId } : {}),
           seq: event.seq,
           type: event.type,
           timestamp: event.timestamp,

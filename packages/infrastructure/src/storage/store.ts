@@ -56,6 +56,7 @@ export function applyEvent(record: ExecutionRecord | undefined, event: Execution
     const next: ExecutionRecord = { ...base, lastSeq: event.seq };
 
     const p = event.payload;
+    if (typeof p?.userId === "string") next.userId = p.userId;
     switch (event.type) {
         case "created":
             next.status = "pending";
