@@ -1,8 +1,6 @@
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/d-engahmed/ancient:${ANCIENT_IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file:
       - .env.production
