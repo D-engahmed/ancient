@@ -33,7 +33,6 @@ export interface ExecutionStore {
 function baseRecord(id: string, teamId: string, teamName: string, task: string): ExecutionRecord {
     return {
         id,
-        userId: (event.payload?.userId as string) ?? undefined,
         status: "pending",
         teamId,
         teamName,
@@ -55,9 +54,9 @@ export function applyEvent(record: ExecutionRecord | undefined, event: Execution
         (event.payload?.task as string) ?? "",
     );
     const next: ExecutionRecord = { ...base, lastSeq: event.seq };
-    if (typeof p?.userId === "string") next.userId = p.userId;
 
     const p = event.payload;
+    if (typeof p?.userId === "string") next.userId = p.userId;
     switch (event.type) {
         case "created":
             next.status = "pending";
