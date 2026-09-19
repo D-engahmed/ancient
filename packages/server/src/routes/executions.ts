@@ -84,14 +84,40 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
 
   app.get("/", async (c) => {
     const userId = c.get("userId");
-    return c.json({ executions: hub.list(userId).map(snapshot) });
+    const durable = await hub.listDurable(userId);
+    const live = new Map(hub.list(userId).map((entry) => [entry.executionId, snapshot(entry)]));
+    for (const record of durable) {
+      if (!live.has(record.id)) {
+        live.set(record.id, {
+          executionId: record.id,
+          status: record.status,
+          task: record.task,
+          mode: "BUILD",
+          userId,
+          lastSeq: record.lastSeq,
+          terminal: ["completed", "failed", "cancelled"].includes(record.status),
+        });
+      }
+    }
+    return c.json({ executions: [...live.values()] });
   });
 
   app.get("/:executionId", async (c) => {
     const userId = c.get("userId");
     const entry = hub.get(userId, c.req.param("executionId"));
-    if (!entry) return guardJson(c, "Execution not found", 404);
-    return c.json(snapshot(entry));
+    if (entry) return c.json(snapshot(entry));
+    const record = await hub.getDurable(userId, c.req.param("executionId"));
+    if (!record) return guardJson(c, "Execution not found", 404);
+    return c.json({
+      executionId: record.id,
+      status: record.status,
+      task: record.task,
+      mode: "BUILD",
+      userId,
+      lastSeq: record.lastSeq,
+      terminal: ["completed", "failed", "cancelled"].includes(record.status),
+      recovered: true,
+    });
   });
 
   app.post("/:executionId/cancel", zValidator("json", cancelSchema), (c) => {
