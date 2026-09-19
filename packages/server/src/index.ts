@@ -22,11 +22,28 @@ import { ExecutionHub } from "./executions/hub";
 
 const app = new Hono<{ Variables: { traceId: string } }>();
 
-/** First-in-chain: every response (incl. onError) carries X-Trace-Id. */
 app.use("*", traceId);
 
-/** One live hub backs both the interactive and the public /v1 surface. */
 const hub = new ExecutionHub();
+
+// Kubernetes/load-balancer probes.
+// /health/live never depends on external infrastructure.
+// /health/ready verifies the database when DATABASE_URL is configured.
+app.get("/health/live", (c) => c.json({ status: "ok" }));
+
+app.get("/health/ready", async (c) => {
+  if (!process.env.DATABASE_URL) {
+    return c.json({ status: "not_ready", reason: "DATABASE_URL is not configured" }, 503);
+  }
+  try {
+    const { db } = await import("@ANCIENT/database/client");
+    await db.$queryRaw`SELECT 1`;
+    return c.json({ status: "ready" });
+  } catch (error) {
+    if (process.env.ANCIENT_DEBUG_ERRORS === "1") console.error(error);
+    return c.json({ status: "not_ready", reason: "database unavailable" }, 503);
+  }
+});
 
 app.notFound((c) => guardJson(c, "Not found", 404));
 
@@ -34,18 +51,9 @@ app.onError((error, c) => {
   if (error instanceof HTTPException) {
     return guardJson(c, error.message || "Request failed", error.status);
   }
-  // `console.error("...", error)` used to print the raw error object. For
-  // errors like Prisma's PrismaClientValidationError, `error.stack` embeds
-  // that library's own minified source-highlighting/formatting code, so the
-  // console filled with unreadable bundled JS instead of the actual "Unknown
-  // field ..." message (which is at the top of `error.message` already).
-  // Default to the clean message; opt into the full object with
-  // ANCIENT_DEBUG_ERRORS=1 when you actually need a stack trace.
   const message = error instanceof Error ? error.message : String(error);
   console.error("Unhandled server error:", message);
-  if (process.env.ANCIENT_DEBUG_ERRORS === "1") {
-    console.error(error);
-  }
+  if (process.env.ANCIENT_DEBUG_ERRORS === "1") console.error(error);
   return errorJson(c, error);
 });
 
@@ -58,9 +66,6 @@ app.use("/usage/*", requireAuth);
 app.use("/agent/*", requireAuth);
 app.use("/pipeline/*", requireAuth);
 app.use("/executions/*", requireAuth);
-// The AI-heavy surfaces share one per-user budget so a scripted burst of
-// executions (or a runaway subagent fan-out) can't monopolize the upstream
-// pool behind the gateway — same window/quota as /chat/*.
 app.use("/executions/*", byokRateLimit);
 
 const routes = app
@@ -76,4 +81,4 @@ const routes = app
   .route("/v1", createV1Routes(hub));
 
 export type AppType = typeof routes;
-export default { port: 3000, fetch: app.fetch, idleTimeout: 255 };
+export default { port: Number(process.env.PORT ?? 3000), fetch: app.fetch, idleTimeout: 255 };
