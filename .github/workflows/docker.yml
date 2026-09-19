@@ -1,0 +1,32 @@
+name: Container
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "docker-compose.production.yml"
+      - "packages/**"
+      - "package.json"
+      - "bun.lock"
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: ghcr.io/d-engahmed/ancient:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
