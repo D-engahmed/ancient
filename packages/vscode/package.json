@@ -1,0 +1,27 @@
+{
+  "name": "ancient-vscode",
+  "displayName": "ANCIENT Coding Agent",
+  "description": "ANCIENT AI coding agent for VS Code using the same execution API as the terminal client.",
+  "version": "0.1.0",
+  "publisher": "nxg-ai-solutions",
+  "engines": {"vscode": "^1.95.0"},
+  "categories": ["AI", "Programming Languages"],
+  "activationEvents": ["onCommand:ancient.runTask","onCommand:ancient.explainSelection","onCommand:ancient.fixDiagnostics"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {"command":"ancient.runTask","title":"ANCIENT: Run Coding Task"},
+      {"command":"ancient.explainSelection","title":"ANCIENT: Explain Selection with ANCIENT"},
+      {"command":"ancient.fixDiagnostics","title":"ANCIENT: Fix Current Diagnostics with ANCIENT"}
+    ],
+    "configuration": {
+      "title": "ANCIENT",
+      "properties": {
+        "ancient.apiBaseUrl": {"type":"string","default":"http://127.0.0.1:3000/v1","description":"ANCIENT v1 API base URL."},
+        "ancient.apiKey": {"type":"string","default":"","description":"ANCIENT platform API key."},
+        "ancient.model": {"type":"string","default":"","description":"Optional model id; empty uses the server default."}
+      }
+    }
+  },
+  "scripts": {"build":"bun build src/extension.ts --outdir dist --target node --format cjs --external vscode"}
+}
