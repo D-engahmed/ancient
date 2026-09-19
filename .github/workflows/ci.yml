@@ -39,3 +39,6 @@ jobs:
 
       - name: Build CLI
         run: bun run build:cli
+
+      - name: Build VS Code extension
+        run: bun run build:vscode
