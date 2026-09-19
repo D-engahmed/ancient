@@ -1,0 +1,9 @@
+# Production-critical paths require owner review.
+* @D-engahmed
+/.github/ @D-engahmed
+/packages/server/ @D-engahmed
+/packages/database/ @D-engahmed
+/packages/execution/ @D-engahmed
+/packages/capabilities/ @D-engahmed
+/Dockerfile @D-engahmed
+/docker-compose.production.yml @D-engahmed
