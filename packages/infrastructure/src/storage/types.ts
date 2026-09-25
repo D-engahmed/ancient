@@ -44,6 +44,8 @@ export type ExecutionRecord = {
     tokensIn: number;
     tokensOut: number;
     costUsd: number;
+    /** Requested execution mode, persisted from the created event. */
+    mode?: string;
     /** Optional final result text on completion; error message on failure. */
     output?: string;
     error?: string;
