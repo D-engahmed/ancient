@@ -2,7 +2,7 @@
   "name": "ancient-vscode",
   "displayName": "ANCIENT Coding Agent",
   "description": "ANCIENT AI coding agent for VS Code using the same execution API as the terminal client.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "nxg-ai-solutions",
   "engines": {"vscode": "^1.95.0"},
   "categories": ["AI", "Programming Languages"],
