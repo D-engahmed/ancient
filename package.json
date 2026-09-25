@@ -29,7 +29,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.58",
     "@ai-sdk/openai": "^4.0.0",
-    "ai": "^7.0.55",
+    "ai": "^7.0.108",
     "dotenv": "^16.4.7",
     "hono": "^4.13.8"
   }
