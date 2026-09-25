@@ -6,7 +6,12 @@
   "version": "3.1.0",
   "description": "ANCIENT terminal coding agent client.",
   "repository": "https://github.com/D-engahmed/ancient",
-  "files": ["bin", "dist", "README.md"],
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "bin": {
     "ANCIENT": "./bin/ANCIENT"
   },
@@ -42,5 +47,6 @@
     "react": "^19.2.4",
     "react-router": "^7.14.0",
     "zod": "^4.3.6"
-  }
+  },
+  "license": "SEE LICENSE IN LICENSE"
 }

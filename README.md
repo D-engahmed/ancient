@@ -403,8 +403,8 @@ gantt
     v2.0 Skills & MCP          :done, 2024-07, 2025-03
     v3.0 Multi-agent System    :done, 2025-04, 2026-08
     section In Progress
-    v3.1 VS Code Extension     :active, 2026-08, 2026-12
-    v3.2 Web Dashboard         :active, 2026-09, 2027-02
+    v3.1 VS Code Extension     :done, 2026-08, 2026-09
+    v3.2 Web Dashboard         :2026-09, 2027-02
     section Planned
     v4.0 Self-improving Agents :2027-03, 2027-09
     v4.0 Agent Marketplace     :2027-06, 2027-12
@@ -415,8 +415,8 @@ gantt
 | ✅ v1.0 | Terminal UI + basic chat | Released |
 | ✅ v2.0 | Skills, subagents, MCP, checkpoints | Released |
 | ✅ v3.0 | **Multi-agent system** (Arena, Team, Tasks, Runtime, Backends) | **Current** |
-| 🔄 v3.1 | VS Code Extension | In Progress |
-| 🔄 v3.2 | Web Dashboard for team management | In Progress |
+| ✅ v3.1 | VS Code Extension | Released in the current 3.1 release line |
+| 📋 v3.2 | Web Dashboard for team management | Planned |
 | 📋 v4.0 | Self-improving agents (meta-learning) | Planned |
 | 📋 v4.0 | Agent marketplace (shareable team templates) | Planned |
 

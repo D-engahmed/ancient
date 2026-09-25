@@ -1,3 +1,21 @@
+describe("resolveApiUrl", () => {
+  test("allows loopback HTTP for local development", () => {
+    expect(resolveApiUrl("http://localhost:3000/")).toBe("http://localhost:3000");
+    expect(resolveApiUrl("http://127.0.0.1:3000")).toBe("http://127.0.0.1:3000");
+  });
+
+  test("requires HTTPS for non-loopback endpoints", () => {
+    expect(() => resolveApiUrl("http://10.0.0.5:3000")).toThrow(/require HTTPS/);
+    expect(resolveApiUrl("https://ancient.example.com/")).toBe("https://ancient.example.com");
+  });
+
+  test("rejects embedded credentials and ambiguous URL components", () => {
+    expect(() => resolveApiUrl("https://user:pass@example.com")).toThrow(/credentials/);
+    expect(() => resolveApiUrl("https://example.com?token=secret")).toThrow(/query parameters/);
+    expect(() => resolveApiUrl("https://example.com/#fragment")).toThrow(/fragments/);
+  });
+});
+
 // Copyright (c) 2026 NXG AI Solutions. All rights reserved.
 // Proprietary and confidential. Unauthorized copying or distribution prohibited.
 //
@@ -5,7 +23,7 @@
 // Stubs global fetch; never touches the network.
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { apiClient, streamExecutionEvents } from "./api-client";
+import { apiClient, resolveApiUrl, streamExecutionEvents } from "./api-client";
 
 const originalFetch = globalThis.fetch;
 

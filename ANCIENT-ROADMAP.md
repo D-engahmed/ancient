@@ -52,7 +52,7 @@ shipped in the 2.0 upgrade, and lays out the remaining phases.
 - [ ] Headless/SDK mode: `ancient -p "task"` for CI, `--output-format json`
 - [ ] GitHub Action + GitLab CI templates
 - [ ] Plugin marketplaces: `ancient plugin add <git-url>` installing skills/agents/commands/hooks bundles
-- [ ] IDE integration (VS Code extension speaking to the same server)
+- [x] IDE integration (VS Code extension speaking to the same server) — shipped in v3.1
 - [ ] Worktree isolation for parallel agent runs
 
 ### Phase 5 — SaaS layer (see `docs/BUSINESS.md`)

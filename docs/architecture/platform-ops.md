@@ -22,14 +22,10 @@ the blast radius of a rotation.
 **Rotation:**
 1. Generate a new key (`openssl rand -base64 32`).
 2. Update the env var (or `.env`, depending on your deployment).
-3. **Restart** the server process — the key is read at import time
-   (`require-api-key.ts` caches `process.env` on first hit).
-4. All old CLI integrations / Coding products using the previous key
-   immediately receive `401 AUTH_UNAUTHENTICATED`.
+3. **Restart** the server process so the deployment environment contains the new value. The API middleware reads `process.env.ANCIENT_PLATFORM_API_KEY` on each request; it does not cache the key itself.
+4. All new CLI/API requests using the previous key immediately receive `401 AUTH_UNAUTHENTICATED` after the restarted deployment is serving traffic.
 
-**Blast radius:** Every active `/v1` consumer loses connectivity for the
-duration of the restart window. No data loss; in-flight SSE streams close
-cleanly on the next `text.delta` write failure.
+**Blast radius:** New `/v1` requests authenticated with the old key fail after the restarted deployment is serving traffic. In-flight SSE streams are not re-authorized on every event; a deployment restart itself closes them.
 
 ---
 

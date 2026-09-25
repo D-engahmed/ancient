@@ -31,14 +31,14 @@ export interface ExecutionStore {
 }
 
 /** Build a base (empty) execution record for a created execution. */
-function baseRecord(id: string, teamId: string, teamName: string, task: string): ExecutionRecord {
+function baseRecord(id: string, teamId: string, teamName: string, task: string, startedAt: Date): ExecutionRecord {
     return {
         id,
         status: "pending",
         teamId,
         teamName,
         task,
-        startedAt: new Date(),
+        startedAt,
         lastSeq: -1,
         tokensIn: 0,
         tokensOut: 0,
@@ -53,6 +53,7 @@ export function applyEvent(record: ExecutionRecord | undefined, event: Execution
         (event.payload?.teamId as string) ?? "",
         (event.payload?.teamName as string) ?? "",
         (event.payload?.task as string) ?? "",
+        event.timestamp,
     );
     const next: ExecutionRecord = { ...base, lastSeq: event.seq };
 

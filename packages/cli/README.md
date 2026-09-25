@@ -25,6 +25,9 @@ native standalone executable for the current host.
 
 ## Configuration
 
+The execution API defaults to `http://localhost:3000`. Remote API URLs must use HTTPS; loopback HTTP remains supported for local development. The CLI rejects API URLs containing credentials, query parameters, or fragments before sending the authentication token.
+
+
 - `ANCIENT_API_URL` is preferred for the execution API base URL.
 - `API_URL` is retained as a compatibility alias.
 - `ANCIENT_ENV_FILE` points to an explicit dotenv file.
