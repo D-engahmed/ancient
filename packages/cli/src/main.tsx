@@ -8,6 +8,6 @@ import dotenv from "dotenv";
 import { resolve } from "node:path";
 
 const envFile = process.env.ANCIENT_ENV_FILE ?? resolve(process.cwd(), ".env");
-dotenv.config({ path: envFile, quiet: true });
+dotenv.config({ path: envFile, override: true });
 
 await import("./index.tsx");
