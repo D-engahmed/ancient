@@ -3,7 +3,10 @@ name: Security
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "production-hardening/**"
+      - "production-ready/**"
   schedule:
     - cron: "17 3 * * 1"
 
