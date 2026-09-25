@@ -22,7 +22,7 @@ function asJson(value: Readonly<Record<string, unknown>>): Prisma.InputJsonValue
 }
 
 const KNOWN_TYPES = new Set<string>([
-  "created", "started", "plan-updated", "tool-executed", "artifact-created",
+  "created", "started", "queued", "waiting_approval", "plan-updated", "tool-executed", "artifact-created",
   "checkpoint-saved", "paused", "resumed", "retrying", "degraded",
   "completed", "failed", "cancelled",
 ]);
