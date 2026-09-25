@@ -35,7 +35,6 @@ function toRecord(row: {
   type: string;
   timestamp: Date;
   payload: unknown;
-  userId?: string;
 }): ExecutionEvent {
   return {
     id: row.id,
