@@ -30,7 +30,15 @@ describe("EventSourcedExecutionStore", () => {
         expect(rec!.teamName).toBe("Team");
         expect(rec!.tokensIn).toBe(100);
         expect(rec!.tokensOut).toBe(50);
-        expect(rec!.lastSeq).toBe(2);
+        expect(rec!.lastSeq).toBe(3);
+    });
+
+    it("allocates contiguous 1-based sequence numbers", async () => {
+        const store = new EventSourcedExecutionStore();
+        const first = await store.appendEvent(evt({ executionId: "seq", type: "created" }));
+        const second = await store.appendEvent(evt({ executionId: "seq", type: "started" }));
+        const third = await store.appendEvent(evt({ executionId: "seq", type: "completed" }));
+        expect([first.seq, second.seq, third.seq]).toEqual([1, 2, 3]);
     });
 
     it("completes and captures output", async () => {
