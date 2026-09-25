@@ -243,7 +243,7 @@ graph TD
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) 1.1+
+- [Bun](https://bun.sh) 1.3.5 (the version used by CI and release builds)
 - [Docker](https://docker.com) (for PostgreSQL)
 - API keys for at least one provider (OpenAI, Anthropic, OpenRouter, or local Ollama)
 
@@ -272,7 +272,8 @@ OPENROUTER_API_KEY="sk-or-v1-..."  # Optional — supports BYOK per user
 ### 3. Start Infrastructure
 
 ```bash
-docker-compose up -d  # PostgreSQL
+docker compose up -d  # PostgreSQL
+bun run db:generate
 bun run db:migrate    # Run Prisma migrations
 bun run db:seed       # Seed default data
 ```
