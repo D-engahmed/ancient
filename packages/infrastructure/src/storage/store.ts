@@ -55,13 +55,17 @@ export function applyEvent(record: ExecutionRecord | undefined, event: Execution
     const next: ExecutionRecord = { ...base, lastSeq: event.seq };
 
     const p = event.payload;
-    if (typeof p?.userId === "string") next.userId = p.userId;
+    if (!next.userId) {
+        if (typeof event.userId === "string") next.userId = event.userId;
+        else if (event.type === "created" && typeof p?.userId === "string") next.userId = p.userId;
+    }
     switch (event.type) {
         case "created":
             next.status = "pending";
             if (typeof p?.teamId === "string") next.teamId = p.teamId;
             if (typeof p?.teamName === "string") next.teamName = p.teamName;
             if (typeof p?.task === "string") next.task = p.task;
+            if (typeof p?.mode === "string") next.mode = p.mode;
             break;
         case "started":
             next.status = "running";
@@ -152,6 +156,11 @@ export class EventSourcedExecutionStore implements ExecutionStore {
             sorted.push(list.reduce(applyEvent, undefined as ExecutionRecord | undefined)!);
         }
         return sorted.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+    }
+
+    async listExecutionsForUser(userId: string, limit = 100): Promise<ExecutionRecord[]> {
+        const records = await this.listExecutions();
+        return records.filter((record) => record.userId === userId).slice(0, limit);
     }
 
     async listEvents(executionId: string): Promise<ExecutionEvent[]> {
