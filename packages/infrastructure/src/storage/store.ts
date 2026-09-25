@@ -4,11 +4,10 @@
 // Execution store + event-sourced projection (infrastructure).
 //
 // The ExecutionStore interface is the seam every layer relies on for durable
-// execution state. The only implementation shipped here,
-// EventSourcedExecutionStore, is an in-memory, append-only, replayable store
-// that embodies "the event stream is the source of truth" from
-// EXECUTION-STATE.md. A database-backed implementation (Postgres via Prisma)
-// can later implement the same interface without touching callers.
+// execution state. EventSourcedExecutionStore is the deterministic in-memory
+// implementation used by tests and local composition. Production persistence
+// is supplied by @ANCIENT/database's PostgresExecutionStore through the same
+// interface.
 
 import type { CheckpointRecord, ExecutionEvent, ExecutionRecord } from "./types";
 
