@@ -54,22 +54,11 @@ export class PostgresExecutionStore implements ExecutionStore {
     }
 
     return db.$transaction(async (tx) => {
-      // pg_advisory_xact_lock returns void, which Prisma's PostgreSQL adapter
-      // cannot deserialize through $queryRaw. Use the try-lock variant instead;
-      // it returns a boolean and preserves the same transaction-scoped mutex.
-      // Unrelated executions remain concurrent because the lock key is derived
-      // from the execution id.
-      const lockDeadline = Date.now() + 30_000;
-      while (true) {
-        const rows = await tx.$queryRaw<Array<{ locked: boolean }>>`
-          SELECT pg_try_advisory_xact_lock(hashtextextended(${input.executionId}, 0)) AS locked
-        `;
-        if (rows[0]?.locked) break;
-        if (Date.now() >= lockDeadline) {
-          throw new Error("timed out acquiring execution append lock");
-        }
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
+      // One transaction-scoped advisory lock serializes sequence allocation for
+      // this execution while allowing unrelated executions to append concurrently.
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtextextended(${input.executionId}, 0))
+      `;
 
       const count = await tx.executionEvent.count({
         where: { executionId: input.executionId },
@@ -78,6 +67,7 @@ export class PostgresExecutionStore implements ExecutionStore {
         id: input.id ?? crypto.randomUUID(),
         executionId: input.executionId,
         seq: count + 1,
+        userId: input.userId,
         type: input.type,
         timestamp: input.timestamp ?? new Date(),
         payload: input.payload,
@@ -95,7 +85,7 @@ export class PostgresExecutionStore implements ExecutionStore {
         },
       });
       return event;
-    });
+    }, { timeout: 30_000 });
   }
 
   async getExecution(executionId: string): Promise<ExecutionRecord | undefined> {
@@ -119,6 +109,19 @@ export class PostgresExecutionStore implements ExecutionStore {
       if (record) records.push(record);
     }
     return records.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+  }
+
+  async listExecutionsForUser(userId: string, limit = 100): Promise<ExecutionRecord[]> {
+    const heads = await db.executionEvent.findMany({
+      where: { userId, type: "created" },
+      select: { executionId: true },
+      orderBy: { timestamp: "desc" },
+      take: limit,
+    });
+    const records = await Promise.all(
+      heads.map(({ executionId }) => this.getExecution(executionId)),
+    );
+    return records.filter((record): record is ExecutionRecord => Boolean(record) && record.userId === userId);
   }
 
   async listEvents(executionId: string): Promise<ExecutionEvent[]> {
