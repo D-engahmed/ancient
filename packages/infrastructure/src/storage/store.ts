@@ -129,7 +129,7 @@ export class EventSourcedExecutionStore implements ExecutionStore {
 
     async appendEvent(input: Omit<ExecutionEvent, "seq">): Promise<ExecutionEvent> {
         const list = this.events.get(input.executionId) ?? [];
-        const seq = list.length;
+        const seq = list.length + 1;
         const event: ExecutionEvent = { ...input, id: input.id ?? this.nextEventId(), seq, timestamp: input.timestamp ?? new Date() };
         list.push(event);
         this.events.set(input.executionId, list);
