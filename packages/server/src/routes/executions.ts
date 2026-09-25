@@ -25,7 +25,7 @@ import {
 } from "@ANCIENT/shared";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 import { guardJson } from "../lib/error-mapper";
-import { ExecutionHub, type ExecutionEntry } from "../executions/hub";
+import { ExecutionHub, toSurfaceStatus, type ExecutionEntry } from "../executions/hub";
 
 const executionRequestSchema = z.object({
   task: z.string().min(1).max(100_000),
@@ -90,7 +90,7 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
       if (!live.has(record.id)) {
         live.set(record.id, {
           executionId: record.id,
-          status: record.status,
+          status: toSurfaceStatus(record.status),
           task: record.task,
           mode: "BUILD",
           userId,
@@ -110,7 +110,7 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
     if (!record) return guardJson(c, "Execution not found", 404);
     return c.json({
       executionId: record.id,
-      status: record.status,
+      status: toSurfaceStatus(record.status),
       task: record.task,
       mode: "BUILD",
       userId,
