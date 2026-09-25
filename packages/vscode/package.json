@@ -26,9 +26,10 @@
     "configuration": {
       "title": "ANCIENT",
       "properties": {
-        "ancient.apiBaseUrl": {"type":"string","default":"http://127.0.0.1:3000/v1","description":"ANCIENT v1 API base URL."},
-        "ancient.apiKey": {"type":"string","default":"","description":"ANCIENT platform API key."},
-        "ancient.model": {"type":"string","default":"","description":"Optional model id; empty uses the server default."}
+        "ancient.apiBaseUrl": {"type":"string","default":"http://127.0.0.1:3000/v1","scope":"machine","description":"ANCIENT v1 API base URL. Machine-scoped so a workspace cannot redirect credentialed requests."},
+        "ancient.apiKey": {"type":"string","default":"","scope":"machine","description":"ANCIENT platform API key. Machine-scoped so workspace settings cannot redirect credentials."},
+        "ancient.model": {"type":"string","default":"","description":"Optional model id; empty uses the server default."},
+        "ancient.remoteWorkspaceRoot": {"type":"string","default":"","scope":"machine","description":"Server-side workspace root used only when apiBaseUrl is remote. Required for remote execution and must map to the opened local workspace."}
       }
     }
   },
