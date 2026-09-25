@@ -52,9 +52,8 @@ describe.skipIf(!hasDb)("PostgresExecutionStore (integration, requires DATABASE_
         // absolute 0 base — assert the tighter invariant so a stale projection
         // row from an interrupted run can't produce a false failure.
         const seqs = events.map((e) => e.seq);
-        const firstSeq = seqs[0] ?? 0;
-        expect(seqs.every((s, i) => s === firstSeq + i)).toBe(true);
-        expect(c0.seq).toBe(firstSeq);
+        expect(seqs).toEqual([1, 2, 3]);
+        expect(c0.seq).toBe(1);
 
         const lastSeq = seqs[seqs.length - 1]!;
 
@@ -79,7 +78,7 @@ describe.skipIf(!hasDb)("PostgresExecutionStore (integration, requires DATABASE_
         const rec = await b.getExecution(execId);
         expect(rec!.status).toBe("completed");
         expect(rec!.output).toBe("shipped!");
-        expect(rec!.lastSeq).toBe(1);
+        expect(rec!.lastSeq).toBe(2);
     }, INTEGRATION_TIMEOUT_MS);
 
     it("lists executions newest-first", async () => {
