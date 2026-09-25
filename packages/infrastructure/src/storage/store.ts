@@ -20,6 +20,8 @@ export interface ExecutionStore {
     getExecution(executionId: string): Promise<ExecutionRecord | undefined>;
     /** Return all executions sorted by startedAt desc. */
     listExecutions(): Promise<ExecutionRecord[]>;
+    /** Return only executions owned by the authenticated user, newest first. */
+    listExecutionsForUser(userId: string, limit?: number): Promise<ExecutionRecord[]>;
     /** All events for an execution, in seq order. */
     listEvents(executionId: string): Promise<ExecutionEvent[]>;
     /** Persist a durable checkpoint snapshot. */
