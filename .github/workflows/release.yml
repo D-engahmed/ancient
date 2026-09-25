@@ -10,8 +10,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 
 jobs:
@@ -113,7 +112,8 @@ jobs:
           node-version: "22"
       - run: bun install --frozen-lockfile
       - run: bun run build:vscode
-      - run: npx --yes @vscode/vsce@4.0.0 package --no-dependencies --out "ancient-vscode-${{ github.ref_name }}.vsix"
+      - run: npx --yes @vscode/vsce@4.0.0 package --no-dependencies --out "../../ancient-vscode-${{ github.ref_name }}.vsix"
+        working-directory: packages/vscode
       - uses: actions/upload-artifact@v4
         with:
           name: ancient-vscode
@@ -124,10 +124,14 @@ jobs:
   publish:
     name: Publish release
     needs: [verify, cli, vscode]
+    permissions:
+      contents: write
+      packages: write
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
