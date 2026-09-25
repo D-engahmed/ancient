@@ -174,9 +174,10 @@ export const apiClient = {
  */
 export async function* streamExecutionEvents(
   executionId: string,
-  options: { signal?: AbortSignal; maxReconnects?: number } = {},
+  options: { signal?: AbortSignal; maxReconnects?: number; retryDelayMs?: number } = {},
 ): AsyncGenerator<ExecutionEventEnvelope> {
   const maxReconnects = options.maxReconnects ?? 3;
+  const retryDelayMs = options.retryDelayMs ?? 1_000;
   let reconnects = 0;
   let lastEventId = 0;
   let terminalSeen = false;
@@ -203,7 +204,7 @@ export async function* streamExecutionEvents(
       if (reconnects > maxReconnects) {
         throw new Error(`SSE connection failed after ${maxReconnects} retries`);
       }
-      await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** reconnects, 10_000)));
+      await new Promise((r) => setTimeout(r, Math.min(retryDelayMs * 2 ** (reconnects - 1), 10_000)));
       continue;
     }
 
@@ -221,10 +222,6 @@ export async function* streamExecutionEvents(
       }
       throw new Error(message);
     }
-
-    // A successful connection only resets transient retry state. The
-    // stream is complete only after a terminal envelope has been observed.
-    reconnects = 0;
 
     const frames = sseFrames(response.body);
     for await (const frame of frames) {
@@ -244,6 +241,6 @@ export async function* streamExecutionEvents(
     if (reconnects > maxReconnects) {
       throw new Error(`SSE connection ended before terminal after ${maxReconnects} retries`);
     }
-    await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** reconnects, 10_000)));
+    await new Promise((r) => setTimeout(r, Math.min(retryDelayMs * 2 ** (reconnects - 1), 10_000)));
   }
 }
