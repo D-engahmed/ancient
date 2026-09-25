@@ -75,6 +75,7 @@
     },
     "packages/cli": {
       "name": "@ANCIENT/cli",
+      "version": "3.1.0",
       "bin": {
         "ANCIENT": "./bin/ANCIENT",
       },
@@ -86,6 +87,7 @@
         "@opentui/react": "^0.1.97",
         "ai": "^7.0.55",
         "date-fns": "^4.1.0",
+        "dotenv": "^16.4.7",
         "hono": "^4.12.12",
         "open": "^11.0.0",
         "opentui-spinner": "^0.0.6",
@@ -111,6 +113,11 @@
         "typescript": "^5.4.0",
       },
     },
+    "packages/vscode": {
+      "name": "ancient-vscode",
+      "version": "0.2.0",
+    },
+
     "packages/database": {
       "name": "@ANCIENT/database",
       "dependencies": {
@@ -224,6 +231,8 @@
     "@ANCIENT/capabilities": ["@ANCIENT/capabilities@workspace:packages/capabilities"],
 
     "@ANCIENT/cli": ["@ANCIENT/cli@workspace:packages/cli"],
+
+    "ancient-vscode": ["ancient-vscode@workspace:packages/vscode"],
 
     "@ANCIENT/contracts": ["@ANCIENT/contracts@workspace:packages/contracts"],
 
