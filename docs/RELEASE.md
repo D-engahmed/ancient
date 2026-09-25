@@ -53,8 +53,8 @@ Never use `prisma migrate reset` against a production database.
 
 1. Publish a version tag such as `v3.1.0`.
 2. Verify the release workflow completed successfully.
-3. Trigger **Production Deploy** with the exact immutable image tag.
-4. Configure the `PRODUCTION_KNOWN_HOSTS` production secret.
+3. Configure the `PRODUCTION_KNOWN_HOSTS` production secret.
+4. Trigger **Production Deploy** with the exact immutable image tag.
 5. Verify `/health/ready` after rollout.
 
 Transparent resume of an execution across an API process restart is not part
