@@ -23,7 +23,7 @@
     "@ai-sdk/anthropic": "^4.0.58",
     "@ai-sdk/google": "^4.0.36",
     "@ai-sdk/openai": "^4.0.0",
-    "ai": "^7.0.55",
+    "ai": "^7.0.108",
     "eventemitter3": "^5.0.0",
     "uuid": "^9.0.0",
     "zod": "^4.3.6"
