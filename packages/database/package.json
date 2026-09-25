@@ -10,6 +10,9 @@
   },
   "scripts": {
     "db:generate": "bunx prisma generate",
+    "migrate": "prisma migrate deploy",
+    "migrate:dev": "prisma migrate dev",
+    "status": "prisma migrate status",
     "seed": "bun run db:generate && bun run seed.ts"
   },
   "devDependencies": {
