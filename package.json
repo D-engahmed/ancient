@@ -9,6 +9,10 @@
   "resolutions": {
     "scheduler": "0.25.0"
   },
+  "overrides": {
+    "deepmerge-ts": "8.0.2",
+    "mysql2": "3.22.0"
+  },
   "scripts": {
     "dev:cli": "bun run --watch packages/cli/src/index.tsx",
     "dev:server": "bun --hot run packages/server/src/index.ts",
