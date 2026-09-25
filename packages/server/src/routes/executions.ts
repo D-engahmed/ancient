@@ -94,6 +94,7 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
           task: record.task,
           mode: "BUILD",
           userId,
+          modelRef: undefined,
           lastSeq: record.lastSeq,
           terminal: ["completed", "failed", "cancelled"].includes(record.status),
         });
