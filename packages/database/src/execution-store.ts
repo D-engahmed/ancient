@@ -121,7 +121,7 @@ export class PostgresExecutionStore implements ExecutionStore {
     const records = await Promise.all(
       heads.map(({ executionId }) => this.getExecution(executionId)),
     );
-    return records.filter((record): record is ExecutionRecord => Boolean(record) && record.userId === userId);
+    return records.filter((record): record is ExecutionRecord => record !== undefined && record.userId === userId).sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
   }
 
   async listEvents(executionId: string): Promise<ExecutionEvent[]> {
