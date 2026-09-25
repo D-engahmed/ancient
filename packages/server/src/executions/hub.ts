@@ -283,6 +283,7 @@ export class ExecutionHub {
         id: createId(),
         executionId,
         type: "failed",
+        seq: 0,
         timestamp: new Date(),
         payload: {
           error: response.message,
