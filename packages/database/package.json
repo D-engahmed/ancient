@@ -22,7 +22,7 @@
   "dependencies": {
     "@ANCIENT/infrastructure": "workspace:*",
     "@ANCIENT/shared": "workspace:*",
-    "@prisma/adapter-pg": "^7.7.0",
+    "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.7.0",
     "@prisma/client-runtime-utils": "^7.7.0",
     "dotenv": "^16.4.7",
