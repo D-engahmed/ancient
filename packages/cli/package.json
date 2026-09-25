@@ -3,12 +3,17 @@
   "module": "src/index.tsx",
   "type": "module",
   "private": true,
+  "version": "3.1.0",
+  "description": "ANCIENT terminal coding agent client.",
+  "repository": "https://github.com/D-engahmed/ancient",
+  "files": ["bin", "dist", "README.md"],
   "bin": {
     "ANCIENT": "./bin/ANCIENT"
   },
   "scripts": {
     "dev": "bun run --watch src/index.tsx",
-    "build": "bun build src/index.tsx --outdir dist --target bun",
+    "build": "bun build src/main.tsx --outdir dist --target bun",
+    "build:standalone": "bun build src/main.tsx --compile --outfile dist/ANCIENT",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
@@ -28,6 +33,7 @@
     "ai": "^7.0.55",
     "@ai-sdk/react": "^4.0.70",
     "date-fns": "^4.1.0",
+    "dotenv": "^16.4.7",
     "hono": "^4.12.12",
     "open": "^11.0.0",
     "opentui-spinner": "^0.0.6",
