@@ -45,17 +45,32 @@ restart recovery and worker leasing are deliberately the next release-blocking
 phase; a deployment must not claim transparent execution resume until that
 work is complete.
 
-## Release gates
 
-A production release must pass:
+## Artifact release gates
+
+The v3.1 packaging/release workflow is responsible for proving that the
+published artifacts are buildable and reproducible:
 
 1. dependency install with the committed lockfile;
-2. Prisma client generation;
+2. Prisma client generation and migration application;
 3. typecheck;
 4. unit/integration tests;
-5. production image build;
-6. database migration against staging;
-7. restart/recovery tests;
-8. security/SSRF tests;
-9. backup/restore verification.
+5. server, CLI, and VS Code builds;
+6. CLI package smoke verification;
+7. production container build;
+8. dependency audit, CodeQL, and secret scan.
 
+## Production deployment gates
+
+Deployment is a separate operational gate. Before exposing an installation
+to production traffic, operators must additionally verify:
+
+1. database migration against staging;
+2. restart/recovery behavior for in-flight executions;
+3. security/SSRF controls against the deployed environment;
+4. backup/restore verification.
+
+The current v3.1 release contract does not claim transparent in-flight
+execution resume across an API process restart. Durable lifecycle state is
+persisted, but active-run recovery requires the future worker-leasing and
+restart-recovery phase documented in docs/RELEASE.md.
