@@ -335,7 +335,7 @@ export class ExecutionHub {
 /** Collapse the engine's rich lifecycle onto the wire's five-state surface:
  *  queued / waiting_approval / paused / checkpointed are all "live" while a
  *  run is still in flight, and the engine alone writes the terminal states. */
-export function toSurfaceStatus(status: ExecutionStatus): ExecutionEntry["status"] {
+export function toSurfaceStatus(status: string): ExecutionEntry["status"] {
   switch (status) {
     case "created":
       return "created";
