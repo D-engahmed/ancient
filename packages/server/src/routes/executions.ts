@@ -155,7 +155,7 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
   }
 
   /**
-   * SSE event stream. Honors RFC 2426 `Last-Event-ID` (header or query param):
+   * SSE event stream. Honors the Server-Sent Events `Last-Event-ID` request field (header or query param):
    * replays buffered envelopes with `seq > lastEventId`, then stays live until
    * a terminal envelope is flushed (then the stream closes). Heartbeat comment
    * every 25s keeps idle proxies honest.
