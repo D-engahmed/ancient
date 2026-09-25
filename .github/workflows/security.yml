@@ -12,12 +12,14 @@ on:
 
 permissions:
   contents: read
-  security-events: write
-  actions: read
 
 jobs:
   codeql:
     name: CodeQL
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
