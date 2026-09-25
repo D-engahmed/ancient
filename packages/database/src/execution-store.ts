@@ -85,7 +85,7 @@ export class PostgresExecutionStore implements ExecutionStore {
         },
       });
       return event;
-    }, { timeout: 30_000 });
+    }, { maxWait: 30_000, timeout: 30_000 });
   }
 
   async getExecution(executionId: string): Promise<ExecutionRecord | undefined> {
