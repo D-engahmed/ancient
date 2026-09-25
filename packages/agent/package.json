@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@ANCIENT/shared": "workspace:*",
-    "@ai-sdk/anthropic": "^4.0.27",
+    "@ai-sdk/anthropic": "^4.0.58",
     "@ai-sdk/google": "^4.0.36",
     "@ai-sdk/openai": "^4.0.0",
     "ai": "^7.0.55",
