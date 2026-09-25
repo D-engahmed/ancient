@@ -11,6 +11,7 @@
     "ANCIENT": "./bin/ANCIENT"
   },
   "scripts": {
+    "prepack": "bun run build",
     "dev": "bun run --watch src/index.tsx",
     "build": "bun build src/main.tsx --outdir dist --target bun",
     "build:standalone": "bun build src/main.tsx --compile --outfile dist/ANCIENT",
