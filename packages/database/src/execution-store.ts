@@ -30,7 +30,7 @@ const KNOWN_TYPES = new Set<string>([
 function toRecord(row: {
   id: string;
   executionId: string;
-  userId?: string;
+  userId: string | null;
   seq: number;
   type: string;
   timestamp: Date;
