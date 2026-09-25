@@ -12,7 +12,23 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ancient
+          POSTGRES_PASSWORD: ancient
+          POSTGRES_DB: ancient_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ancient -d ancient_ci"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      DATABASE_URL: postgresql://ancient:ancient@127.0.0.1:5432/ancient_ci
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,6 +44,9 @@ jobs:
       - name: Generate Prisma client
         run: bun run db:generate
 
+      - name: Apply database migrations
+        run: bun run db:migrate
+
       - name: Typecheck (all packages)
         run: bun run typecheck
 
@@ -35,10 +54,13 @@ jobs:
         run: bun test
 
       - name: Build server
-        run: bun run --cwd packages/server build
+        run: bun run build:server
 
       - name: Build CLI
         run: bun run build:cli
 
       - name: Build VS Code extension
         run: bun run build:vscode
+
+      - name: Audit dependencies
+        run: bun audit --audit-level=high
