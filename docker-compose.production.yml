@@ -1,8 +1,6 @@
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/d-engahmed/ancient:${ANCIENT_IMAGE_TAG:?set ANCIENT_IMAGE_TAG to a release tag}
     restart: unless-stopped
     env_file:
       - .env.production

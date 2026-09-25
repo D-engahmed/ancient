@@ -1,0 +1,64 @@
+name: Production Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "GHCR image tag to deploy (for example v3.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Validate deployment inputs
+        env:
+          HOST: ${{ secrets.PRODUCTION_HOST }}
+          USER: ${{ secrets.PRODUCTION_USER }}
+          KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.PRODUCTION_KNOWN_HOSTS }}
+          APP_DIR: ${{ secrets.PRODUCTION_APP_DIR }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          test -n "$HOST"
+          test -n "$USER"
+          test -n "$KEY"
+          test -n "$KNOWN_HOSTS"
+          test -n "$APP_DIR"
+          printf '%s\n' "$IMAGE_TAG" | grep -Eq '^[A-Za-z0-9._-]+$'
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.PRODUCTION_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy immutable image
+        env:
+          HOST: ${{ secrets.PRODUCTION_HOST }}
+          USER: ${{ secrets.PRODUCTION_USER }}
+          APP_DIR: ${{ secrets.PRODUCTION_APP_DIR }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh "$USER@$HOST" "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+          ssh "$USER@$HOST" "cd '$APP_DIR' && export ANCIENT_IMAGE_TAG='$IMAGE_TAG' && docker compose -f docker-compose.production.yml pull api && docker compose -f docker-compose.production.yml run --rm api bun run db:migrate && docker compose -f docker-compose.production.yml up -d api && docker compose -f docker-compose.production.yml ps && docker logout ghcr.io"
+
+      - name: Verify health
+        env:
+          HOST: ${{ secrets.PRODUCTION_HOST }}
+        run: |
+          curl --fail --retry 12 --retry-delay 5 --retry-connrefused "https://$HOST/health/ready"

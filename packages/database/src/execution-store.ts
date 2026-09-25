@@ -22,7 +22,7 @@ function asJson(value: Readonly<Record<string, unknown>>): Prisma.InputJsonValue
 }
 
 const KNOWN_TYPES = new Set<string>([
-  "created", "started", "plan-updated", "tool-executed", "artifact-created",
+  "created", "started", "queued", "waiting_approval", "plan-updated", "tool-executed", "artifact-created",
   "checkpoint-saved", "paused", "resumed", "retrying", "degraded",
   "completed", "failed", "cancelled",
 ]);
@@ -30,6 +30,7 @@ const KNOWN_TYPES = new Set<string>([
 function toRecord(row: {
   id: string;
   executionId: string;
+  userId: string | null;
   seq: number;
   type: string;
   timestamp: Date;
@@ -38,6 +39,7 @@ function toRecord(row: {
   return {
     id: row.id,
     executionId: row.executionId,
+    ...(row.userId ? { userId: row.userId } : {}),
     seq: row.seq,
     type: row.type as ExecutionEvent["type"],
     timestamp: row.timestamp,
@@ -52,9 +54,11 @@ export class PostgresExecutionStore implements ExecutionStore {
     }
 
     return db.$transaction(async (tx) => {
-      // hashtextextended gives a stable 64-bit lock key. The lock exists only
-      // for this transaction, so unrelated executions remain concurrent.
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.executionId}, 0))`;
+      // One transaction-scoped advisory lock serializes sequence allocation for
+      // this execution while allowing unrelated executions to append concurrently.
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtextextended(${input.executionId}, 0))
+      `;
 
       const count = await tx.executionEvent.count({
         where: { executionId: input.executionId },
@@ -63,6 +67,7 @@ export class PostgresExecutionStore implements ExecutionStore {
         id: input.id ?? crypto.randomUUID(),
         executionId: input.executionId,
         seq: count + 1,
+        userId: input.userId,
         type: input.type,
         timestamp: input.timestamp ?? new Date(),
         payload: input.payload,
@@ -72,6 +77,7 @@ export class PostgresExecutionStore implements ExecutionStore {
         data: {
           id: event.id,
           executionId: event.executionId,
+          ...(event.userId ? { userId: event.userId } : {}),
           seq: event.seq,
           type: event.type,
           timestamp: event.timestamp,
@@ -79,7 +85,7 @@ export class PostgresExecutionStore implements ExecutionStore {
         },
       });
       return event;
-    });
+    }, { timeout: 30_000 });
   }
 
   async getExecution(executionId: string): Promise<ExecutionRecord | undefined> {
@@ -103,6 +109,19 @@ export class PostgresExecutionStore implements ExecutionStore {
       if (record) records.push(record);
     }
     return records.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+  }
+
+  async listExecutionsForUser(userId: string, limit = 100): Promise<ExecutionRecord[]> {
+    const heads = await db.executionEvent.findMany({
+      where: { userId, type: "created" },
+      select: { executionId: true },
+      orderBy: { timestamp: "desc" },
+      take: limit,
+    });
+    const records = await Promise.all(
+      heads.map(({ executionId }) => this.getExecution(executionId)),
+    );
+    return records.filter((record): record is ExecutionRecord => record !== undefined && record.userId === userId).sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
   }
 
   async listEvents(executionId: string): Promise<ExecutionEvent[]> {

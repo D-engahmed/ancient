@@ -39,6 +39,7 @@ function buildApp(key: string) {
             return entry;
         },
         list: () => [entry],
+        listDurable: async () => [],
         get: (_userId: string, id: string) => (id === entry.executionId ? entry : undefined),
         cancel: (_userId: string, id: string) => (id === entry.executionId ? { ...entry, status: "cancelled" } : undefined),
         ledger: new CostLedger({ ceilingUsd: 100 }),

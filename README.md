@@ -2,7 +2,7 @@
 
 <img src="assets/logo-animated.svg" width="100%" alt="ANCIENT Logo">
 
-[![Version](https://img.shields.io/badge/version-3.0.0-8A2BE2?style=flat-square)](https://github.com/D-engahmed/ancient/releases)
+[![Version](https://img.shields.io/badge/version-3.1.0-8A2BE2?style=flat-square)](https://github.com/D-engahmed/ancient/releases)
 [![License](https://img.shields.io/badge/license-Proprietary-ff6b6b?style=flat-square)](LICENSE)
 [![Bun](https://img.shields.io/badge/built%20with-Bun-f9f1a5?style=flat-square&logo=bun)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-3178c6?style=flat-square&logo=typescript)](https://www.typescriptlang.org)

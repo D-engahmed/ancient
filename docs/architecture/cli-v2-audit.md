@@ -1,5 +1,11 @@
 # CLI V2 — Architecture Audit
 
+> **Historical baseline.** This document records the pre-implementation state observed
+> on 2026-08-29. It is intentionally preserved as an audit artifact; it is **not**
+> the current system description. For current wiring, use `docs/PRODUCTION_ARCHITECTURE.md`
+> and the execution/server sources on the release branch.
+
+
 Phase-1 deliverable for the CLI-V2 upgrade. As-built reality recorded here is
 verified against source at commit state 2026-08-29 (uncommitted work-in-progress
 included). Target references cite `docs/0X-*/README.md` (layers). Honesty rule:

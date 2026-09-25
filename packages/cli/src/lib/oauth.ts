@@ -4,6 +4,7 @@
 
 import open from "open";
 import { saveAuth } from "./auth";
+import { API_URL } from "./api-client";
 
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -41,7 +42,6 @@ function getErrorMessage(error: unknown) {
 export async function performLogin() {
   const clerkFrontendApi = process.env.CLERK_FRONTEND_API;
   const clientId = process.env.CLERK_OAUTH_CLIENT_ID;
-  const apiUrl = process.env.API_URL ?? "http://localhost:3000";
 
   if (!clerkFrontendApi) throw new Error("CLERK_FRONTEND_API not set");
   if (!clientId) throw new Error("CLERK_OAUTH_CLIENT_ID not set");
@@ -96,7 +96,7 @@ export async function performLogin() {
 
         try {
           // Exchange authorization code for Clerk tokens
-          const redirectUri = `${apiUrl}/auth/callback`;
+          const redirectUri = `${API_URL}/auth/callback`;
 
           const tokenRes = await fetch(`${clerkFrontendApi}/oauth/token`, {
             method: "POST",
@@ -141,7 +141,7 @@ export async function performLogin() {
     }
 
     const state = encodeState({ port, nonce });
-    const redirectUri = `${apiUrl}/auth/callback`;
+    const redirectUri = `${API_URL}/auth/callback`;
 
     const authorizeUrl = new URL(`${clerkFrontendApi}/oauth/authorize`);
     authorizeUrl.searchParams.set("response_type", "code");

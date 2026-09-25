@@ -1,0 +1,24 @@
+# Source control and CI metadata
+.git
+.github
+*.patch
+
+# Local/install state
+node_modules
+**/node_modules
+.pnpm-store
+bun-debug.log
+*.log
+
+# Generated/local artifacts
+dist
+**/dist
+coverage
+*.vsix
+*.tgz
+
+# Secrets and developer-only configuration
+.env
+.env.*
+!.env.example
+!.env.production.example

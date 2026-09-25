@@ -65,9 +65,12 @@ export const listDirectoryTool: ToolDefinition = {
         if (!hit.ok) return hit;
         try {
             const entries = await readdir(hit.resolved, { withFileTypes: true });
+            const result = entries
+                .map((e) => ({ name: e.name, type: e.isDirectory() ? "directory" : "file" }))
+                .sort((a, b) => a.name.localeCompare(b.name));
             return {
                 path: input.path ?? ".",
-                entries: entries.map((e) => ({ name: e.name, type: e.isDirectory() ? "directory" : "file" })),
+                entries: result,
             };
         } catch (err) {
             return { error: err instanceof Error ? err.message : String(err) };

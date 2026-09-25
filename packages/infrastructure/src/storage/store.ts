@@ -4,11 +4,10 @@
 // Execution store + event-sourced projection (infrastructure).
 //
 // The ExecutionStore interface is the seam every layer relies on for durable
-// execution state. The only implementation shipped here,
-// EventSourcedExecutionStore, is an in-memory, append-only, replayable store
-// that embodies "the event stream is the source of truth" from
-// EXECUTION-STATE.md. A database-backed implementation (Postgres via Prisma)
-// can later implement the same interface without touching callers.
+// execution state. EventSourcedExecutionStore is the deterministic in-memory
+// implementation used by tests and local composition. Production persistence
+// is supplied by @ANCIENT/database's PostgresExecutionStore through the same
+// interface.
 
 import type { CheckpointRecord, ExecutionEvent, ExecutionRecord } from "./types";
 
@@ -21,6 +20,8 @@ export interface ExecutionStore {
     getExecution(executionId: string): Promise<ExecutionRecord | undefined>;
     /** Return all executions sorted by startedAt desc. */
     listExecutions(): Promise<ExecutionRecord[]>;
+    /** Return only executions owned by the authenticated user, newest first. */
+    listExecutionsForUser(userId: string, limit?: number): Promise<ExecutionRecord[]>;
     /** All events for an execution, in seq order. */
     listEvents(executionId: string): Promise<ExecutionEvent[]>;
     /** Persist a durable checkpoint snapshot. */
@@ -56,12 +57,17 @@ export function applyEvent(record: ExecutionRecord | undefined, event: Execution
     const next: ExecutionRecord = { ...base, lastSeq: event.seq };
 
     const p = event.payload;
+    if (!next.userId) {
+        if (typeof event.userId === "string") next.userId = event.userId;
+        else if (event.type === "created" && typeof p?.userId === "string") next.userId = p.userId;
+    }
     switch (event.type) {
         case "created":
             next.status = "pending";
             if (typeof p?.teamId === "string") next.teamId = p.teamId;
             if (typeof p?.teamName === "string") next.teamName = p.teamName;
             if (typeof p?.task === "string") next.task = p.task;
+            if (typeof p?.mode === "string") next.mode = p.mode;
             break;
         case "started":
             next.status = "running";
@@ -128,7 +134,7 @@ export class EventSourcedExecutionStore implements ExecutionStore {
 
     async appendEvent(input: Omit<ExecutionEvent, "seq">): Promise<ExecutionEvent> {
         const list = this.events.get(input.executionId) ?? [];
-        const seq = list.length;
+        const seq = list.length + 1;
         const event: ExecutionEvent = { ...input, id: input.id ?? this.nextEventId(), seq, timestamp: input.timestamp ?? new Date() };
         list.push(event);
         this.events.set(input.executionId, list);
@@ -152,6 +158,11 @@ export class EventSourcedExecutionStore implements ExecutionStore {
             sorted.push(list.reduce(applyEvent, undefined as ExecutionRecord | undefined)!);
         }
         return sorted.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+    }
+
+    async listExecutionsForUser(userId: string, limit = 100): Promise<ExecutionRecord[]> {
+        const records = await this.listExecutions();
+        return records.filter((record) => record.userId === userId).slice(0, limit);
     }
 
     async listEvents(executionId: string): Promise<ExecutionEvent[]> {

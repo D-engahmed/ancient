@@ -30,6 +30,8 @@ export type ExecutionStatus =
 /** Serializable snapshot of an execution at a point in time. */
 export type ExecutionRecord = {
     id: string;
+    /** Authenticated owner of the execution. */
+    userId?: string;
     status: ExecutionStatus;
     teamId: string;
     teamName: string;
@@ -42,6 +44,8 @@ export type ExecutionRecord = {
     tokensIn: number;
     tokensOut: number;
     costUsd: number;
+    /** Requested execution mode, persisted from the created event. */
+    mode?: string;
     /** Optional final result text on completion; error message on failure. */
     output?: string;
     error?: string;
@@ -68,6 +72,8 @@ export type LifecycleEventType =
 export type ExecutionEvent = {
     /** Unique event id within the store. */
     id: string;
+    /** Authenticated owner; used for tenant-safe recovery/listing. */
+    userId?: string;
     executionId: string;
     /** Monotonic sequence for this execution — replay order. */
     seq: number;

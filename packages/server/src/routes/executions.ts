@@ -25,7 +25,7 @@ import {
 } from "@ANCIENT/shared";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
 import { guardJson } from "../lib/error-mapper";
-import { ExecutionHub, type ExecutionEntry } from "../executions/hub";
+import { ExecutionHub, toSurfaceStatus, type ExecutionEntry } from "../executions/hub";
 
 const executionRequestSchema = z.object({
   task: z.string().min(1).max(100_000),
@@ -84,14 +84,41 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
 
   app.get("/", async (c) => {
     const userId = c.get("userId");
-    return c.json({ executions: hub.list(userId).map(snapshot) });
+    const durable = await hub.listDurable(userId);
+    const live = new Map(hub.list(userId).map((entry) => [entry.executionId, snapshot(entry)]));
+    for (const record of durable) {
+      if (!live.has(record.id)) {
+        live.set(record.id, {
+          executionId: record.id,
+          status: toSurfaceStatus(record.status),
+          task: record.task,
+          mode: record.mode === "PLAN" ? "PLAN" : "BUILD",
+          userId,
+          modelRef: undefined,
+          lastSeq: record.lastSeq,
+          terminal: ["completed", "failed", "cancelled"].includes(record.status),
+        });
+      }
+    }
+    return c.json({ executions: [...live.values()] });
   });
 
   app.get("/:executionId", async (c) => {
     const userId = c.get("userId");
     const entry = hub.get(userId, c.req.param("executionId"));
-    if (!entry) return guardJson(c, "Execution not found", 404);
-    return c.json(snapshot(entry));
+    if (entry) return c.json(snapshot(entry));
+    const record = await hub.getDurable(userId, c.req.param("executionId"));
+    if (!record) return guardJson(c, "Execution not found", 404);
+    return c.json({
+      executionId: record.id,
+      status: toSurfaceStatus(record.status),
+      task: record.task,
+      mode: record.mode === "PLAN" ? "PLAN" : "BUILD",
+      userId,
+      lastSeq: record.lastSeq,
+      terminal: ["completed", "failed", "cancelled"].includes(record.status),
+      recovered: true,
+    });
   });
 
   app.post("/:executionId/cancel", zValidator("json", cancelSchema), (c) => {
@@ -129,7 +156,7 @@ export function createExecutionsRoutes(hub: ExecutionHub) {
   }
 
   /**
-   * SSE event stream. Honors RFC 2426 `Last-Event-ID` (header or query param):
+   * SSE event stream. Honors the Server-Sent Events `Last-Event-ID` request field (header or query param):
    * replays buffered envelopes with `seq > lastEventId`, then stays live until
    * a terminal envelope is flushed (then the stream closes). Heartbeat comment
    * every 25s keeps idle proxies honest.

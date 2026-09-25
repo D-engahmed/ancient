@@ -1,12 +1,12 @@
 // packages/cli/src/lib/api-client.ts
 import { clearAuth, getAuth } from "./auth";
 import type { ExecutionEventEnvelope, ChatModelSelection, ModeType } from "@ANCIENT/shared";
-import { parseExecutionEvent } from "@ANCIENT/shared";
+import { isTerminalExecutionEvent, parseExecutionEvent } from "@ANCIENT/shared";
 import type { RiskCategory } from "@ANCIENT/infrastructure/security";
 import { sseFrames } from "./execution-stream";
 import { errorMessageFrom } from "./http-errors";
 
-export const API_URL = process.env.API_URL ?? "http://localhost:3000";
+export const API_URL = process.env.ANCIENT_API_URL ?? process.env.API_URL ?? "http://localhost:3000";
 
 type RequestOptions = {
   method?: string;
@@ -174,11 +174,13 @@ export const apiClient = {
  */
 export async function* streamExecutionEvents(
   executionId: string,
-  options: { signal?: AbortSignal; maxReconnects?: number } = {},
+  options: { signal?: AbortSignal; maxReconnects?: number; retryDelayMs?: number } = {},
 ): AsyncGenerator<ExecutionEventEnvelope> {
   const maxReconnects = options.maxReconnects ?? 3;
+  const retryDelayMs = options.retryDelayMs ?? 1_000;
   let reconnects = 0;
   let lastEventId = 0;
+  let terminalSeen = false;
 
   while (reconnects <= maxReconnects) {
     const headers: Record<string, string> = {
@@ -202,7 +204,7 @@ export async function* streamExecutionEvents(
       if (reconnects > maxReconnects) {
         throw new Error(`SSE connection failed after ${maxReconnects} retries`);
       }
-      await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** reconnects, 10_000)));
+      await new Promise((r) => setTimeout(r, Math.min(retryDelayMs * 2 ** (reconnects - 1), 10_000)));
       continue;
     }
 
@@ -221,19 +223,24 @@ export async function* streamExecutionEvents(
       throw new Error(message);
     }
 
-    // Successful connection — reset reconnect counter
-    reconnects = 0;
-
     const frames = sseFrames(response.body);
     for await (const frame of frames) {
       if (options.signal?.aborted) return;
       if (!frame.data.trim()) continue;
       const event = parseExecutionEvent(JSON.parse(frame.data));
       lastEventId = event.seq;
+      terminalSeen = terminalSeen || isTerminalExecutionEvent(event);
       yield event;
     }
 
-    // Stream ended normally (server closed after terminal event) — done
-    return;
+    // A proxy reset or server restart can close a healthy response without a
+    // terminal event. Resume from the last sequence instead of reporting a
+    // partial execution as if it completed.
+    if (terminalSeen) return;
+    reconnects++;
+    if (reconnects > maxReconnects) {
+      throw new Error(`SSE connection ended before terminal after ${maxReconnects} retries`);
+    }
+    await new Promise((r) => setTimeout(r, Math.min(retryDelayMs * 2 ** (reconnects - 1), 10_000)));
   }
 }

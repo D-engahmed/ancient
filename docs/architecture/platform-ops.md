@@ -100,10 +100,13 @@ restart. No application-level migration needed.
 
 ## 5. Quick-check before rotation
 
-- Is a cost-ceiling reset needed? (The in-memory `CostLedger` resets on
-  restart — a restart during ceiling enforcement momentarily allows new
-  platform-billed runs.)
-- Are any SSE streams active? They will close; the CLI reconnects with
-  `Last-Event-ID` and resumes from the replay buffer (no data loss).
-- Is the durable event store wired? (Not yet — A-003; state is
-  in-memory today, so a restart loses in-flight executions.)
+- Is a cost-ceiling reset needed? The current `CostLedger` is process-local,
+  so a restart resets its in-memory ceiling state. Treat the deployment budget
+  as operationally advisory until the ledger is backed by durable storage.
+- Are any SSE streams active? They will close if the process restarts; the CLI
+  reconnects with `Last-Event-ID` while the live execution bridge is available.
+  **Do not claim restart-safe event replay yet:** the current wire-event buffer
+  is process-local.
+- Is durable lifecycle state wired? Yes — execution lifecycle events are persisted
+  in PostgreSQL. A process restart can recover historical execution status, but
+  transparent resume of an in-flight run is **not** implemented.

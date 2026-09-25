@@ -1,0 +1,40 @@
+{
+  "name": "ancient-vscode",
+  "displayName": "ANCIENT Coding Agent",
+  "description": "ANCIENT AI coding agent for VS Code using the same execution API as the terminal client.",
+  "version": "0.2.0",
+  "publisher": "nxg-ai-solutions",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/D-engahmed/ancient.git",
+    "directory": "packages/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/D-engahmed/ancient/issues"
+  },
+  "files": ["dist", "README.md", "package.json", ".vscodeignore"],
+  "engines": {"vscode": "^1.95.0"},
+  "categories": ["AI", "Programming Languages"],
+  "activationEvents": ["onCommand:ancient.runTask","onCommand:ancient.explainSelection","onCommand:ancient.fixDiagnostics"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {"command":"ancient.runTask","title":"ANCIENT: Run Coding Task"},
+      {"command":"ancient.explainSelection","title":"ANCIENT: Explain Selection with ANCIENT"},
+      {"command":"ancient.fixDiagnostics","title":"ANCIENT: Fix Current Diagnostics with ANCIENT"}
+    ],
+    "configuration": {
+      "title": "ANCIENT",
+      "properties": {
+        "ancient.apiBaseUrl": {"type":"string","default":"http://127.0.0.1:3000/v1","scope":"machine","description":"ANCIENT v1 API base URL. Machine-scoped so a workspace cannot redirect credentialed requests."},
+        "ancient.apiKey": {"type":"string","default":"","scope":"machine","description":"ANCIENT platform API key. Machine-scoped so workspace settings cannot redirect credentials."},
+        "ancient.model": {"type":"string","default":"","description":"Optional model id; empty uses the server default."},
+        "ancient.remoteWorkspaceRoot": {"type":"string","default":"","scope":"machine","description":"Server-side workspace root used only when apiBaseUrl is remote. Required for remote execution and must map to the opened local workspace."}
+      }
+    }
+  },
+  "scripts": {
+    "build": "bun build src/extension.ts --outdir dist --target node --format cjs --external vscode",
+    "package": "npx --yes @vscode/vsce@4.0.0 package"
+  }
+}

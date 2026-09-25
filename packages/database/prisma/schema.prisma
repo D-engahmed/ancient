@@ -191,6 +191,7 @@ model AgentCheckpoint {
 model ExecutionEvent {
   id          String   @id
   executionId String
+  userId      String?
   /// Monotonic per-execution sequence — replay order, gapless.
   seq         Int
   type        String
@@ -200,6 +201,7 @@ model ExecutionEvent {
   @@unique([executionId, seq])
   @@index([executionId, timestamp])
   @@index([executionId, type])
+  @@index([userId, timestamp])
 }
 
 model ExecutionCheckpoint {

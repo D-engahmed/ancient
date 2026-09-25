@@ -43,7 +43,7 @@ describe.skipIf(!hasDb)("PostgresExecutionStore (integration, requires DATABASE_
     it("appends a gapless seq stream and projects it via applyEvent", async () => {
         const execId = `${TEST_PREFIX}replay`;
         const store = first!;
-        const c0 = await store.appendEvent({ id: `${TEST_PREFIX}e0`, executionId: execId, type: "created", timestamp: new Date("2026-01-01T00:00:00.000Z"), payload: { teamId: "t1", teamName: "Alpha", task: "Build it" } });
+        const c0 = await store.appendEvent({ id: `${TEST_PREFIX}e0`, executionId: execId, type: "created", timestamp: new Date("2026-01-01T00:00:00.000Z"), payload: { userId: "user-1", teamId: "t1", teamName: "Alpha", task: "Build it" } });
         await store.appendEvent({ id: `${TEST_PREFIX}e1`, executionId: execId, type: "started", timestamp: new Date("2026-01-01T00:00:01.000Z") });
         await store.appendEvent({ id: `${TEST_PREFIX}e2`, executionId: execId, type: "tool-executed", timestamp: new Date("2026-01-01T00:00:02.000Z"), payload: { tokensIn: 100, tokensOut: 50, costUsd: 0.01 } });
 
@@ -52,9 +52,11 @@ describe.skipIf(!hasDb)("PostgresExecutionStore (integration, requires DATABASE_
         // absolute 0 base — assert the tighter invariant so a stale projection
         // row from an interrupted run can't produce a false failure.
         const seqs = events.map((e) => e.seq);
-        const firstSeq = seqs[0] ?? 0;
-        expect(seqs.every((s, i) => s === firstSeq + i)).toBe(true);
-        expect(c0.seq).toBe(firstSeq);
+        expect(seqs).toEqual([1, 2, 3]);
+        expect(c0.seq).toBe(1);
+        expect(c0.userId).toBe("user-1");
+        const persisted = await db!.executionEvent.findUnique({ where: { id: c0.id } });
+        expect(persisted?.userId).toBe("user-1");
 
         const lastSeq = seqs[seqs.length - 1]!;
 
@@ -79,7 +81,7 @@ describe.skipIf(!hasDb)("PostgresExecutionStore (integration, requires DATABASE_
         const rec = await b.getExecution(execId);
         expect(rec!.status).toBe("completed");
         expect(rec!.output).toBe("shipped!");
-        expect(rec!.lastSeq).toBe(1);
+        expect(rec!.lastSeq).toBe(2);
     }, INTEGRATION_TIMEOUT_MS);
 
     it("lists executions newest-first", async () => {

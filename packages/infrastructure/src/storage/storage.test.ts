@@ -30,7 +30,15 @@ describe("EventSourcedExecutionStore", () => {
         expect(rec!.teamName).toBe("Team");
         expect(rec!.tokensIn).toBe(100);
         expect(rec!.tokensOut).toBe(50);
-        expect(rec!.lastSeq).toBe(2);
+        expect(rec!.lastSeq).toBe(3);
+    });
+
+    it("allocates contiguous 1-based sequence numbers", async () => {
+        const store = new EventSourcedExecutionStore();
+        const first = await store.appendEvent(evt({ executionId: "seq", type: "created" }));
+        const second = await store.appendEvent(evt({ executionId: "seq", type: "started" }));
+        const third = await store.appendEvent(evt({ executionId: "seq", type: "completed" }));
+        expect([first.seq, second.seq, third.seq]).toEqual([1, 2, 3]);
     });
 
     it("completes and captures output", async () => {
@@ -63,6 +71,16 @@ describe("EventSourcedExecutionStore", () => {
         expect(list.map((r) => r.id)).toEqual(["b", "a"]);
     });
 
+    it("lists only executions owned by the requested user", async () => {
+        const store: ExecutionStore = new EventSourcedExecutionStore();
+        await store.appendEvent(evt({ executionId: "mine", type: "created", userId: "user-a" }));
+        await store.appendEvent(evt({ executionId: "other", type: "created", userId: "user-b" }));
+        await store.appendEvent(evt({ executionId: "mine-newer", type: "created", userId: "user-a", timestamp: new Date("2026-01-03T00:00:00Z") }));
+
+        const list = await store.listExecutionsForUser("user-a");
+        expect(list.map((r) => r.id)).toEqual(["mine-newer", "mine"]);
+    });
+
     it("persists and returns a checkpoint", async () => {
         const store: ExecutionStore = new EventSourcedExecutionStore();
         await store.saveCheckpoint({
@@ -79,6 +97,18 @@ describe("EventSourcedExecutionStore", () => {
 });
 
 describe("applyEvent", () => {
+    it("does not allow later event payloads to overwrite authenticated ownership", () => {
+        let rec = applyEvent(undefined, {
+            id: "1", executionId: "x", seq: 1, type: "created", timestamp: new Date(),
+            userId: "authenticated-user", payload: { userId: "payload-user", task: "t", teamId: "g", teamName: "G" },
+        });
+        rec = applyEvent(rec, {
+            id: "2", executionId: "x", seq: 2, type: "tool-executed", timestamp: new Date(),
+            payload: { userId: "attacker-user", tokensIn: 1 },
+        });
+        expect(rec.userId).toBe("authenticated-user");
+    });
+
     it("pauses then resumes", () => {
         let rec = applyEvent(undefined, {
             id: "1", executionId: "x", seq: 0, type: "created", timestamp: new Date(),

@@ -43,6 +43,8 @@ import { costFor } from "@ANCIENT/infrastructure/providers";
 import { loadSettings } from "../hooks/settings";
 import { ExecutionEventBridge, type BridgeFallbackDetail } from "./bridge";
 import { ConsentBridge } from "./consent-bridge";
+import { PostgresExecutionStore } from "@ANCIENT/database/execution-store";
+import { DurableExecutionRecorder } from "./durable-recorder";
 
 export type ExecutionStartRequest = {
   userId: string;
@@ -84,6 +86,7 @@ export class ExecutionHub {
   #redactor = new Redactor();
   // Per-deployment cost ledger (A-025): platform-billed runs settle here.
   #ledger: CostLedger;
+  #store = new PostgresExecutionStore();
 
   constructor(options: { ledger?: CostLedger } = {}) {
     this.#ledger = options.ledger ?? new CostLedger();
@@ -117,11 +120,7 @@ export class ExecutionHub {
     const executionId = createId();
     const bus = new MemoryEventBus();
     const bridge = new ExecutionEventBridge();
-
-    // seq 1, before the engine emits anything.
-    bridge.start({ executionId, task: request.task, mode: request.mode ?? "BUILD" });
-    const unsubscribe = bus.subscribe((event) => bridge.onLifecycleEvent(event));
-
+    const durable = new DurableExecutionRecorder(this.#store, request.userId);
     const mode = request.mode ?? "BUILD";
     const entryBase = {
       executionId,
@@ -129,6 +128,33 @@ export class ExecutionHub {
       task: request.task,
       mode,
     };
+
+    // Persist the execution head before starting model/tool work. If the
+    // database is unavailable, fail closed rather than running an execution
+    // that cannot be recovered or audited.
+    try {
+      await durable.created(executionId, request.task, request.mode ?? "BUILD");
+    } catch (error) {
+      bridge.start({ executionId, task: request.task, mode: request.mode ?? "BUILD" });
+      bridge.finish("failed", { error: "execution persistence unavailable" });
+      const failed: ExecutionEntry = {
+        ...entryBase,
+        status: "failed",
+        modelRef: request.model?.modelKind === "custom" ? request.model.connectionId : request.model?.modelId,
+        session: { cancel: () => undefined, done: Promise.resolve({ status: "failed" as const }) },
+        bridge,
+      };
+      this.#executions.set(executionId, failed);
+      console.error("ANCIENT durable execution start rejected:", error);
+      return failed;
+    }
+
+    // seq 1, before the engine emits anything.
+    bridge.start({ executionId, task: request.task, mode: request.mode ?? "BUILD" });
+    const unsubscribe = bus.subscribe((event) => {
+      bridge.onLifecycleEvent(event);
+      durable.record(event);
+    });
 
     try {
       const selection: ChatModelSelection = request.model ?? platformDefaultSelection();
@@ -238,6 +264,9 @@ export class ExecutionHub {
         if (result.status === "completed" && resolved.provenance === "env") {
           this.#ledger.record(resolved.modelId, result.usage);
         }
+        void durable.drain().catch((error) => {
+          console.error("ANCIENT durable execution drain failed:", error);
+        });
         unsubscribe();
       });
 
@@ -250,6 +279,23 @@ export class ExecutionHub {
       const traceId = String(crypto.randomUUID());
       const { response } = clientErrorFrom(err, traceId);
       bridge.finish("failed", { clientError: response });
+      durable.record({
+        id: createId(),
+        executionId,
+        type: "failed",
+        seq: 0,
+        timestamp: new Date(),
+        payload: {
+          error: response.message,
+          errorCode: response.code,
+          retryable: response.retryable,
+        },
+      });
+      try {
+        await durable.drain();
+      } catch (persistenceError) {
+        console.error("ANCIENT durable pre-session failure persistence failed:", persistenceError);
+      }
       const entry: ExecutionEntry = {
         ...entryBase,
         status: "failed",
@@ -261,9 +307,19 @@ export class ExecutionHub {
         bridge,
       };
       this.#executions.set(executionId, entry);
+      void durable.drain().catch((error) => console.error("ANCIENT durable execution drain failed:", error));
       unsubscribe();
       return entry;
     }
+  }
+
+  async getDurable(userId: string, executionId: string) {
+    const record = await this.#store.getExecution(executionId);
+    return record && record.userId === userId ? record : undefined;
+  }
+
+  async listDurable(userId: string) {
+    return this.#store.listExecutionsForUser(userId);
   }
 
   cancel(userId: string, executionId: string, reason?: string): ExecutionEntry | undefined {
@@ -295,7 +351,7 @@ export class ExecutionHub {
 /** Collapse the engine's rich lifecycle onto the wire's five-state surface:
  *  queued / waiting_approval / paused / checkpointed are all "live" while a
  *  run is still in flight, and the engine alone writes the terminal states. */
-function toSurfaceStatus(status: ExecutionStatus): ExecutionEntry["status"] {
+export function toSurfaceStatus(status: string): ExecutionEntry["status"] {
   switch (status) {
     case "created":
       return "created";

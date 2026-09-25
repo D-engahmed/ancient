@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ancient
+          POSTGRES_PASSWORD: ancient
+          POSTGRES_DB: ancient_release
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ancient -d ancient_release"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      DATABASE_URL: postgresql://ancient:ancient@127.0.0.1:5432/ancient_release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.5"
+      - name: Verify tag matches package version
+        shell: bash
+        run: |
+          VERSION="$(bun -e "console.log((await Bun.file('package.json').json()).version)")"
+          test "${GITHUB_REF_NAME#v}" = "$VERSION"
+      - run: bun install --frozen-lockfile
+      - run: bun run db:generate
+      - run: bun run db:migrate
+      - run: bun audit --audit-level=high
+      - run: bun test
+      - run: bun run typecheck
+      - run: bun run build:server
+      - run: bun run build:cli
+      - run: bun run build:vscode
+
+  cli:
+    name: CLI — ${{ matrix.target }}
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            binary: ANCIENT
+          - os: macos-latest
+            target: macos-arm64
+            binary: ANCIENT
+          - os: windows-latest
+            target: windows-x64
+            binary: ANCIENT.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.5"
+      - run: bun install --frozen-lockfile
+      - name: Compile CLI
+        shell: bash
+        run: |
+          mkdir -p release
+          bun build packages/cli/src/main.tsx --compile --outfile "release/${{ matrix.binary }}"
+      - name: Archive Unix binary
+        if: runner.os != 'Windows'
+        shell: bash
+        run: tar -C release -czf "ancient-cli-${{ github.ref_name }}-${{ matrix.target }}.tar.gz" "${{ matrix.binary }}"
+      - name: Archive Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "release/${{ matrix.binary }}" -DestinationPath "ancient-cli-${{ github.ref_name }}-${{ matrix.target }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ancient-cli-${{ matrix.target }}
+          path: ancient-cli-${{ github.ref_name }}-${{ matrix.target }}.*
+          if-no-files-found: error
+          retention-days: 14
+
+  vscode:
+    name: VS Code extension
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.5"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: bun install --frozen-lockfile
+      - run: bun run build:vscode
+      - run: npx --yes @vscode/vsce@4.0.0 package --no-dependencies --out "../../ancient-vscode-${{ github.ref_name }}.vsix"
+        working-directory: packages/vscode
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ancient-vscode
+          path: ancient-vscode-${{ github.ref_name }}.vsix
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish release
+    needs: [verify, cli, vscode]
+    permissions:
+      contents: write
+      packages: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Create checksums
+        working-directory: release-assets
+        run: sha256sum * > SHA256SUMS
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and publish container
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ghcr.io/d-engahmed/ancient:${{ github.ref_name }}
+            ghcr.io/d-engahmed/ancient:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" release-assets/*             --repo "${{ github.repository }}"             --generate-notes             --title "ANCIENT ${{ github.ref_name }}"

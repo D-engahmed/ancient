@@ -97,9 +97,9 @@ describe("apiClient.request", () => {
 });
 
 describe("streamExecutionEvents", () => {
-  test("sends SSE-appropriate headers and yields decoded envelopes", async () => {
+  test("sends SSE-appropriate headers and yields decoded envelopes through terminal", async () => {
     let capturedInit: RequestInit | undefined;
-    const envelope = JSON.stringify({
+    const created = JSON.stringify({
       v: 1,
       seq: 1,
       ts: new Date().toISOString(),
@@ -107,25 +107,68 @@ describe("streamExecutionEvents", () => {
       type: "execution.created",
       payload: { task: "t", mode: "BUILD" },
     });
+    const completed = JSON.stringify({
+      v: 1,
+      seq: 2,
+      ts: new Date().toISOString(),
+      executionId: "EXEC-1",
+      type: "execution.completed",
+      payload: { output: "done" },
+    });
     stubFetch((url, init) => {
       capturedInit = init;
       expect(url).toBe("http://localhost:3000/executions/EXEC-1/events");
-      return sseResponse(`id: 1\nevent: execution\ndata: ${envelope}\n\n`);
+      return sseResponse(
+        `id: 1\nevent: execution\ndata: ${created}\n\nid: 2\nevent: execution\ndata: ${completed}\n\n`,
+      );
     });
 
     const events: unknown[] = [];
-    for await (const event of streamExecutionEvents("EXEC-1")) {
-      events.push(event);
-    }
+    for await (const event of streamExecutionEvents("EXEC-1")) events.push(event);
 
     const headers = capturedInit?.headers as Record<string, string> | undefined;
     expect(headers?.["Accept"]).toBe("text/event-stream");
     expect(headers?.["Cache-Control"]).toBe("no-cache");
-    expect(events.length).toBe(1);
-    const first = events[0] as { seq: number; type: string; payload: { task: string } };
-    expect(first.seq).toBe(1);
-    expect(first.type).toBe("execution.created");
-    expect(first.payload.task).toBe("t");
+    expect(events).toHaveLength(2);
+    expect((events[0] as { seq: number }).seq).toBe(1);
+    expect((events[1] as { seq: number; type: string }).type).toBe("execution.completed");
+  });
+
+  test("reconnects from Last-Event-ID when the server closes before terminal", async () => {
+    let calls = 0;
+    stubFetch((url, init) => {
+      calls++;
+      expect(url).toBe("http://localhost:3000/executions/EXEC-2/events");
+      const headers = init?.headers as Record<string, string> | undefined;
+      if (calls === 1) {
+        expect(headers?.["Last-Event-ID"]).toBeUndefined();
+        return sseResponse(`id: 1\nevent: execution\ndata: ${JSON.stringify({
+          v: 1,
+          seq: 1,
+          ts: new Date().toISOString(),
+          executionId: "EXEC-2",
+          type: "execution.created",
+          payload: { task: "t", mode: "BUILD" },
+        })}\n\n`);
+      }
+      expect(headers?.["Last-Event-ID"]).toBe("1");
+      return sseResponse(`id: 2\nevent: execution\ndata: ${JSON.stringify({
+        v: 1,
+        seq: 2,
+        ts: new Date().toISOString(),
+        executionId: "EXEC-2",
+        type: "execution.completed",
+        payload: { output: "recovered" },
+      })}\n\n`);
+    });
+
+    const events: unknown[] = [];
+    for await (const event of streamExecutionEvents("EXEC-2", { maxReconnects: 1, retryDelayMs: 0 })) {
+      events.push(event);
+    }
+
+    expect(calls).toBe(2);
+    expect(events.map((event) => (event as { seq: number }).seq)).toEqual([1, 2]);
   });
 
   test("throws a readable error when the stream request fails", async () => {
