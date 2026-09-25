@@ -27,7 +27,7 @@
     "@types/bun": "latest"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.27",
+    "@ai-sdk/anthropic": "^4.0.58",
     "@ai-sdk/openai": "^4.0.0",
     "ai": "^7.0.55",
     "dotenv": "^16.4.7",
