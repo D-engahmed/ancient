@@ -54,9 +54,22 @@ export class PostgresExecutionStore implements ExecutionStore {
     }
 
     return db.$transaction(async (tx) => {
-      // hashtextextended gives a stable 64-bit lock key. The lock exists only
-      // for this transaction, so unrelated executions remain concurrent.
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.executionId}, 0))`;
+      // pg_advisory_xact_lock returns void, which Prisma's PostgreSQL adapter
+      // cannot deserialize through $queryRaw. Use the try-lock variant instead;
+      // it returns a boolean and preserves the same transaction-scoped mutex.
+      // Unrelated executions remain concurrent because the lock key is derived
+      // from the execution id.
+      const lockDeadline = Date.now() + 30_000;
+      while (true) {
+        const rows = await tx.$queryRaw<Array<{ locked: boolean }>>`
+          SELECT pg_try_advisory_xact_lock(hashtextextended(${input.executionId}, 0)) AS locked
+        `;
+        if (rows[0]?.locked) break;
+        if (Date.now() >= lockDeadline) {
+          throw new Error("timed out acquiring execution append lock");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
 
       const count = await tx.executionEvent.count({
         where: { executionId: input.executionId },
