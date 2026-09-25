@@ -90,7 +90,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: Compress-Archive -Path "release/${{ matrix.binary }}" -DestinationPath "ancient-cli-${{ github.ref_name }}-${{ matrix.target }}.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ancient-cli-${{ matrix.target }}
           path: ancient-cli-${{ github.ref_name }}-${{ matrix.target }}.*
@@ -114,7 +114,7 @@ jobs:
       - run: bun run build:vscode
       - run: npx --yes @vscode/vsce@4.0.0 package --no-dependencies --out "../../ancient-vscode-${{ github.ref_name }}.vsix"
         working-directory: packages/vscode
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ancient-vscode
           path: ancient-vscode-${{ github.ref_name }}.vsix
