@@ -10,6 +10,7 @@ function evt(overrides: Partial<Omit<ExecutionEvent, "seq">> & { type: Execution
     return {
         id: overrides.id ?? `evt-${overrides.executionId}-${overrides.type}`,
         executionId: overrides.executionId,
+        ...(overrides.userId ? { userId: overrides.userId } : {}),
         type: overrides.type,
         timestamp: overrides.timestamp ?? new Date("2026-01-01T00:00:00Z"),
         payload: overrides.payload,
@@ -71,14 +72,37 @@ describe("EventSourcedExecutionStore", () => {
         expect(list.map((r) => r.id)).toEqual(["b", "a"]);
     });
 
-    it("lists only executions owned by the requested user", async () => {
+    it("lists only executions owned by the requested user, newest-first", async () => {
         const store: ExecutionStore = new EventSourcedExecutionStore();
-        await store.appendEvent(evt({ executionId: "mine", type: "created", userId: "user-a" }));
-        await store.appendEvent(evt({ executionId: "other", type: "created", userId: "user-b" }));
-        await store.appendEvent(evt({ executionId: "mine-newer", type: "created", userId: "user-a", timestamp: new Date("2026-01-03T00:00:00Z") }));
+        const older = new Date("2026-01-01T00:00:00Z");
+        const newer = new Date("2026-01-03T00:00:00Z");
+
+        // These executions intentionally remain pending: ordering must not
+        // depend on a synthetic "startedAt = now" value.
+        await store.appendEvent({
+            id: "mine-created",
+            executionId: "mine",
+            userId: "user-a",
+            type: "created",
+            timestamp: older,
+        });
+        await store.appendEvent({
+            id: "other-created",
+            executionId: "other",
+            userId: "user-b",
+            type: "created",
+            timestamp: newer,
+        });
+        await store.appendEvent({
+            id: "mine-newer-created",
+            executionId: "mine-newer",
+            userId: "user-a",
+            type: "created",
+            timestamp: newer,
+        });
 
         const list = await store.listExecutionsForUser("user-a");
-        expect(list.map((r) => r.id)).toEqual(["mine-newer", "mine"]);
+        expect(list.map((record) => record.id)).toEqual(["mine-newer", "mine"]);
     });
 
     it("persists and returns a checkpoint", async () => {

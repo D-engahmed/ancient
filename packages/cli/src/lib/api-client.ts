@@ -6,7 +6,29 @@ import type { RiskCategory } from "@ANCIENT/infrastructure/security";
 import { sseFrames } from "./execution-stream";
 import { errorMessageFrom } from "./http-errors";
 
-export const API_URL = process.env.ANCIENT_API_URL ?? process.env.API_URL ?? "http://localhost:3000";
+const RAW_API_URL = process.env.ANCIENT_API_URL ?? process.env.API_URL ?? "http://localhost:3000";
+
+export function resolveApiUrl(rawUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new Error("ANCIENT API URL must be a valid absolute URL.");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("ANCIENT API URL must use http or https.");
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error("ANCIENT API URL cannot contain credentials, query parameters, or fragments.");
+  }
+  const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+  if (url.protocol === "http:" && !loopback) {
+    throw new Error("Remote ANCIENT API URLs require HTTPS; plain HTTP is allowed only for loopback development.");
+  }
+  return url.toString().replace(/\/$/, "");
+}
+
+export const API_URL = resolveApiUrl(RAW_API_URL);
 
 type RequestOptions = {
   method?: string;

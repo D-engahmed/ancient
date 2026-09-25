@@ -65,5 +65,8 @@ jobs:
       - name: Build VS Code extension
         run: bun run build:vscode
 
+      - name: Verify CLI package contents
+        run: npm pack --dry-run ./packages/cli
+
       - name: Audit dependencies
         run: bun audit --audit-level=high

@@ -77,6 +77,9 @@ jobs:
         with:
           bun-version: "1.3.5"
       - run: bun install --frozen-lockfile
+      - name: Verify npm package contents
+        run: npm pack --dry-run ./packages/cli
+
       - name: Compile CLI
         shell: bash
         run: |

@@ -63,8 +63,7 @@ Claude Code is single-vendor and subscription-gated; ANCIENT's wedge:
 
 ## 6. Licensing
 
-- OSS packages: **Apache-2.0 or MIT** (max adoption; the SaaS is the moat, not the license).
-- If marketplace cloning worries you later, relicense *new* cloud-only packages under a source-available license (BUSL) — the OSS core stays permissive.
+The current ANCIENT repository is **proprietary**. The open-core licensing model described here is a future product decision, not the license of the current codebase. Any transition to Apache-2.0, MIT, BUSL, or another license should be made explicitly and accompanied by the corresponding repository and distribution changes.
 
 ## 7. Risks
 
