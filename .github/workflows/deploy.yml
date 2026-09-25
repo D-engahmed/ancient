@@ -54,7 +54,8 @@ jobs:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
         run: |
-          ssh "$USER@$HOST" "cd '$APP_DIR' && export ANCIENT_IMAGE_TAG='$IMAGE_TAG' && export GHCR_USER='$GHCR_USER' && export GHCR_TOKEN='$GHCR_TOKEN' && echo \"$GHCR_TOKEN\" | docker login ghcr.io -u \"$GHCR_USER\" --password-stdin && docker compose -f docker-compose.production.yml pull api && docker compose -f docker-compose.production.yml run --rm api bunx prisma migrate deploy && docker compose -f docker-compose.production.yml up -d api && docker compose -f docker-compose.production.yml ps"
+          printf '%s' "$GHCR_TOKEN" | ssh "$USER@$HOST" "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+          ssh "$USER@$HOST" "cd '$APP_DIR' && export ANCIENT_IMAGE_TAG='$IMAGE_TAG' && docker compose -f docker-compose.production.yml pull api && docker compose -f docker-compose.production.yml run --rm api bun run db:migrate && docker compose -f docker-compose.production.yml up -d api && docker compose -f docker-compose.production.yml ps && docker logout ghcr.io"
 
       - name: Verify health
         env:
