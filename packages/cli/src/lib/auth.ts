@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. 
 // file: packages/cli/src/lib/auth.ts
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -29,6 +29,8 @@ export function saveAuth(data: AuthData) {
     mkdirSync(AUTH_DIR, { mode: 0o700 });
   }
   writeFileSync(AUTH_FILE, JSON.stringify(data), { mode: 0o600 });
+  try { chmodSync(AUTH_DIR, 0o700); } catch { /* Windows / restricted filesystems */ }
+  try { chmodSync(AUTH_FILE, 0o600); } catch { /* Windows / restricted filesystems */ }
 }
 
 export function clearAuth() {
