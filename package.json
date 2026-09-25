@@ -19,7 +19,7 @@
     "db:seed": "bun run --cwd packages/database seed",
     "build:server": "bun run --cwd packages/server build",
     "build:cli": "bun run --cwd packages/cli build",
-    "ci": "bun run db:generate && bun test && bun run typecheck && bun run build:cli",
+    "ci": "bun run db:generate && bun test && bun run typecheck && bun run build:server && bun run build:cli && bun run build:vscode && bun audit --audit-level=high",
     "build:vscode": "bun run --cwd packages/vscode build"
   },
   "devDependencies": {
