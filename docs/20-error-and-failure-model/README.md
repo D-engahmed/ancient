@@ -1,5 +1,11 @@
 # Layer 20 --- Error and Failure Model
 
+> **Status note (2026-09-25):** the AS-BUILT table near the end of this document is
+> a historical implementation snapshot from 2026-08-30. The taxonomy and contract
+> remain normative; use current source and `docs/PRODUCTION_ARCHITECTURE.md` for
+> present wiring and release status.
+
+
 ## Purpose
 
 Before this document, error handling in ANCIENT was correct advice
