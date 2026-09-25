@@ -29,7 +29,7 @@ describe("parseSseFrame", () => {
     expect(frame).toEqual({ lastEventId: "7", data: '{"seq":7}' });
   });
 
-  test("joins multi-line data with newlines (RFC 2426)", () => {
+  test("joins multi-line data with newlines (Server-Sent Events)", () => {
     const frame = parseSseFrame("data: line1\ndata: line2\ndata: line3");
     expect(frame?.data).toBe("line1\nline2\nline3");
   });
