@@ -279,6 +279,22 @@ export class ExecutionHub {
       const traceId = String(crypto.randomUUID());
       const { response } = clientErrorFrom(err, traceId);
       bridge.finish("failed", { clientError: response });
+      durable.record({
+        id: createId(),
+        executionId,
+        type: "failed",
+        timestamp: new Date(),
+        payload: {
+          error: response.message,
+          errorCode: response.code,
+          retryable: response.retryable,
+        },
+      });
+      try {
+        await durable.drain();
+      } catch (persistenceError) {
+        console.error("ANCIENT durable pre-session failure persistence failed:", persistenceError);
+      }
       const entry: ExecutionEntry = {
         ...entryBase,
         status: "failed",
@@ -302,8 +318,7 @@ export class ExecutionHub {
   }
 
   async listDurable(userId: string) {
-    const records = await this.#store.listExecutions();
-    return records.filter((record) => record.userId === userId);
+    return this.#store.listExecutionsForUser(userId);
   }
 
   cancel(userId: string, executionId: string, reason?: string): ExecutionEntry | undefined {
