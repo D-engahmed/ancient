@@ -4,6 +4,15 @@
   "description": "ANCIENT AI coding agent for VS Code using the same execution API as the terminal client.",
   "version": "0.2.0",
   "publisher": "nxg-ai-solutions",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/D-engahmed/ancient.git",
+    "directory": "packages/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/D-engahmed/ancient/issues"
+  },
+  "files": ["dist", "README.md", "package.json", ".vscodeignore"],
   "engines": {"vscode": "^1.95.0"},
   "categories": ["AI", "Programming Languages"],
   "activationEvents": ["onCommand:ancient.runTask","onCommand:ancient.explainSelection","onCommand:ancient.fixDiagnostics"],
@@ -23,5 +32,8 @@
       }
     }
   },
-  "scripts": {"build":"bun build src/extension.ts --outdir dist --target node --format cjs --external vscode"}
+  "scripts": {
+    "build": "bun build src/extension.ts --outdir dist --target node --format cjs --external vscode",
+    "package": "npx --yes @vscode/vsce@4.0.0 package"
+  }
 }
