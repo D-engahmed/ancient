@@ -28,7 +28,8 @@ function normalizeHostname(hostname: string): string {
 function isPrivateOrLinkLocalIpv4(ip: string): boolean {
   const parts = ip.split(".");
   if (parts.length !== 4) return false;
-  const [a, b] = parts.map(Number);
+  const a = Number(parts[0] ?? NaN);
+  const b = Number(parts[1] ?? NaN);
   if (![a, b].every(Number.isFinite)) return false;
   return (
     a === 0 ||
