@@ -1,2 +1,2 @@
 #!/usr/bin/env bun
-await import("../src/main.tsx");
+await import("../dist/main.js");
